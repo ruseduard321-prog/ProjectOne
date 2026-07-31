@@ -139,8 +139,9 @@ As defined across the Project Bible and Engineering Handbook, and binding unless
 |---|---|---|
 | Frontend framework | Next.js (App Router) | [[Chapter 05 - NextJS Architecture]] |
 | UI library | React | [[Chapter 04 - React Standards]] |
-| Language | TypeScript (strict mode) | [[Chapter 03 - TypeScript Standards]] |
+| Frontend language | TypeScript (strict mode) | [[Chapter 03 - TypeScript Standards]] |
 | Styling | Tailwind, ProjectOne Design System | [[Design System]] |
+| Backend language | Python | [[Chapter 06 - FastAPI Architecture]] |
 | Backend framework | FastAPI | [[Chapter 06 - FastAPI Architecture]] |
 | Database | Supabase / PostgreSQL | [[Chapter 07 - Database Standards]] |
 | AI layer | Provider-agnostic AI Router, BYOK-capable | [[AI Providers]], [[AI Architecture]] |

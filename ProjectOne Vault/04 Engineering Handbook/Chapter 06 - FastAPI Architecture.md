@@ -17,6 +17,12 @@ source_pdf: "[[12 Assets/PDF/ProjectOne_Engineering_Handbook_Chapter_06_FastAPI_
 
 FastAPI is the backend framework. Keep routing thin, business logic in services and persistence isolated.
 
+### Language
+
+**Python is the backend language.** TypeScript is the frontend language and is not used in `apps/api`; Python is not used in the frontend. The split is deliberate and is recorded with its reasoning in [[ADR-001 Technology Stack]] — the AI ecosystem ProjectOne depends on (provider SDKs, evaluation and orchestration tooling) is strongest in Python, and the backend is placed where that ecosystem lives.
+
+See [[CLAUDE|CLAUDE.md]] §10 for the full stack table. The specific Python version is settled by [[STEP-04 API App Skeleton]], not here.
+
 ### Routers
 
 Routers validate input, call services and return responses only.

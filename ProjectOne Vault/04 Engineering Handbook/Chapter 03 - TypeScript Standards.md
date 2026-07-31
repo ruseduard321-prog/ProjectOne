@@ -17,6 +17,8 @@ source_pdf: "[[12 Assets/PDF/ProjectOne_Engineering_Handbook_Chapter_03_TypeScri
 
 TypeScript is used to maximize correctness, readability and maintainability. Every type should communicate intent clearly and prevent invalid states whenever possible.
 
+**Scope: TypeScript is the frontend language.** This chapter governs `apps/web` and any TypeScript in shared packages. The backend is Python — see [[Chapter 06 - FastAPI Architecture]] and [[CLAUDE|CLAUDE.md]] §10. Nothing in this chapter applies to `apps/api`.
+
 ### 3.2 General Principles
 
 Enable strict mode. Avoid 'any'. Prefer explicit types for public APIs while allowing inference for simple local variables. Favor immutable data where practical.

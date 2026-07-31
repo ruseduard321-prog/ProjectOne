@@ -38,9 +38,10 @@ ProjectOne adopts the following stack. This matches [[CLAUDE|CLAUDE.md]] §10 ex
 |---|---|---|
 | Frontend framework | **Next.js (App Router)** | [[Chapter 05 - NextJS Architecture]] |
 | UI library | **React** | [[Chapter 04 - React Standards]] |
-| Language (frontend) | **TypeScript, strict mode** | [[Chapter 03 - TypeScript Standards]] |
+| Frontend language | **TypeScript, strict mode** | [[Chapter 03 - TypeScript Standards]] |
 | Styling | **Tailwind CSS + ProjectOne [[Design System]]** | [[Design System]] |
-| Backend framework | **FastAPI** (Python) | [[Chapter 06 - FastAPI Architecture]] |
+| Backend language | **Python** | [[Chapter 06 - FastAPI Architecture]] |
+| Backend framework | **FastAPI** | [[Chapter 06 - FastAPI Architecture]] |
 | Database | **Supabase / PostgreSQL** | [[Chapter 07 - Database Standards]] |
 | AI layer | **Provider-agnostic AI Router, BYOK-capable** | [[AI Providers]], [[AI Architecture]] |
 | Infrastructure | **Cloud-first, infrastructure as code** | [[Infrastructure]] |
@@ -53,13 +54,13 @@ Binding consequences of the choice:
 4. **No AI provider SDK is called directly from feature code.** All model access goes through the AI Router ([[AI Providers]]).
 5. **Adding a framework, database engine or major dependency outside this table requires a new ADR** ([[CLAUDE|CLAUDE.md]] §10, §28).
 
-### One ambiguity in §10, flagged for the owner
+### Implementation languages (resolved)
 
-[[CLAUDE|CLAUDE.md]] §10 lists **"Language | TypeScript (strict mode)"** as a single unqualified row while also mandating **FastAPI**, which is a Python framework. Read literally, those two rows cannot both hold for the whole system.
+**Frontend: TypeScript, strict mode. Backend: Python.** Confirmed by the project owner on 2026-07-31 and now stated explicitly in the canonical documentation rather than inferred from the framework choice.
 
-This ADR resolves it the only way that keeps both true: **TypeScript is the frontend language, Python is the backend language** — hence the "Language (frontend)" label above. No vault note currently states "Python" anywhere, so this is an inference from the FastAPI choice, not a documented decision, and it is surfaced here rather than absorbed silently ([[CLAUDE|CLAUDE.md]] §34).
+An earlier revision of this ADR flagged an ambiguity: [[CLAUDE|CLAUDE.md]] §10 listed *"Language | TypeScript (strict mode)"* as a single unqualified row while also mandating FastAPI, a Python framework — two rows that could not both hold system-wide. That is closed. §10 now carries separate **Frontend language** and **Backend language** rows, and the two owning handbook chapters state their scope directly: [[Chapter 03 - TypeScript Standards]] §3.1 scopes TypeScript to the frontend, [[Chapter 06 - FastAPI Architecture]] names Python as the backend language.
 
-**Owner decision requested:** confirm this reading, and if confirmed, §10's table should gain an explicit backend-language row so the ambiguity does not resurface. No Python version is specified here — that belongs to [[STEP-04 API App Skeleton]].
+The specific Python version is not settled here — it belongs to [[STEP-04 API App Skeleton]].
 
 ### Why two languages
 
@@ -104,15 +105,33 @@ Integrate one provider's SDK throughout the codebase and skip the routing layer.
 ### Harder
 
 - **Two languages, two toolchains.** Lint, test, type-check and CI must be maintained for both; contributors need both. Accepted knowingly — see *Why two languages*.
-- **The frontend/backend contract is now cross-language** and can drift silently. **Follow-up:** generate TypeScript types from FastAPI's OpenAPI schema so the contract is derived, not hand-copied. Owner decision needed on where that lands in the plan — [[STEP-04 API App Skeleton]] and [[STEP-12 API Conventions and Middleware]] are the candidates.
+- **The frontend/backend contract is now cross-language** and can drift silently — nothing in the type system connects a FastAPI response model to the TypeScript that consumes it. See *OpenAPI contract* below for the committed mitigation.
 - **Two deployment targets** with separate environments and secrets ([[CLAUDE|CLAUDE.md]] §28a).
 - **Supabase concentrates several concerns** (database, auth, storage, realtime). Mitigated by standard PostgreSQL underneath, but auth and storage migrations would be real work.
+
+### OpenAPI contract
+
+Choosing two languages creates one hard requirement: **the frontend/backend contract must be generated, never hand-maintained.**
+
+**Decided here:** TypeScript types for the API contract are generated from FastAPI's OpenAPI schema. Hand-written TypeScript interfaces mirroring backend response models are not acceptable — a hand-copied contract is a duplicate definition that drifts the moment one side changes, which [[CLAUDE|CLAUDE.md]] §35 forbids ("never duplicate logic").
+
+**Deferred to implementation:** this is recorded as an obligation, not scheduled as work. It is implemented **when the API layer is built** — the step that first defines real endpoint contracts is the step that wires up generation. No new Build Plan step is created for it and no step ordering changes; the [[Build Plan]] is not expanded on the strength of this ADR.
+
+Deliberately not decided here — these are implementation details for whichever step picks this up, and fixing them now would be speculative design against a codebase that does not exist ([[CLAUDE|CLAUDE.md]] §29/§35):
+
+- the generator tool
+- whether generated types live in `apps/web` or a shared package under `packages/`
+- whether generation runs in CI, as a pre-commit step, or on demand
+- how drift is detected (for example, CI failing when regenerated output differs from what is committed)
+
+**The obligation stands regardless of where it lands:** a step that ships a typed frontend call against a hand-written interface has not satisfied this ADR.
 
 ### Obligations this creates
 
 - **Provider independence** ([[CLAUDE|CLAUDE.md]] §7): AI access flows through the router; critical workflows define a fallback provider ([[AI Providers]]); no feature code imports a provider SDK directly.
 - **Cloud portability**: infrastructure as code, avoiding vendor-proprietary primitives where a portable equivalent exists ([[Infrastructure]]).
 - **Cost governance** ([[CLAUDE|CLAUDE.md]] §15a): budget ceilings, circuit breakers, retry caps and execution limits are requirements of the AI layer from its first line, not later hardening. [[STEP-18 AI Cost Governance Controls]] implements them.
+- **Generated API contract** (see *OpenAPI contract* above): TypeScript types for API responses are generated from FastAPI's OpenAPI schema, never hand-written, from the moment the first real endpoint exists.
 - **This ADR is revisited, not quietly amended**, if any layer changes. Superseding requires a new ADR that names this one ([[CLAUDE|CLAUDE.md]] §7).
 
 ### Not decided here
