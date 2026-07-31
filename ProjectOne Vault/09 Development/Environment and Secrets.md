@@ -2,7 +2,7 @@
 title: Environment and Secrets
 category: Development
 status: stable
-version: "1.1"
+version: "1.2"
 last_updated: 2026-07-31
 tags: [engineering, security, configuration, documentation]
 aliases: ["Environment Configuration", "Secrets Policy", "Feature Flags"]
@@ -114,10 +114,11 @@ When the first flag is needed, it is implemented as configuration through the mo
 1. Add it to the app's `.env.example` with a **placeholder** and a comment saying what it is.
 2. Add it to the config module — with a default if genuinely optional, without one if required.
 3. If required, confirm the app refuses to start without it and that the error names it.
-4. Add it to every environment's real configuration before the code that reads it deploys.
-5. If it is a secret, confirm it is injected by the secrets manager and appears in no log.
+4. **If required, add it to that app's job `env:` block in `.github/workflows/ci.yml`** with a non-secret placeholder. Skipping this turns CI red on the next push, because the app will not start ([[STEP-06 Continuous Integration]]). A real credential goes in a non-production repository secret and is referenced from the workflow — never written into the workflow file.
+5. Add it to every environment's real configuration before the code that reads it deploys.
+6. If it is a secret, confirm it is injected by the secrets manager and appears in no log.
 
-Step 4 sequencing matters: a required variable that reaches production before its value does takes the service down at startup.
+Step 5 sequencing matters: a required variable that reaches production before its value does takes the service down at startup.
 
 ---
 

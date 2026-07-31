@@ -6,19 +6,19 @@ version: "1.3"
 last_updated: 2026-07-31
 tags: [engineering, workflow, build-step, testing]
 step_id: STEP-06
-step_status: In Progress
+step_status: Done
 ---
 
 # STEP-06 — Continuous Integration
 
-**Status:** In Progress — awaiting owner confirmation of the CI run
+**Status:** Done
 
-> [!note] Was `Blocked` on a missing remote; now committed and pushed
+> [!success] Was `Blocked` on a missing remote; resolved and confirmed green
 > This step was `Blocked` for one session: Validation requires *"a push triggers the workflow and it completes green,"* and the repository had no git remote, so GitHub Actions had nowhere to run. The implementation was complete but unverifiable, and was deliberately left **uncommitted** ([[Execution Protocol#Blocked Steps Are Never Committed]]).
 >
-> **Unblocked on 2026-07-31** by the project owner creating `github.com/ruseduard321-prog/ProjectOne` and adding it as `origin`. The work is now committed (`25bebe1`) and pushed.
+> **Unblocked on 2026-07-31** by the project owner creating `github.com/ruseduard321-prog/ProjectOne` and adding it as `origin`.
 >
-> **Not yet `Done`.** The workflow has been triggered but its result cannot be observed from here — see [[#Outcome]]. Marking `Done` on an unobserved run would violate *"never mark `Done` on unvalidated work"* ([[Execution Protocol#Hard Rules]]). One confirmation from the owner closes this.
+> The run result could not be observed from the build environment — the repository is private, the in-app browser is not authenticated to it, and the [[MCP/GitHub|GitHub MCP]] exposes no workflow-run tool. **The project owner confirmed both jobs completed successfully on 2026-07-31**, which closed the final check.
 
 ## Goal
 
@@ -58,12 +58,9 @@ CI runs on every push, enforces lint + type-check + tests for both apps, is veri
 
 ## Outcome
 
-All seven Tasks are implemented and committed as `25bebe1`, pushed to `origin/main` at `github.com/ruseduard321-prog/ProjectOne`.
+All seven Tasks are implemented and all three Validation checks pass. CI runs on `github.com/ruseduard321-prog/ProjectOne` (private) on every push and pull request.
 
-> [!warning] One Validation check is unconfirmed
-> The push succeeded and `.github/workflows/ci.yml` is present on `origin/main`, so the workflow **has been triggered**. Its result has **not been observed**: the repository is private, the in-app browser is not authenticated to it, and the [[MCP/GitHub|GitHub MCP]] exposes no workflow-run tool. Reading a stored credential to call the Actions API directly was attempted and correctly blocked — that is not a workaround to pursue.
->
-> **The owner must confirm the run is green** at `github.com/ruseduard321-prog/ProjectOne/actions`. Everything that could be verified locally was, including both jobs' full command sequences under the workflow's own environment variables — but a local simulation is evidence, not the check itself.
+**On confirming the run.** The build environment cannot observe a workflow result: the repository is private, the in-app browser is not authenticated to it, and the [[MCP/GitHub|GitHub MCP]] exposes no workflow-run tool. Reading a stored credential to call the Actions API directly was attempted and correctly blocked — not a workaround to pursue. **Until one of those changes, confirming a CI run is an owner action**, and any future step whose validation depends on CI output inherits that handoff.
 
 ### What exists
 
@@ -79,7 +76,7 @@ All seven Tasks are implemented and committed as `25bebe1`, pushed to `origin/ma
 
 | Check | Result |
 |---|---|
-| A push triggers the workflow and it completes green | **Triggered, result not yet observed** — see below |
+| A push triggers the workflow and it completes green | **Passed** — both jobs green on `25bebe1`, confirmed by the project owner |
 | Deliberately breaking a type causes the type-check job to fail | **Passed** — verified for both apps, then reverted |
 | Both apps' test suites execute and report as passing | **Passed** — 7 web + 4 API, run under CI's exact env |
 

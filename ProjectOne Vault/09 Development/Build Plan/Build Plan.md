@@ -38,7 +38,7 @@ Status appears in two places — the step note and the row below — and they mu
 | STEP-03 | [[STEP-03 Web App Skeleton]] | Done | full |
 | STEP-04 | [[STEP-04 API App Skeleton]] | Done | full |
 | STEP-05 | [[STEP-05 Environment and Secrets]] | Done | full |
-| STEP-06 | [[STEP-06 Continuous Integration]] | In Progress | full |
+| STEP-06 | [[STEP-06 Continuous Integration]] | Done | full |
 | STEP-07 | [[STEP-07 Supabase Provisioning]] | Not Started | full |
 | STEP-08 | [[STEP-08 Users and Workspaces Schema]] | Not Started | full |
 | STEP-09 | [[STEP-09 Row Level Security Policies]] | Not Started | full |
@@ -89,7 +89,7 @@ As of 2026-07-31, the project root is a git repository on branch `main` with the
 
 **A GitHub remote now exists** at `github.com/ruseduard321-prog/ProjectOne` (private), and all six commits are pushed. CI is committed and triggered: every push and pull request runs lint, type-check, tests and build for both apps. `apps/web` gained a Vitest runner and its first 7 tests.
 
-STEP-06 is `In Progress`, not `Done` — the workflow run's result cannot be observed from this environment (private repo, unauthenticated browser, no workflow-run tool in [[MCP/GitHub|GitHub MCP]]), and marking it `Done` unobserved would violate [[Execution Protocol#Hard Rules]]. **One owner confirmation that the run is green closes it.** See [[STEP-06 Continuous Integration#Outcome]].
+**CI is live and green** — the project owner confirmed both jobs succeeded on 2026-07-31, closing STEP-06 (see [[STEP-06 Continuous Integration#Outcome]]). Note that confirming a CI run is an owner action for now: the build environment cannot observe workflow results on a private repository.
 
 The vault, Claude OS and AI operating capabilities are built and validated ([[Environment Setup]], [[AI Index]]).
 

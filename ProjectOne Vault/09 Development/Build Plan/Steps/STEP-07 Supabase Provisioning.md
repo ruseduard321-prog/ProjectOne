@@ -2,7 +2,7 @@
 title: STEP-07 Supabase Provisioning
 category: Development/Build Step
 status: draft
-version: "1.1"
+version: "1.2"
 last_updated: 2026-07-31
 tags: [engineering, workflow, build-step, database]
 step_id: STEP-07
@@ -34,6 +34,8 @@ A provisioned development database with a tracked migration tool wired up — th
 2. Wire the connection through the STEP-05 config system — add the fields to `apps/api/app/core/config.py` and the corresponding placeholders to `apps/api/.env.example`, following the "Adding a Variable" sequence in [[Environment and Secrets]]. Credentials go in the local `.env`, never the repository. **Server-only credentials belong in `apps/api`; a service-role key must never carry the `NEXT_PUBLIC_` prefix or reach `apps/web`** — that prefix publishes the value into the browser bundle.
 3. Set up the migration tool so every schema change is a tracked, version-controlled file. Manual SQL against a live database is forbidden ([[CLAUDE|CLAUDE.md]] §13).
 4. Add migration commands to `scripts/`, idempotent and documented.
+
+   **CI now exists** ([[STEP-06 Continuous Integration]]). Any variable added to `app/core/config.py` as *required* must also be added to the `api` job's `env:` block in `.github/workflows/ci.yml`, or CI goes red on the next push — the app refuses to start without it. Use a non-secret placeholder; a real credential belongs in a non-production repository secret, never in the workflow file.
 5. Create one no-op or trivial migration and apply it, proving the pipeline works end to end.
 6. Confirm `apps/api` can connect and report database health through `/health`.
 
