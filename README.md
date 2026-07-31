@@ -31,7 +31,8 @@ Key entry points inside the vault:
 [`CLAUDE.md`](CLAUDE.md) at the repository root is the operating manual governing how Claude works
 in this codebase. **It is generated** — the canonical source is
 [`ProjectOne Vault/00 Governance/CLAUDE.md`](ProjectOne%20Vault/00%20Governance/CLAUDE.md). Edit
-that file and run `./scripts/sync-claude-md.sh`; never edit the root copy directly.
+that file, then regenerate this one — `./scripts/sync-claude-md.sh` on macOS/Linux/Git Bash, or
+`.\scripts\sync-claude-md.ps1` on Windows PowerShell. Never edit the root copy directly.
 
 ## Repository Structure
 

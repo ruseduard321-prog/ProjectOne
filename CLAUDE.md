@@ -3,7 +3,8 @@
 <!-- If you are reading this at the repository root, this file is GENERATED.
      Do not edit it here — your changes will be overwritten.
      Edit the canonical source: ProjectOne Vault/00 Governance/CLAUDE.md
-     Then run: ./scripts/sync-claude-md.sh -->
+     Then run:  ./scripts/sync-claude-md.sh    (macOS / Linux / Git Bash)
+            or  .\scripts\sync-claude-md.ps1   (Windows PowerShell) -->
 
 > This document is the permanent operating manual for Claude inside the ProjectOne repository. It is not user documentation. It is not a style guide. It is the constitution that governs how Claude thinks, decides, and writes code in this codebase, for as long as this codebase exists.
 >
