@@ -2,7 +2,7 @@
 title: Environment Setup
 category: Development
 status: stable
-version: "1.2"
+version: "1.3"
 last_updated: 2026-07-31
 tags: [engineering, documentation, ai, mcp]
 aliases: ["Local Development Setup", "AI Tooling Setup"]
@@ -20,7 +20,9 @@ The current state of ProjectOne's local development environment and AI operating
 - **npm:** 11.16.0
 - **Git:** available for local operations; `gh` CLI is **not installed** — GitHub operations go through the [[MCP/GitHub|GitHub MCP]], not the CLI
 - **Repository state:** ProjectOne **is under git version control** as of STEP-01 — local repository on branch `main`, no remote configured yet. Until a remote exists, [[MCP/GitHub|GitHub MCP]] operations that presuppose one (push, PR creation) still cannot be validated.
+- **Python:** 3.14.6, invoked as `py` on this machine (the Windows launcher). `apps/api` declares `requires-python = ">=3.12"` — 3.14 is what is installed here, not a floor the project imposes.
 - **Web application:** `apps/web` exists as of STEP-03 — Next.js 16.2.12, React 19.2.4, TypeScript strict, Tailwind v4, ESLint 9. Run it with `npm run dev` from `apps/web` (defaults to port 3000). `npm run lint` and `npm run typecheck` are the validation entry points. Note that `next lint` was removed in Next.js 16; lint runs through ESLint directly.
+- **API application:** `apps/api` exists as of STEP-04 — FastAPI 0.121.2, Pydantic 2.12.4, Uvicorn 0.38.0, with Ruff 0.14.5, mypy 1.18.2 and pytest 8.4.2 as dev tooling. Dependencies are pinned exactly in `pyproject.toml` and installed into a local virtual environment at `apps/api/.venv/` (git-ignored). Run it with `.venv/Scripts/python -m uvicorn app.main:app --reload` from `apps/api` (port 8000). Validation entry points: `ruff check .`, `ruff format --check .`, `mypy app`, `pytest`. Interactive API docs are at `/docs`, the OpenAPI contract at `/openapi.json`.
 
 ## AI Operating Capabilities — Status Summary
 
@@ -76,12 +78,20 @@ Two details worth knowing before editing these rules:
 
 ## Setting Up a New Machine
 
-1. Install Node.js and npm (validated against v24.18.0 / 11.16.0 — the exact versions are not a hard requirement, but this is the last known-good baseline).
-2. Ensure `.mcp.json` is present at the project root — the Filesystem server bootstraps automatically via `npx` on first use, no manual install step required.
-3. Terminal, Playwright (Chromium), and Computer Use are available immediately with no setup — they ship with the Claude Code harness itself.
-4. If GitHub operations are needed, confirm the GitHub MCP server is configured at the appropriate level (user/global config) — this is outside `.mcp.json` and outside this repository's version control.
-5. Clone the repository rather than initializing one — git version control already exists (STEP-01). A remote is not configured yet, so GitHub MCP operations that presuppose one still cannot be used.
-6. Firefox and WebKit browser binaries are **not** installed by default (Chromium only) — install deliberately with `npx playwright install firefox webkit` only if cross-browser manual validation becomes necessary; this is a real download/disk-write action, not a no-op.
+1. Clone the repository rather than initializing one — git version control already exists (STEP-01). A remote is not configured yet, so GitHub MCP operations that presuppose one still cannot be used.
+2. Install Node.js and npm (validated against v24.18.0 / 11.16.0 — the exact versions are not a hard requirement, but this is the last known-good baseline). Then run `npm install` in `apps/web`.
+3. Install Python 3.12 or newer (validated against 3.14.6). Create the API's virtual environment and install its pinned dependencies from `apps/api`:
+
+   ```
+   py -m venv .venv
+   .venv/Scripts/python -m pip install -e ".[dev]"
+   ```
+
+   On macOS/Linux the interpreter is `python3` and the venv path is `.venv/bin/python`.
+4. Ensure `.mcp.json` is present at the project root — the Filesystem server bootstraps automatically via `npx` on first use, no manual install step required.
+5. Terminal, Playwright (Chromium), and Computer Use are available immediately with no setup — they ship with the Claude Code harness itself.
+6. If GitHub operations are needed, confirm the GitHub MCP server is configured at the appropriate level (user/global config) — this is outside `.mcp.json` and outside this repository's version control.
+7. Firefox and WebKit browser binaries are **not** installed by default (Chromium only) — install deliberately with `npx playwright install firefox webkit` only if cross-browser manual validation becomes necessary; this is a real download/disk-write action, not a no-op.
 
 ## Known Gaps
 

@@ -36,7 +36,7 @@ Status appears in two places — the step note and the row below — and they mu
 | STEP-01 | [[STEP-01 Repository Bootstrap]] | Done | full |
 | STEP-02 | [[STEP-02 Stack Confirmation ADR]] | Done | full |
 | STEP-03 | [[STEP-03 Web App Skeleton]] | Done | full |
-| STEP-04 | [[STEP-04 API App Skeleton]] | Not Started | full |
+| STEP-04 | [[STEP-04 API App Skeleton]] | Done | full |
 | STEP-05 | [[STEP-05 Environment and Secrets]] | Not Started | full |
 | STEP-06 | [[STEP-06 Continuous Integration]] | Not Started | full |
 | STEP-07 | [[STEP-07 Supabase Provisioning]] | Not Started | full |
@@ -83,7 +83,7 @@ This plan is derived from, and must stay consistent with, the vault. If this pla
 
 As of 2026-07-31, the project root is a git repository on branch `main` with the canonical skeleton (`apps/`, `packages/`, `infrastructure/`, `docs/`, `scripts/`, `.github/`) in place.
 
-**First application code exists:** `apps/web` is a Next.js 16.2.12 / React 19 / TypeScript-strict / Tailwind v4 skeleton with `/` and `/health` routes, building clean and serving zero client JavaScript (STEP-03). `apps/api` does not exist yet — that is STEP-04. `packages/` and `infrastructure/` remain empty placeholders.
+**Both applications now exist as skeletons.** `apps/web` is a Next.js 16.2.12 / React 19 / TypeScript-strict / Tailwind v4 skeleton with `/` and `/health` routes, building clean and serving zero client JavaScript (STEP-03). `apps/api` is a FastAPI 0.121.2 / Python 3.14.6 skeleton with the five layer directories in place and a `/health` endpoint served through a router→service path, clean under Ruff and mypy `strict` (STEP-04). Neither talks to the other yet, and neither has a database, auth or features. `packages/` and `infrastructure/` remain empty placeholders.
 
 The vault, Claude OS and AI operating capabilities are built and validated ([[Environment Setup]], [[AI Index]]).
 

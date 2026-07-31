@@ -1,0 +1,66 @@
+[project]
+name = "projectone-api"
+version = "0.1.0"
+description = "ProjectOne backend API."
+requires-python = ">=3.12"
+
+# Pinned exactly. A skeleton that resolves to different versions on different
+# machines is not a reproducible baseline (Environment Setup).
+dependencies = [
+    "fastapi==0.121.2",
+    "pydantic==2.12.4",
+    "pydantic-settings==2.13.1",
+    "uvicorn[standard]==0.38.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "httpx==0.28.1",
+    "mypy==1.18.2",
+    "pytest==8.4.2",
+    "ruff==0.14.5",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+# Chosen to enforce what CLAUDE.md already requires rather than to maximise
+# rule count: pyflakes/pycodestyle correctness, import order, bugbear traps,
+# and ANN so public signatures stay explicitly typed (CLAUDE.md 11, 27).
+select = ["E", "F", "W", "I", "N", "UP", "B", "ANN", "D"]
+ignore = [
+    "D203",  # conflicts with D211 -- ruff recommends selecting one
+    "D213",  # conflicts with D212 -- multi-line summary style
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["ANN", "D"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unreachable = true
+# strict already implies disallow_any_generics, disallow_untyped_defs and
+# warn_return_any -- together these are the Python equivalent of "no `any`"
+# (CLAUDE.md 35).
+#
+# disallow_any_explicit is deliberately NOT enabled. Pydantic's BaseModel and
+# BaseSettings use explicit Any in their own signatures, so the flag reports an
+# error on every model's class declaration -- code we do not own and cannot
+# fix. It would make every schema in the codebase permanently unclean, which
+# trains people to ignore mypy output rather than to avoid Any.
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

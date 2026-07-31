@@ -2,7 +2,7 @@
 title: STEP-05 Environment and Secrets
 category: Development/Build Step
 status: draft
-version: "1.0"
+version: "1.1"
 last_updated: 2026-07-31
 tags: [engineering, workflow, build-step, security]
 step_id: STEP-05
@@ -31,6 +31,8 @@ Establish environment configuration conventions for both apps before any real se
 
 1. Define `.env.example` for `apps/web` and `apps/api` — every required variable named, **every value a placeholder**. Committed; real `.env` files never are.
 2. Implement typed, validated config loading in both apps. A missing or malformed required variable fails at startup with a clear message, not at first use.
+
+   **Partly built already:** [[STEP-04 API App Skeleton]] created `apps/api/app/core/config.py` — a pydantic-settings `Settings` class with the `PROJECTONE_` env prefix, exposed through dependency injection. It reads the environment and is typed, but every field currently has a default, so nothing is *required* and nothing fails fast yet. Extend that class rather than replacing it; `apps/web` has no equivalent and starts from nothing.
 3. Document the dev/staging/production split per [[CLAUDE|CLAUDE.md]] §28a — separate credentials, separate data, separate AI provider keys.
 4. Establish the feature-flag mechanism: every flag has an owner, defaults off, and carries a removal date.
 5. Confirm no environment-conditional business logic exists anywhere — configuration changes behavior, not code paths.
