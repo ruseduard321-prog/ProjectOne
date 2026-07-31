@@ -20,6 +20,7 @@ The current state of ProjectOne's local development environment and AI operating
 - **npm:** 11.16.0
 - **Git:** available for local operations; `gh` CLI is **not installed** — GitHub operations go through the [[MCP/GitHub|GitHub MCP]], not the CLI
 - **Repository state:** ProjectOne **is under git version control** as of STEP-01 — local repository on branch `main`, no remote configured yet. Until a remote exists, [[MCP/GitHub|GitHub MCP]] operations that presuppose one (push, PR creation) still cannot be validated.
+- **Web application:** `apps/web` exists as of STEP-03 — Next.js 16.2.12, React 19.2.4, TypeScript strict, Tailwind v4, ESLint 9. Run it with `npm run dev` from `apps/web` (defaults to port 3000). `npm run lint` and `npm run typecheck` are the validation entry points. Note that `next lint` was removed in Next.js 16; lint runs through ESLint directly.
 
 ## AI Operating Capabilities — Status Summary
 

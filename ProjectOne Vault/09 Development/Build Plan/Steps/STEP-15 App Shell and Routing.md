@@ -23,6 +23,8 @@ Base layout, navigation shell and routing structure — Server Components by def
 
 The authenticated shell users land in. No feature screens. Loading, empty and error states defined from this first surface onward ([[CLAUDE|CLAUDE.md]] §11).
 
+**Inherited from [[STEP-03 Web App Skeleton]]:** the root `error.tsx` boundary is still owed. STEP-03 established `loading` and `not-found` but could not add an error boundary — Next.js requires it to be a Client Component, which that step's validation forbade. This is the first step where client components are legitimate, so the error boundary lands here ([[Chapter 05 - NextJS Architecture]] §5.9).
+
 ## Prerequisites
 
 - [[STEP-14 Design System Tokens]] — `Done`
