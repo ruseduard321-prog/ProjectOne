@@ -45,7 +45,7 @@ Activates automatically when a change:
 3. **MOC/index membership** — a new note is linked from at least one MOC and appears in the relevant index(es) ([[Global Index]], [[Alphabetical Index]], [[Category Index]], and [[Documentation Index]] if it's vault infrastructure). A note reachable only from its own folder listing is effectively lost (§19, README "How to Maintain the Vault").
 4. **Navigation block** — every note ends with a Navigation block; Previous/Next reflect actual reading order within its series, Parent points to its real MOC, Related Notes are still valid links.
 5. **Status accuracy** — a note describing a settled decision is `stable`, not left at `draft`; a superseded note is `archived` and physically in `99 Archive/` if appropriate.
-6. **Cross-copy consistency** — where a document is deliberately mirrored (e.g. root `CLAUDE.md` and its vault copy at `00 Governance/CLAUDE.md`), the body content is byte-identical; only frontmatter/navigation differ.
+6. **Cross-copy consistency** — where a document is deliberately mirrored, the body content is byte-identical; only frontmatter/navigation differ. For CLAUDE.md this is enforced mechanically, not by review: `00 Governance/CLAUDE.md` is the canonical source and the root `CLAUDE.md` is generated from it by `scripts/sync-claude-md.sh`. Verify with `./scripts/sync-claude-md.sh --check`; never hand-edit the root file to resolve a mismatch.
 7. **No duplicate canonical content** — a concept documented once is linked to elsewhere, never re-explained in a second note (§19, README "One Template Library, Not Two" as the precedent case).
 
 ## Outputs

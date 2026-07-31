@@ -29,7 +29,9 @@ Key entry points inside the vault:
 | `09 Development/Build Plan/` | The 26-step execution plan from empty repo to first release |
 
 [`CLAUDE.md`](CLAUDE.md) at the repository root is the operating manual governing how Claude works
-in this codebase.
+in this codebase. **It is generated** — the canonical source is
+[`ProjectOne Vault/00 Governance/CLAUDE.md`](ProjectOne%20Vault/00%20Governance/CLAUDE.md). Edit
+that file and run `./scripts/sync-claude-md.sh`; never edit the root copy directly.
 
 ## Repository Structure
 
