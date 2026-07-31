@@ -13,10 +13,10 @@ step_status: Done
 
 **Status:** Done
 
-> [!warning] Owner approval gate — [[STEP-03 Web App Skeleton]] does not start
-> [[ADR-001 Technology Stack]] is at status `Review`, not `Accepted`. Per [[CLAUDE|CLAUDE.md]] §7, implementation waits for acceptance. This step is `Done` because the ADR was written and presented; the *decision* is still the owner's to make. Silence is never approval ([[Execution Protocol#Owner Approval Gates]]).
+> [!success] Owner approval gate — cleared 2026-07-31
+> [[ADR-001 Technology Stack]] is `Accepted`. The stack is settled and [[STEP-03 Web App Skeleton]] is unblocked ([[Execution Protocol#Owner Approval Gates]]).
 >
-> The language ambiguity this step surfaced is **resolved** (owner-confirmed 2026-07-31): TypeScript frontend, Python backend, now stated explicitly in [[CLAUDE|CLAUDE.md]] §10, [[Chapter 03 - TypeScript Standards]] §3.1 and [[Chapter 06 - FastAPI Architecture]]. ADR-001 also now records the OpenAPI type-generation obligation, deferred to the step that builds the API layer — no new Build Plan step was created.
+> The language ambiguity this step surfaced is **resolved** (owner-confirmed 2026-07-31): TypeScript frontend, Python backend, now stated explicitly in [[CLAUDE|CLAUDE.md]] §10, [[Chapter 03 - TypeScript Standards]] §3.1 and [[Chapter 06 - FastAPI Architecture]]. ADR-001 also records the OpenAPI type-generation obligation, deferred to the step that builds the API layer — no new Build Plan step was created.
 
 ## Goal
 
@@ -48,7 +48,7 @@ Record the technology stack as a formal, owner-accepted architectural decision �
 
 ## Definition of Done
 
-ADR-001 exists at status `Review` and is presented to the project owner for acceptance.
+ADR-001 exists at status `Review` and is presented to the project owner for acceptance. **Satisfied** — presented 2026-07-31 and `Accepted` the same day; no approval-related work remains.
 
 **Owner approval gate.** Per [[CLAUDE|CLAUDE.md]] §7, implementation of later steps may not begin until this ADR is `Accepted`. Claude marks this step `Done` when the ADR is written and presented — then **stops and waits**. STEP-03 does not start on an ADR still in `Review`.
 

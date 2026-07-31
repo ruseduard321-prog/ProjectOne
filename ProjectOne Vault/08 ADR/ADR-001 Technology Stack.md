@@ -1,7 +1,7 @@
 ---
 title: "ADR-001: Technology Stack"
 category: ADR
-status: review
+status: accepted
 version: "1.0"
 last_updated: 2026-07-31
 tags: [adr, decision, architecture, frontend, backend, database, ai]
@@ -12,9 +12,9 @@ adr_number: "0001"
 
 ## Status
 
-**Review** — awaiting project owner acceptance.
+**Accepted** — approved by the project owner on 2026-07-31.
 
-Per [[CLAUDE|CLAUDE.md]] §7, implementation may only begin once this ADR reaches `Accepted`. [[STEP-03 Web App Skeleton]] does not start while this remains in `Review`.
+This decision is now binding. Per [[CLAUDE|CLAUDE.md]] §7, implementation may proceed: the stack below is settled, and [[STEP-03 Web App Skeleton]] is unblocked. Changing any layer requires a new ADR that supersedes this one — this note is not amended in place.
 
 ## Context
 

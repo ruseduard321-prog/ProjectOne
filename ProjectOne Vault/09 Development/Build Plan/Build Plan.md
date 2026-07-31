@@ -85,7 +85,7 @@ As of 2026-07-31, **no application code exists yet**. STEP-01 is `Done`: the pro
 
 Every Project Bible note is still `status: draft` at v0.1 — the *specification* is transcribed, not accepted. Treat drafts as the best current source of truth and flag genuine ambiguity per [[CLAUDE|CLAUDE.md]] §33 rather than resolving it silently mid-step.
 
-[[ADR-001 Technology Stack]] is the first and only ADR, written by STEP-02 and currently at status `Review`. It is an **owner approval gate**: STEP-03 does not begin until it is `Accepted` ([[CLAUDE|CLAUDE.md]] §7).
+[[ADR-001 Technology Stack]] is the first and only ADR, written by STEP-02 and `Accepted` by the project owner on 2026-07-31. Its owner approval gate is cleared, so the stack is settled and STEP-03 onward may proceed ([[CLAUDE|CLAUDE.md]] §7).
 
 ---
 

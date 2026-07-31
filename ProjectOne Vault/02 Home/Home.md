@@ -100,7 +100,7 @@ Long-term product evolution across Foundation, Productivity and Scale phases.
 
 ## ADR
 
-Architecture Decision Records. [[ADR-001 Technology Stack]] (`Review`) is the first. Use [[ADR Template]] to log new decisions.
+Architecture Decision Records. [[ADR-001 Technology Stack]] (`Accepted`) is the first. Use [[ADR Template]] to log new decisions.
 → [[08 ADR]]
 
 ## Research
