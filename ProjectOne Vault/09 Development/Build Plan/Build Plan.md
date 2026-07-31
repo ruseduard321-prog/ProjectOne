@@ -23,7 +23,7 @@ This note is an **index, not a plan** — it holds only ID, title and status. St
 | `Not Started` | Untouched. |
 | `In Progress` | Claimed by the current session. Set before implementing, never left behind at session end. |
 | `Done` | Every [[Execution Protocol#Step Completion]] condition met — Definition of Done satisfied, validation passed, docs updated, status synchronized, no unresolved Critical issues. |
-| `Blocked` | Cannot proceed without a named unblocker, or failed validation and was rolled back. **Holds the queue** — the next step does not start ([[Execution Protocol#Validation Failure and Rollback]]). |
+| `Blocked` | Cannot proceed without a named unblocker, or failed validation. Rolled back where safe, reported as-is where rollback is unsafe. **Never committed** without explicit user approval ([[Execution Protocol#Blocked Steps Are Never Committed]]), so a blocked step leaves a dirty working tree by design. **Holds the queue** — the next step does not start ([[Execution Protocol#Validation Failure and Rollback]]). |
 
 Status appears in two places — the step note and the row below — and they must always agree.
 
