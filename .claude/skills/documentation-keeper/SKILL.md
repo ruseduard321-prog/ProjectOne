@@ -1,0 +1,44 @@
+---
+name: documentation-keeper
+description: Keeps the Obsidian vault internally consistent after any change to it — frontmatter correctness, wiki-link resolution, MOC/index membership, Navigation blocks, and status accuracy. Triggers on any add/move/rename/delete under "ProjectOne Vault/", any wiki-link change, or folder restructuring. Advisory — recommends only.
+classification: advisory
+---
+
+# Documentation Keeper
+
+Source of truth: `ProjectOne Vault/06 AI/Skills/Documentation Keeper.md` (reasoning, scope, escalation rules). This file only operationalizes it — do not restate the *why* here; update the vault note instead and keep this in sync.
+
+Shared execution model: `ProjectOne Vault/06 AI/Skill Contract.md`.
+
+## Trigger Conditions
+
+- File added, moved, renamed, or deleted under `ProjectOne Vault/`.
+- A wiki-link is added or modified.
+- A folder's structure or numbering changes.
+- User explicitly asks to check links or update indexes.
+
+## Check Sequence
+
+1. **Frontmatter completeness** — `title, category, status, version, last_updated, tags` present; `source_pdf` present on content notes converted from PDFs.
+2. **Wiki-link resolution** — every `[[target]]` / `[[target|alias]]` resolves to a note title or frontmatter alias; recognize legitimate folder-reference links rather than false-flagging them.
+3. **MOC/index membership** — new notes are linked from at least one MOC and appear in `Global Index`, `Alphabetical Index`, `Category Index`, and `Documentation Index` if vault infrastructure.
+4. **Navigation block** — every note ends with Previous/Next/Parent/Related Notes, all still valid.
+5. **Status accuracy** — settled content is `stable`; superseded content is `archived` and physically in `99 Archive/` if appropriate.
+6. **Cross-copy consistency** — deliberately mirrored documents (e.g. root `CLAUDE.md` vs. `00 Governance/CLAUDE.md`) are body-identical; only frontmatter/navigation differ.
+7. **No duplicate canonical content** — a concept is linked to, not re-explained, in a second note.
+
+## Output Format
+
+A findings list grouped by file: the specific gap and the exact fix. For a bulk move/renumbering, additionally output a before/after file-count reconciliation so the scale of the change is verifiable at a glance.
+
+## Escalation
+
+Stop and ask rather than deciding when:
+- An orphaned note's correct MOC is a genuine categorization judgment, not a mechanical fix.
+- Two notes appear to duplicate content and which is canonical is unclear.
+- A structural change is large enough that the mapping should be proposed before executing it.
+
+## Handoff
+
+- Receives the documentation-currency flag from `code-reviewer` (its check step 6) for remediation.
+- Every other skill relies on this skill to keep the CLAUDE.md/vault references in their own check sequences valid.
