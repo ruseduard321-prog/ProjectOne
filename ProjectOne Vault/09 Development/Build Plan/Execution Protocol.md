@@ -2,7 +2,7 @@
 title: Execution Protocol
 category: Development
 status: stable
-version: "1.1"
+version: "1.2"
 last_updated: 2026-07-31
 tags: [engineering, workflow, governance, ai]
 aliases: ["Build Plan Protocol", "Step Execution Rules"]
@@ -25,7 +25,9 @@ The rules Claude follows when the user says **"Implement the next step."** This 
 9. **Synchronize future steps** — reconcile the remaining outline steps against what was actually built; see [[#Future Step Synchronization]].
 10. **Expand the next step** — if the following step is marked `outline`, expand it to full detail now, while its context is loaded. Update its Detail column to `full`.
 11. **Mark Done** — only if every condition in [[#Step Completion]] is met. Set Status to `Done` in both the step note and the index.
-12. **Report and stop** — emit the [[#Step Completion Report]] and stop. Do not begin the next step.
+12. **Commit once** — stage everything the step produced and create **exactly one commit** containing implementation, documentation and [[Build Plan]] status updates together. See [[#One Step One Commit]].
+13. **Verify the tree is clean** — run `git status` and confirm there is nothing uncommitted. A dirty tree at this point means the step is not finished.
+14. **Report and stop** — emit the [[#Step Completion Report]] and stop. Do not begin the next step.
 
 ## Hard Rules
 
@@ -35,7 +37,41 @@ The rules Claude follows when the user says **"Implement the next step."** This 
 - **Never widen scope.** Work not in the step's Tasks belongs to a later step or to no step. No opportunistic refactors ([[CLAUDE|CLAUDE.md]] §29/§35).
 - **Never invent missing information.** If a step depends on a schema, contract or decision that is not documented, stop and say exactly what is missing ([[CLAUDE|CLAUDE.md]] §33–34). That is a `Blocked` step, not a guess.
 - **Status lives in two places and must agree.** The step note and the index. Updating one without the other is a defect.
+- **One step, one commit.** A step produces exactly one commit — never several, and never a commit that spans two steps. Splitting a step across commits is only permitted when the user explicitly asks for it ([[#One Step One Commit]]).
 - **Never leave the project in a partially completed or inconsistent state.** Every session ends at a coherent boundary: the step is finished, or it is rolled back and `Blocked`. Half-applied work with no marker is the one outcome this protocol exists to prevent.
+
+## One Step One Commit
+
+Every Build Plan step produces **exactly one commit**. Not one for the code and another for the docs, not a cleanup commit afterwards — one.
+
+The commit is created last, after the work is actually finished, in this order:
+
+1. Implement the step's Tasks.
+2. Run every check in the step's Validation section.
+3. Update all affected documentation ([[CLAUDE|CLAUDE.md]] §19).
+4. Update the [[Build Plan]] index row.
+5. Mark the step `Done` in both places ([[#Step Completion]]).
+6. Create one commit containing implementation, documentation and Build Plan updates together.
+7. Verify `git status` reports a clean tree.
+8. Report and stop.
+
+Steps 1–5 come before the commit deliberately: committing first and updating documentation afterwards is what produces the second commit this rule exists to prevent.
+
+### Why
+
+A step is the unit of work in this plan, so it should be the unit of history. One commit per step means `git log` reads as the Build Plan itself, each step is revertable in one operation, and there is no window in which the code says one thing and the Build Plan says another. Multiple commits per step turn a clean sequence into an archaeology problem for whoever reads it later — and this repository will be read far more often than it is written ([[CLAUDE|CLAUDE.md]] §38).
+
+### The Exception
+
+The user may explicitly ask for a step to be split across several commits. That is the only exception, it is never assumed, and a step's size is not a reason to invoke it — a large step is still one commit.
+
+### Commit Message
+
+The message follows [[CLAUDE|CLAUDE.md]] §20: atomic, and explaining *why* rather than restating the diff. Name the step (`STEP-NN`) so history and plan stay traceable to each other.
+
+### On Failure
+
+A step that fails validation is **not** committed as broken work. Follow [[#Validation Failure and Rollback]]: restore the last known good state, mark the step `Blocked`, and leave the failure documented in the step note. The `Blocked` status update is itself a documentation change, and is committed as the step's one commit — a rolled-back step still ends at a clean tree.
 
 ## Validation Failure and Rollback
 
@@ -64,6 +100,7 @@ A step may be marked `Done` only when **all** of the following hold:
 - [ ] All affected documentation has been updated ([[CLAUDE|CLAUDE.md]] §19).
 - [ ] The step note status and the [[Build Plan]] index row are synchronized.
 - [ ] No Critical issues remain unresolved ([[CLAUDE|CLAUDE.md]] §21).
+- [ ] The step's work is captured in exactly one commit and `git status` reports a clean tree ([[#One Step One Commit]]).
 
 If any condition fails, the step is **not** `Done`. Mark it `Blocked` when user intervention is required, `In Progress` when the remaining work is Claude's to finish in this session. There is no third option and no partial credit — partial completion is not completion ([[CLAUDE|CLAUDE.md]] §22).
 
@@ -79,6 +116,7 @@ Modified:      <files modified, or "none">
 Docs updated:  <vault notes updated, or "none">
 Tests run:     <what was executed>
 Validation:    <passed / failed — with the specific result>
+Commit:        <short SHA and subject — exactly one>
 Known issues:  <only if any exist; omit the line otherwise>
 Next step:     STEP-NN <title>
 ```
@@ -111,12 +149,13 @@ This is not laziness — a task list written against a codebase that does not ex
 
 ## Why This Exists
 
-[[Task Workflow]] describes the lifecycle of *any* ProjectOne task. This protocol is the narrower contract for *build-plan execution specifically*, closing the four failure modes that break long multi-session builds:
+[[Task Workflow]] describes the lifecycle of *any* ProjectOne task. This protocol is the narrower contract for *build-plan execution specifically*, closing the failure modes that break long multi-session builds:
 
 - **Ambiguity about what to do next** — answered by one deterministic question: what is the first step that is not `Done`?
 - **Silent scope creep across sessions** — bounded by the step's Tasks and nothing else.
 - **Inconsistent state left behind on failure** — closed by [[#Validation Failure and Rollback]]: every session ends finished or rolled back and `Blocked`, never half-applied.
 - **A plan drifting from the code it describes** — closed by [[#Future Step Synchronization]], which reconciles the remaining outline against what was actually built.
+- **History that no longer matches the plan** — closed by [[#One Step One Commit]]: one step is one commit, so the log and the Build Plan stay readable as the same sequence.
 
 Every session starts from the same question and ends at a verifiable boundary with a report of what changed.
 

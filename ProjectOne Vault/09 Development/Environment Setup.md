@@ -2,7 +2,7 @@
 title: Environment Setup
 category: Development
 status: stable
-version: "1.1"
+version: "1.2"
 last_updated: 2026-07-31
 tags: [engineering, documentation, ai, mcp]
 aliases: ["Local Development Setup", "AI Tooling Setup"]
@@ -19,7 +19,7 @@ The current state of ProjectOne's local development environment and AI operating
 - **Node.js:** v24.18.0
 - **npm:** 11.16.0
 - **Git:** available for local operations; `gh` CLI is **not installed** — GitHub operations go through the [[MCP/GitHub|GitHub MCP]], not the CLI
-- **Repository state:** ProjectOne is **not currently under git version control** locally — `git status`/`log`/`branch` all correctly report "not a git repository." This affects what [[MCP/GitHub|GitHub MCP]] can be validated against today.
+- **Repository state:** ProjectOne **is under git version control** as of STEP-01 — local repository on branch `main`, no remote configured yet. Until a remote exists, [[MCP/GitHub|GitHub MCP]] operations that presuppose one (push, PR creation) still cannot be validated.
 
 ## AI Operating Capabilities — Status Summary
 
@@ -53,13 +53,33 @@ See [[AI Index]] for the full catalog. Summary as of this validation pass:
 
 GitHub is available in-session but is **not** declared here — it is configured at a level above the project. Terminal, Playwright, and Computer Use are harness-native and never appear in `.mcp.json` at all, since they are not MCP servers.
 
+## Obsidian Vault Git Policy
+
+The vault is tracked because it is the product's source of truth. Inside `.obsidian/`, the split is between **configuration the project needs to behave identically on every machine** (tracked) and **per-user state** (ignored):
+
+| File | Tracked? | Why |
+|---|---|---|
+| `core-plugins.json` | **Tracked** | Which plugins the vault relies on — templates, properties, backlinks, graph. A machine missing these renders the vault differently. |
+| `community-plugins.json` | **Tracked** | Same reasoning, for community plugins, if any are adopted later. |
+| `app.json` | **Tracked** | Editor behavior (link format, attachment folder) that must not vary per person. |
+| `appearance.json` | **Tracked** | Baseline theme/appearance settings shared by the project. |
+| `workspace.json`, `workspace-mobile.json`, `workspaces.json` | Ignored | Window layout, open tabs and pane sizes — pure per-machine UI state. Churns on every session and conflicts constantly. |
+| `graph.json` | Ignored | Personal graph view: zoom, scale, forces, open/closed state. A view preference, not project configuration. |
+| `cache/`, `plugins/*/data.json` | Ignored | Regenerated locally; `data.json` may also hold per-user plugin credentials, which must never be committed ([[CLAUDE\|CLAUDE.md]] §16). |
+| `hotkeys.json`, `starred.json` | Ignored | Personal keybindings and bookmarks. |
+
+Two details worth knowing before editing these rules:
+
+- **The patterns are unanchored (`**/.obsidian/...`) deliberately.** There are two `.obsidian/` folders — one at the repository root and one inside `ProjectOne Vault/`. Root-anchored patterns like `.obsidian/workspace.json` silently miss the vault's copy, which is exactly how the vault's `workspace.json` and `graph.json` reached the initial commit and had to be untracked afterwards.
+- **Ignoring never untracks.** A file already in the index keeps being committed regardless of `.gitignore`. Removing one requires `git rm --cached`, which drops it from tracking while leaving it on disk.
+
 ## Setting Up a New Machine
 
 1. Install Node.js and npm (validated against v24.18.0 / 11.16.0 — the exact versions are not a hard requirement, but this is the last known-good baseline).
 2. Ensure `.mcp.json` is present at the project root — the Filesystem server bootstraps automatically via `npx` on first use, no manual install step required.
 3. Terminal, Playwright (Chromium), and Computer Use are available immediately with no setup — they ship with the Claude Code harness itself.
 4. If GitHub operations are needed, confirm the GitHub MCP server is configured at the appropriate level (user/global config) — this is outside `.mcp.json` and outside this repository's version control.
-5. Initialize git version control in the project root before relying on any GitHub MCP operation that presupposes a repository (branch creation, PR creation, push).
+5. Clone the repository rather than initializing one — git version control already exists (STEP-01). A remote is not configured yet, so GitHub MCP operations that presuppose one still cannot be used.
 6. Firefox and WebKit browser binaries are **not** installed by default (Chromium only) — install deliberately with `npx playwright install firefox webkit` only if cross-browser manual validation becomes necessary; this is a real download/disk-write action, not a no-op.
 
 ## Known Gaps

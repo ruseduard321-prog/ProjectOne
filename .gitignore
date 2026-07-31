@@ -71,9 +71,20 @@ desktop.ini
 
 # ---------------------------------------------------------------------------
 # Obsidian
-# The vault itself is tracked (it is the source of truth); only per-machine
-# workspace state is not.
+# The vault itself is tracked — it is the source of truth, not scratch work.
+# Inside .obsidian/, shared project configuration is tracked and per-user state
+# is not. Tracked: app.json, appearance.json, core-plugins.json, community-plugins.json
+# (these make the vault behave the same on every machine). Ignored below: window
+# layout, personal graph view, caches and recovery data.
+#
+# Patterns are unanchored on purpose — they must match .obsidian/ at the repo
+# root AND the vault's own .obsidian/ at "ProjectOne Vault/.obsidian/".
 # ---------------------------------------------------------------------------
-.obsidian/workspace.json
-.obsidian/workspace-mobile.json
-.obsidian/cache
+**/.obsidian/workspace.json
+**/.obsidian/workspace-mobile.json
+**/.obsidian/workspaces.json
+**/.obsidian/graph.json
+**/.obsidian/cache/
+**/.obsidian/plugins/*/data.json
+**/.obsidian/starred.json
+**/.obsidian/hotkeys.json
