@@ -6,12 +6,17 @@ version: "1.0"
 last_updated: 2026-07-31
 tags: [engineering, workflow, build-step, architecture]
 step_id: STEP-02
-step_status: Not Started
+step_status: Done
 ---
 
 # STEP-02 — Stack Confirmation ADR
 
-**Status:** Not Started
+**Status:** Done
+
+> [!warning] Owner approval gate — [[STEP-03 Web App Skeleton]] does not start
+> [[ADR-001 Technology Stack]] is at status `Review`, not `Accepted`. Per [[CLAUDE|CLAUDE.md]] §7, implementation waits for acceptance. This step is `Done` because the ADR was written and presented; the *decision* is still the owner's to make. Silence is never approval ([[Execution Protocol#Owner Approval Gates]]).
+>
+> ADR-001 also asks one direct question: §10 lists TypeScript as *the* language while mandating FastAPI (Python). The ADR reads this as TypeScript-frontend / Python-backend and requests confirmation.
 
 ## Goal
 

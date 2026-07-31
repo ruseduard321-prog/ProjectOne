@@ -34,7 +34,7 @@ Status appears in two places — the step note and the row below — and they mu
 | ID | Title | Status | Detail |
 |---|---|---|---|
 | STEP-01 | [[STEP-01 Repository Bootstrap]] | Done | full |
-| STEP-02 | [[STEP-02 Stack Confirmation ADR]] | Not Started | full |
+| STEP-02 | [[STEP-02 Stack Confirmation ADR]] | Done | full |
 | STEP-03 | [[STEP-03 Web App Skeleton]] | Not Started | full |
 | STEP-04 | [[STEP-04 API App Skeleton]] | Not Started | full |
 | STEP-05 | [[STEP-05 Environment and Secrets]] | Not Started | full |
@@ -85,7 +85,7 @@ As of 2026-07-31, **no application code exists yet**. STEP-01 is `Done`: the pro
 
 Every Project Bible note is still `status: draft` at v0.1 — the *specification* is transcribed, not accepted. Treat drafts as the best current source of truth and flag genuine ambiguity per [[CLAUDE|CLAUDE.md]] §33 rather than resolving it silently mid-step.
 
-No ADRs exist. STEP-02 writes the first.
+[[ADR-001 Technology Stack]] is the first and only ADR, written by STEP-02 and currently at status `Review`. It is an **owner approval gate**: STEP-03 does not begin until it is `Accepted` ([[CLAUDE|CLAUDE.md]] §7).
 
 ---
 

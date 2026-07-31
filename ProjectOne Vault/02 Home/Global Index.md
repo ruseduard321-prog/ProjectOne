@@ -92,7 +92,7 @@ Every note in the vault, grouped by folder. This is the exhaustive map — for c
 
 ## 08 ADR
 
-- (empty — see [[ADR Template]])
+- [[ADR-001 Technology Stack]] — `Review`
 
 ## 09 Development
 
