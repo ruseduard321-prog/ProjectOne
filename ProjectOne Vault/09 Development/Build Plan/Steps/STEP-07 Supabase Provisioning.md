@@ -2,7 +2,7 @@
 title: STEP-07 Supabase Provisioning
 category: Development/Build Step
 status: draft
-version: "1.0"
+version: "1.1"
 last_updated: 2026-07-31
 tags: [engineering, workflow, build-step, database]
 step_id: STEP-07
@@ -31,7 +31,7 @@ A provisioned development database with a tracked migration tool wired up — th
 ## Tasks
 
 1. Provision a Supabase project for **development only**. Staging and production come later, per [[CLAUDE|CLAUDE.md]] §28a.
-2. Wire the connection through the STEP-05 config system. Credentials go in the local `.env`, never the repository.
+2. Wire the connection through the STEP-05 config system — add the fields to `apps/api/app/core/config.py` and the corresponding placeholders to `apps/api/.env.example`, following the "Adding a Variable" sequence in [[Environment and Secrets]]. Credentials go in the local `.env`, never the repository. **Server-only credentials belong in `apps/api`; a service-role key must never carry the `NEXT_PUBLIC_` prefix or reach `apps/web`** — that prefix publishes the value into the browser bundle.
 3. Set up the migration tool so every schema change is a tracked, version-controlled file. Manual SQL against a live database is forbidden ([[CLAUDE|CLAUDE.md]] §13).
 4. Add migration commands to `scripts/`, idempotent and documented.
 5. Create one no-op or trivial migration and apply it, proving the pipeline works end to end.

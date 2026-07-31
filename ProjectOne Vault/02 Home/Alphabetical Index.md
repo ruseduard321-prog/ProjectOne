@@ -2,7 +2,7 @@
 title: Alphabetical Index
 category: Index
 status: stable
-version: "1.1"
+version: "1.2"
 last_updated: 2026-07-31
 tags: [index, documentation]
 ---
@@ -38,6 +38,7 @@ All content notes (MOCs and templates excluded), A–Z.
 - [[Deployment Strategy]]
 - [[Design System]]
 - [[Documentation Discovery]]
+- [[Environment and Secrets]]
 - [[Environment Setup]]
 - [[Frontend Architecture]]
 - [[Infrastructure]]

@@ -2,7 +2,7 @@
 title: Category Index
 category: Index
 status: stable
-version: "1.2"
+version: "1.3"
 last_updated: 2026-07-31
 tags: [index, documentation]
 ---
@@ -21,7 +21,7 @@ Notes grouped by `category` frontmatter value.
 
 ## engineering
 
-[[Chapter 01 - Development Philosophy]] · [[Chapter 02 - Repository Architecture]] · [[Chapter 03 - TypeScript Standards]] · [[Chapter 04 - React Standards]] · [[Chapter 05 - NextJS Architecture]] · [[Chapter 06 - FastAPI Architecture]] · [[Chapter 07 - Database Standards]] · [[Chapter 08 - AI Engineering Standards]] · [[Chapter 09 - Security Standards]] · [[Chapter 10 - Testing Standards]] · [[Chapter 11 - Code Review Standards]] · [[Environment Setup]]
+[[Chapter 01 - Development Philosophy]] · [[Chapter 02 - Repository Architecture]] · [[Chapter 03 - TypeScript Standards]] · [[Chapter 04 - React Standards]] · [[Chapter 05 - NextJS Architecture]] · [[Chapter 06 - FastAPI Architecture]] · [[Chapter 07 - Database Standards]] · [[Chapter 08 - AI Engineering Standards]] · [[Chapter 09 - Security Standards]] · [[Chapter 10 - Testing Standards]] · [[Chapter 11 - Code Review Standards]] · [[Environment Setup]] · [[Environment and Secrets]]
 
 ## architecture
 

@@ -2,7 +2,7 @@
 title: Development MOC
 category: MOC
 status: stable
-version: "1.1"
+version: "1.2"
 last_updated: 2026-07-31
 tags: [moc, engineering, documentation]
 aliases: ["Development Map of Content"]
@@ -33,6 +33,7 @@ Practices, standards and process documentation for day-to-day engineering work.
 ## Environment & Tooling
 
 - [[Environment Setup]] — current local development environment and AI operating capability status, as verified by direct validation
+- [[Environment and Secrets]] — the dev/staging/production split, configuration loading, secret handling and the feature-flag convention
 
 ## Templates for Development Work
 

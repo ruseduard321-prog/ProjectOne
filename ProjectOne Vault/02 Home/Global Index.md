@@ -2,7 +2,7 @@
 title: Global Index
 category: Index
 status: stable
-version: "1.2"
+version: "1.3"
 last_updated: 2026-07-31
 tags: [index, documentation]
 ---
@@ -98,6 +98,7 @@ Every note in the vault, grouped by folder. This is the exhaustive map — for c
 
 - [[Development MOC]]
 - [[Environment Setup]]
+- [[Environment and Secrets]]
 
 **Build Plan:** [[Build Plan]] (step index) · [[Execution Protocol]] (execution rules)
 

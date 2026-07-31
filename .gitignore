@@ -5,7 +5,12 @@
 # ---------------------------------------------------------------------------
 .env
 .env.*
-!.env.example
+# Templates are committed — they name required variables and carry only
+# placeholders. The negation is unanchored (**/) so it reaches apps/web and
+# apps/api, not just the repository root: an anchored "!.env.example" leaves
+# every per-app template ignored, which is how a template silently goes
+# missing from a fresh clone.
+!**/.env.example
 *.pem
 *.key
 *.p12

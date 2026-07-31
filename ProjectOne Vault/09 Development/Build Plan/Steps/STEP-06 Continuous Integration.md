@@ -2,7 +2,7 @@
 title: STEP-06 Continuous Integration
 category: Development/Build Step
 status: draft
-version: "1.1"
+version: "1.2"
 last_updated: 2026-07-31
 tags: [engineering, workflow, build-step, testing]
 step_id: STEP-06
@@ -35,6 +35,7 @@ CI enforcing lint, type-check and tests on every push — established now, while
 4. Configure the test runners for both apps. An empty suite must **pass**, not error on "no tests found" — otherwise the pipeline is red from day one and everyone learns to ignore it. This applies to `apps/web`, which still has no runner; `apps/api` already runs pytest.
 5. Add one trivial passing test to `apps/web` to prove its runner actually executes. `apps/api` already has real tests from [[STEP-04 API App Skeleton]] (`tests/test_health.py`) — no placeholder is needed there.
 6. Ensure CI never has access to production secrets; use repository secrets scoped to non-production only.
+7. **Supply both apps' required environment variables to the CI jobs.** As of [[STEP-05 Environment and Secrets]] neither app starts or builds without them — `apps/web` fails at `next build` and `apps/api` exits non-zero — so a pipeline that omits them is red on arrival. Non-secret placeholder values (the `.env.example` defaults, `environment=development`) are correct here; nothing in CI needs a real credential yet. See [[Environment and Secrets]].
 
 ## Validation
 

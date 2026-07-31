@@ -32,6 +32,10 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# The template is committed — placeholders only, never real values. Needed
+# here as well as at the repository root: this file is nearer the path, so its
+# .env* rule wins over the root negation (CLAUDE.md §28a).
+!.env.example
 
 # vercel
 .vercel
