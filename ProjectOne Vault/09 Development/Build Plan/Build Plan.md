@@ -38,7 +38,7 @@ Status appears in two places — the step note and the row below — and they mu
 | STEP-03 | [[STEP-03 Web App Skeleton]] | Done | full |
 | STEP-04 | [[STEP-04 API App Skeleton]] | Done | full |
 | STEP-05 | [[STEP-05 Environment and Secrets]] | Done | full |
-| STEP-06 | [[STEP-06 Continuous Integration]] | Blocked | full |
+| STEP-06 | [[STEP-06 Continuous Integration]] | In Progress | full |
 | STEP-07 | [[STEP-07 Supabase Provisioning]] | Not Started | full |
 | STEP-08 | [[STEP-08 Users and Workspaces Schema]] | Not Started | full |
 | STEP-09 | [[STEP-09 Row Level Security Policies]] | Not Started | full |
@@ -87,7 +87,9 @@ As of 2026-07-31, the project root is a git repository on branch `main` with the
 
 **Both apps now validate their configuration at startup and refuse to run without it** (STEP-05). `.env.example` templates are committed for both; real `.env` files are ignored. No secret exists in the repository yet — the first arrives with STEP-07. Conventions are documented in [[Environment and Secrets]], **approved by the project owner on 2026-07-31** as a Critical change; that owner approval gate is cleared and STEP-06 onward may proceed.
 
-**CI is live** (STEP-06). A GitHub remote exists at `github.com/ruseduard321-prog/ProjectOne`, and every push and pull request runs lint, type-check, tests and build for both apps. `apps/web` gained a Vitest runner and its first tests. STEP-06 was briefly `Blocked` on the missing remote and is now resolved; see [[STEP-06 Continuous Integration#Outcome]].
+**A GitHub remote now exists** at `github.com/ruseduard321-prog/ProjectOne` (private), and all six commits are pushed. CI is committed and triggered: every push and pull request runs lint, type-check, tests and build for both apps. `apps/web` gained a Vitest runner and its first 7 tests.
+
+STEP-06 is `In Progress`, not `Done` — the workflow run's result cannot be observed from this environment (private repo, unauthenticated browser, no workflow-run tool in [[MCP/GitHub|GitHub MCP]]), and marking it `Done` unobserved would violate [[Execution Protocol#Hard Rules]]. **One owner confirmation that the run is green closes it.** See [[STEP-06 Continuous Integration#Outcome]].
 
 The vault, Claude OS and AI operating capabilities are built and validated ([[Environment Setup]], [[AI Index]]).
 
