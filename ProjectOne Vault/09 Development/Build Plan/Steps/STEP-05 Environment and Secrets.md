@@ -2,7 +2,7 @@
 title: STEP-05 Environment and Secrets
 category: Development/Build Step
 status: draft
-version: "1.2"
+version: "1.3"
 last_updated: 2026-07-31
 tags: [engineering, workflow, build-step, security]
 step_id: STEP-05
@@ -13,10 +13,10 @@ step_status: Done
 
 **Status:** Done
 
-> [!warning] Owner review required before STEP-06
-> This step is a **Critical change** ([[CLAUDE|CLAUDE.md]] §21 — security controls). Its Definition of Done is satisfied and it is committed, but [[Execution Protocol#Owner Approval Gates]] holds the queue here: **[[STEP-06 Continuous Integration]] does not begin until the project owner confirms this step.** Silence is never approval.
+> [!success] Owner review cleared — approved 2026-07-31
+> This step is a **Critical change** ([[CLAUDE|CLAUDE.md]] §21 — security controls), so [[Execution Protocol#Owner Approval Gates]] held the queue after it was committed. **The project owner approved it on 2026-07-31**, and [[STEP-06 Continuous Integration]] may proceed.
 >
-> What to review: the secret-handling policy in [[Environment and Secrets]], the required-variable choice (no default for `environment`), and the `.gitignore` fix that makes `apps/web/.env.example` trackable.
+> Approved as built, with no requested changes: the secret-handling policy in [[Environment and Secrets]], the required-variable choice (no default for `environment`), and the `.gitignore` fix making `apps/web/.env.example` trackable.
 
 ## Goal
 

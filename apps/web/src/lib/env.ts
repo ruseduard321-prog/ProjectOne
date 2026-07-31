@@ -79,14 +79,37 @@ export function parseEnv(source: Record<string, string | undefined>): Env {
   };
 }
 
+let cached: Env | undefined;
+
 /**
- * The validated configuration for this process.
+ * Read and validate this process's configuration, memoized.
  *
  * Next.js inlines `process.env.NEXT_PUBLIC_*` at build time, so these must be
  * referenced as full literal property accesses rather than looked up
  * dynamically — a computed lookup would be replaced with `undefined`.
  */
-export const env: Env = parseEnv({
-  NEXT_PUBLIC_PROJECTONE_ENVIRONMENT: process.env.NEXT_PUBLIC_PROJECTONE_ENVIRONMENT,
-  NEXT_PUBLIC_PROJECTONE_API_URL: process.env.NEXT_PUBLIC_PROJECTONE_API_URL,
+function loadEnv(): Env {
+  cached ??= parseEnv({
+    NEXT_PUBLIC_PROJECTONE_ENVIRONMENT: process.env.NEXT_PUBLIC_PROJECTONE_ENVIRONMENT,
+    NEXT_PUBLIC_PROJECTONE_API_URL: process.env.NEXT_PUBLIC_PROJECTONE_API_URL,
+  });
+
+  return cached;
+}
+
+/**
+ * The validated configuration for this process.
+ *
+ * Validation runs on first property access rather than at import time. The
+ * difference matters for testability: an eagerly-validated export throws while
+ * the module is being imported, so a test file could not import {@link
+ * parseEnv} without a fully configured environment — which is precisely the
+ * isolation that function was separated out to allow.
+ *
+ * Behavior at call sites is unchanged. Anything that reads `env.environment`
+ * during a build or a request still fails immediately and loudly when
+ * configuration is missing; only the moment of validation moved.
+ */
+export const env: Env = new Proxy({} as Env, {
+  get: (_target, property: keyof Env) => loadEnv()[property],
 });

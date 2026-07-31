@@ -2,7 +2,7 @@
 title: Environment and Secrets
 category: Development
 status: stable
-version: "1.0"
+version: "1.1"
 last_updated: 2026-07-31
 tags: [engineering, security, configuration, documentation]
 aliases: ["Environment Configuration", "Secrets Policy", "Feature Flags"]
@@ -13,6 +13,8 @@ aliases: ["Environment Configuration", "Secrets Policy", "Feature Flags"]
 How ProjectOne configures itself across environments, where secrets live, and how incomplete work reaches production safely. This note is the operational detail behind [[CLAUDE|CLAUDE.md]] §28a; it does not restate the rules there, it says how they are actually implemented.
 
 Established by [[STEP-05 Environment and Secrets]], deliberately **before the first real credential exists** ([[STEP-07 Supabase Provisioning]]) — so the first secret lands in a system already built to protect it rather than one retrofitted around it.
+
+**Approved by the project owner on 2026-07-31** as a Critical change ([[CLAUDE|CLAUDE.md]] §21 — security controls). The policies below are settled: changing them is a deliberate decision requiring owner review again, not an implementation detail a later step may quietly revise. The three decisions explicitly reviewed were the required `environment` variable with no default, the per-app `.gitignore` negation, and documenting the feature-flag convention without building its mechanism.
 
 ## The Three Environments
 

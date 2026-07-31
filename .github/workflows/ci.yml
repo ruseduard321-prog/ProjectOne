@@ -1,0 +1,102 @@
+name: CI
+
+# Every push and every pull request. Established while the codebase is still a
+# skeleton so that every later step lands into a pipeline already policing it,
+# rather than having quality gates retrofitted onto existing work (STEP-06).
+on:
+  push:
+  pull_request:
+
+# A new push to the same branch cancels the previous run. Without this, a burst
+# of commits queues redundant runs and the useful result is the last one anyway.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Read-only by default (CLAUDE.md §16, least privilege). A job needing more
+# must widen its own scope explicitly, which makes the widening reviewable.
+permissions:
+  contents: read
+
+jobs:
+  web:
+    name: web (lint, typecheck, test, build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+
+    # Non-secret placeholders. Both apps refuse to start without validated
+    # configuration (STEP-05), so a pipeline that omits these is red on arrival.
+    # These are the .env.example defaults: CI needs no real credential, and
+    # repository secrets are deliberately not wired in here — there is nothing
+    # yet that CI is entitled to read.
+    env:
+      NEXT_PUBLIC_PROJECTONE_ENVIRONMENT: development
+      NEXT_PUBLIC_PROJECTONE_API_URL: http://127.0.0.1:8000
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      # `npm ci` rather than `npm install`: it installs exactly the lockfile and
+      # fails if package.json and the lock have drifted, which is the property
+      # that makes a CI run reproducible.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      # Build last: it is the slowest step and the one most likely to surface a
+      # problem the faster checks already caught more cheaply.
+      - name: Build
+        run: npm run build
+
+  api:
+    name: api (lint, format, typecheck, test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+
+    env:
+      PROJECTONE_ENVIRONMENT: development
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Matches the `requires-python = ">=3.12"` floor in pyproject.toml, not
+      # the newer interpreter that happens to be on a developer machine. CI
+      # verifies the oldest supported version; anything newer is a bonus, not
+      # the contract (STEP-04).
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install -e ".[dev]"
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Check formatting
+        run: ruff format --check .
+
+      - name: Type-check
+        run: mypy app
+
+      - name: Test
+        run: pytest

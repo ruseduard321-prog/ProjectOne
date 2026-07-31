@@ -2,7 +2,7 @@
 title: Environment Setup
 category: Development
 status: stable
-version: "1.4"
+version: "1.5"
 last_updated: 2026-07-31
 tags: [engineering, documentation, ai, mcp]
 aliases: ["Local Development Setup", "AI Tooling Setup"]
@@ -21,7 +21,7 @@ For how configuration and secrets are handled across environments — the dev/st
 - **Node.js:** v24.18.0
 - **npm:** 11.16.0
 - **Git:** available for local operations; `gh` CLI is **not installed** — GitHub operations go through the [[MCP/GitHub|GitHub MCP]], not the CLI
-- **Repository state:** ProjectOne **is under git version control** as of STEP-01 — local repository on branch `main`, no remote configured yet. Until a remote exists, [[MCP/GitHub|GitHub MCP]] operations that presuppose one (push, PR creation) still cannot be validated.
+- **Repository state:** ProjectOne **is under git version control** as of STEP-01 — local repository on branch `main`, with a GitHub remote at `github.com/ruseduard321-prog/ProjectOne` added by the project owner on 2026-07-31 (STEP-06). CI runs there on every push and pull request. The `gh` CLI is still **not installed**; GitHub operations go through the [[MCP/GitHub|GitHub MCP]] or plain `git`.
 - **Python:** 3.14.6, invoked as `py` on this machine (the Windows launcher). `apps/api` declares `requires-python = ">=3.12"` — 3.14 is what is installed here, not a floor the project imposes.
 - **Web application:** `apps/web` exists as of STEP-03 — Next.js 16.2.12, React 19.2.4, TypeScript strict, Tailwind v4, ESLint 9. Run it with `npm run dev` from `apps/web` (defaults to port 3000). `npm run lint` and `npm run typecheck` are the validation entry points. Note that `next lint` was removed in Next.js 16; lint runs through ESLint directly. Requires `.env.local` — it will not build or start without one ([[Environment and Secrets]]).
 - **API application:** `apps/api` exists as of STEP-04 — FastAPI 0.121.2, Pydantic 2.12.4, Uvicorn 0.38.0, with Ruff 0.14.5, mypy 1.18.2 and pytest 8.4.2 as dev tooling. Dependencies are pinned exactly in `pyproject.toml` and installed into a local virtual environment at `apps/api/.venv/` (git-ignored). Run it with `.venv/Scripts/python -m uvicorn app.main:app --reload` from `apps/api` (port 8000). Validation entry points: `ruff check .`, `ruff format --check .`, `mypy app`, `pytest`. Interactive API docs are at `/docs`, the OpenAPI contract at `/openapi.json`. Requires `.env` — it will not start without one ([[Environment and Secrets]]).
