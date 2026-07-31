@@ -33,7 +33,7 @@ Status appears in two places — the step note and the row below — and they mu
 
 | ID | Title | Status | Detail |
 |---|---|---|---|
-| STEP-01 | [[STEP-01 Repository Bootstrap]] | In Progress | full |
+| STEP-01 | [[STEP-01 Repository Bootstrap]] | Done | full |
 | STEP-02 | [[STEP-02 Stack Confirmation ADR]] | Not Started | full |
 | STEP-03 | [[STEP-03 Web App Skeleton]] | Not Started | full |
 | STEP-04 | [[STEP-04 API App Skeleton]] | Not Started | full |
@@ -81,7 +81,7 @@ This plan is derived from, and must stay consistent with, the vault. If this pla
 
 ## Current State
 
-As of 2026-07-31, **no application code exists** — no `apps/`, `packages/` or `infrastructure/` directories, and the project root is not yet a git repository. The vault, Claude OS and AI operating capabilities are built and validated ([[Environment Setup]], [[AI Index]]).
+As of 2026-07-31, **no application code exists yet**. STEP-01 is `Done`: the project root is a git repository on branch `main` with one commit, and the canonical skeleton (`apps/`, `packages/`, `infrastructure/`, `docs/`, `scripts/`, `.github/`) exists but holds no implementation — the directories are placeholders awaiting STEP-03 onward. The vault, Claude OS and AI operating capabilities are built and validated ([[Environment Setup]], [[AI Index]]).
 
 Every Project Bible note is still `status: draft` at v0.1 — the *specification* is transcribed, not accepted. Treat drafts as the best current source of truth and flag genuine ambiguity per [[CLAUDE|CLAUDE.md]] §33 rather than resolving it silently mid-step.
 
