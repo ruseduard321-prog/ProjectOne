@@ -67,12 +67,53 @@ class Settings(BaseSettings):
     # .get_secret_value() (CLAUDE.md §16, §25).
     supabase_url: str = Field(alias="SUPABASE_URL")
     supabase_secret_key: SecretStr = Field(alias="SUPABASE_SECRET_KEY")
+
+    # The **privileged** connection, connecting as `postgres`. Correct for
+    # Alembic, which must create tables and policies, and wrong for serving
+    # requests: `postgres` carries `rolbypassrls`, so every RLS policy is
+    # skipped for it (STEP-09, RLS Policy Pattern).
+    #
+    # Nothing on the request path may use this. `request_database_url` below is
+    # what serves requests, and the split is the whole point.
     database_url: SecretStr = Field(alias="DATABASE_URL")
+
+    # The **request-path** connection, connecting as a role WITHOUT
+    # `rolbypassrls` (`authenticator`). Every tenant query goes over this one so
+    # the STEP-09 policies actually apply — see AuthenticatedSession.
+    #
+    # Required, deliberately with no fallback to `database_url`: a default that
+    # silently reused the privileged connection would turn a missing variable
+    # into total, invisible loss of tenant isolation. Failing to start is the
+    # only safe behaviour (CLAUDE.md §16).
+    request_database_url: SecretStr = Field(alias="REQUEST_DATABASE_URL")
 
     # Bounded on purpose. A health check that can hang holds a worker and turns
     # a degraded database into an unresponsive API — the failure mode the check
     # exists to report, caused by the check itself.
     database_health_timeout_seconds: int = 5
+
+    # How long a fetched JWKS key set is trusted before being re-fetched.
+    # Supabase rotates signing keys, and a cache with no expiry would keep
+    # rejecting valid tokens after a rotation until the process restarted.
+    jwks_cache_seconds: int = 600
+
+    # Bounded so a slow or unreachable Supabase cannot hold a request worker
+    # open indefinitely.
+    supabase_timeout_seconds: int = 10
+
+    @property
+    def supabase_auth_url(self) -> str:
+        """Return the base URL of the Supabase Auth (GoTrue) API."""
+        return f"{self.supabase_url.rstrip('/')}/auth/v1"
+
+    @property
+    def jwt_issuer(self) -> str:
+        """Return the `iss` claim value tokens from this project must carry.
+
+        Verified rather than ignored: a signature check alone would accept a
+        correctly-signed token issued by a *different* Supabase project.
+        """
+        return self.supabase_auth_url
 
 
 @lru_cache

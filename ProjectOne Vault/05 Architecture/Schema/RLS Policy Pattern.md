@@ -140,9 +140,64 @@ ALTER TABLE public.<table> FORCE ROW LEVEL SECURITY;
 > [!danger] `service_role` bypasses RLS and no policy can stop it
 > The role behind `SUPABASE_SECRET_KEY` carries `rolbypassrls`. It reads and writes **every row in every table regardless of policy**, and this is not fixable in a migration.
 >
-> The control is architectural, not technical: **the API must not use the secret key for tenant-scoped queries.** Cross-tenant needs go through an audited service path ([[CLAUDE|CLAUDE.md]] §16 — admin and internal tooling do not bypass RLS), which does not exist yet. [[STEP-10 Authentication Backend]] owns establishing which role the API actually connects as, and it must not be this one.
+> The control is architectural, not technical: **the API must not use the secret key for tenant-scoped queries.** Cross-tenant needs go through an audited service path ([[CLAUDE|CLAUDE.md]] §16 — admin and internal tooling do not bypass RLS), which does not exist yet.
 
-The same applies to `postgres`, which holds both `rolbypassrls` and `rolsuper` and is what `DATABASE_URL` currently connects as — appropriate for migrations, never for serving requests.
+The same applies to `postgres`, which holds both `rolbypassrls` and `rolsuper`.
+
+## The Two Connections
+
+**Resolved by [[STEP-10 Authentication Backend]].** The API uses two database connections, as different roles, and conflating them removes tenant isolation entirely:
+
+| Connection | Role | Bypasses RLS | Used for |
+|---|---|---|---|
+| `DATABASE_URL` | `postgres` | **Yes** — `rolbypassrls` + `rolsuper` | Alembic migrations only |
+| `REQUEST_DATABASE_URL` | `projectone_api` | **No** | Every request |
+
+`projectone_api` is created by migration `d7b95c1f4e08`. Supabase's own `authenticator` was the obvious candidate and was rejected: it is a reserved role that `postgres` cannot alter on managed Supabase (`ALTER ROLE authenticator WITH PASSWORD` fails), and its definition belongs to the platform rather than to this project.
+
+Three attributes carry the weight, and none is a default:
+
+- **`NOBYPASSRLS`** — the entire point. Policies apply.
+- **`NOSUPERUSER`** — a superuser bypasses RLS regardless of `NOBYPASSRLS`.
+- **`NOINHERIT`** — it is granted `authenticated` but holds none of its privileges until it explicitly `SET ROLE`s. A request path that skipped the role switch therefore reads **nothing** rather than everything: the bug fails closed, loudly, instead of silently serving unfiltered data.
+
+`REQUEST_DATABASE_URL` deliberately has **no fallback** to `DATABASE_URL`. A default that silently reused the privileged connection would turn a forgotten environment variable into total, invisible loss of isolation, so the API refuses to start instead.
+
+### How the claim is set
+
+Per **transaction**, never per connection:
+
+```sql
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claim.sub', <verified sub>, true);
+```
+
+Both revert on commit *and* on rollback, which is what makes connection reuse safe. The session-scoped forms (`SET ROLE`, `set_config(..., false)`) look equivalent and are a cross-tenant breach: the claim outlives the request and the next caller to borrow that pooled connection inherits the previous caller's identity.
+
+> [!warning] This leak was reproduced, not theorised
+> During STEP-10, a session-scoped `set_config` left the claim set after its transaction committed. A subsequent session with *no* claim read the previous user's workspace. `test_claim_does_not_leak_between_sessions` guards it permanently — and note that a single-request test cannot catch it, because the first request always looks correct.
+
+`set_config` rather than `SET LOCAL` because `SET` does not accept bind parameters: a user id could only reach it through string interpolation. `set_config` takes it as a parameter, keeping a token-derived value out of the SQL text.
+
+## Grants Are a Second, Independent Gate
+
+A grant decides whether a role may attempt a command; a policy decides which rows it then touches. **Both must be right.**
+
+Until [[STEP-10 Authentication Backend]], RLS was doing all the work: `anon` and `authenticated` held full DML on every table (`arwdDxtm`) and were held back purely by policies matching no rows. One forgotten policy on a future table would have exposed it to an unauthenticated role. Migration `c4f21a86b3de` narrows this:
+
+| Role | After |
+|---|---|
+| `anon` | **Nothing.** No policy names it, so the grant was pure latent surface. |
+| `authenticated` | `SELECT`, `INSERT`, `UPDATE` — exactly the three commands policies exist for. |
+
+`DELETE` is revoked from both, so the grant now agrees with the deliberate absence of a DELETE policy. **`TRUNCATE` matters most**: it is not subject to RLS *at all*, so a role holding it can empty a tenant table regardless of every policy on it.
+
+> [!warning] Revoking the existing tables is not enough
+> Supabase ships `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated, service_role`, so **every table created from now on** is automatically granted full DML to `anon` and `authenticated` — DELETE and TRUNCATE included. Revoking only today's tables would leave the next tenant table arriving wide open.
+>
+> This is the same class of defect STEP-09 found with `REVOKE ... FROM PUBLIC` failing to revoke `anon`'s EXECUTE: Supabase's defaults are granted to roles **by name**, so they must be addressed by name. `c4f21a86b3de` alters the default privileges too, and `test_future_tables_do_not_inherit_permissive_grants` creates a real table and inspects what it inherited.
+>
+> **Known residue:** `supabase_admin` owns a second copy of these defaults that `postgres` cannot alter (it is not a superuser on managed Supabase). That copy governs tables *Supabase* creates, not ProjectOne's, because Alembic connects as `postgres`.
 
 ## Adding a New Tenant Table
 
@@ -150,8 +205,10 @@ The same applies to `postgres`, which holds both `rolbypassrls` and `rolsuper` a
 2. In the **same migration**: `ENABLE` and `FORCE` row level security.
 3. Add SELECT / INSERT / UPDATE policies `TO authenticated` routing through `app_current_user_workspaces()`. No DELETE policy.
 4. Filter `deleted_at IS NULL` in every `USING` clause.
-5. Add an isolation test to `apps/api/tests/test_rls_isolation.py` proving a user from workspace A cannot read, update or delete workspace B's rows.
-6. Confirm the new test **fails when the policy is removed**. A test that passes either way is asserting nothing.
+5. **Grant only what the policies need:** `GRANT SELECT, INSERT, UPDATE ... TO authenticated`, and nothing to `anon`. The corrected default privileges (`c4f21a86b3de`) should already produce this, but state it in the migration rather than depending on it.
+6. Reach the table through `TenantConnectionDep` only. A tenant query over the privileged connection has no isolation at all, and nothing about the query will look wrong.
+7. Add an isolation test to `apps/api/tests/test_rls_isolation.py` proving a user from workspace A cannot read, update or delete workspace B's rows.
+8. Confirm the new test **fails when the policy is removed**. A test that passes either way is asserting nothing.
 
 ## Testing
 
@@ -161,6 +218,8 @@ Two properties make them meaningful rather than decorative:
 
 - **They assert real database behaviour.** A stub proving "our fake returned no rows" says nothing about whether a policy holds. These connect as `authenticated` with a JWT claim set, exactly as a request will.
 - **They fail when RLS is off.** Verified during STEP-09: with the policies disabled, 15 of 17 fail. `test_policies_are_what_makes_these_tests_pass` encodes this permanently by disabling RLS mid-test, observing the breach, and restoring it.
+
+`apps/api/tests/test_request_session.py` ([[STEP-10 Authentication Backend]]) covers the gap those tests structurally cannot: they set the role and claim *by hand*, so they prove the policies work without proving the **application** is subject to them. An API connecting as `postgres` would read every workspace's rows while all 17 continued to pass. The STEP-10 tests use the real `RequestSessionFactory` over the real request-path role, and assert `rolbypassrls IS false` on it directly.
 
 CI sets `PROJECTONE_REQUIRE_DATABASE_TESTS=1`, which turns "no database configured" from a skip into a hard failure — otherwise a broken service container would downgrade the security suite to skips while CI still reported green.
 

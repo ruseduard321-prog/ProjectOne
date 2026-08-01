@@ -45,7 +45,7 @@ Notes grouped by `category` frontmatter value.
 
 ## security
 
-[[Security Architecture]] · [[Privacy and Data Protection]] · [[Authentication and Authorization]] · [[Compliance and Governance]] · [[Chapter 09 - Security Standards]]
+[[Security Architecture]] · [[Privacy and Data Protection]] · [[Authentication and Authorization]] · [[Authentication Implementation]] · [[Compliance and Governance]] · [[Chapter 09 - Security Standards]]
 
 ## testing
 

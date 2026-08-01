@@ -280,26 +280,59 @@ def test_user_cannot_reassign_their_profile_to_another_identity(
 def test_delete_is_denied_on_every_table(
     admin_connection: psycopg.Connection, tenants: tuple[Identity, Identity]
 ) -> None:
-    """No DELETE policy exists, so RLS denies the command by default.
+    """A hard DELETE removes nothing, whichever gate stops it.
 
     Deliberate: removal is a soft delete (an UPDATE setting `deleted_at`). A
     hard DELETE would be a second removal path bypassing that entirely. Covers
     the user's *own* rows as well as another tenant's -- the restriction is not
     about ownership.
+
+    **Two independent gates now deny this, and the test accepts either.** Before
+    STEP-10 only RLS stopped it: no DELETE policy exists, so the command matched
+    zero rows and returned quietly. STEP-10's `c4f21a86b3de` also revoked the
+    DELETE *grant*, so PostgreSQL now refuses earlier, with a privilege error.
+
+    Asserting on the specific mechanism would make this test fail whenever the
+    defence got stronger -- which is what happened when the grant was revoked.
+    What must hold is the outcome: the rows survive.
     """
     alice, bob = tenants
 
-    with admin_connection.transaction():
-        cursor = as_user(admin_connection, alice.user_id)
+    targets = (
+        ("public.workspaces", "id", bob.workspace_id),
+        ("public.workspaces", "id", alice.workspace_id),
+        ("public.workspace_members", "user_id", bob.user_id),
+    )
 
-        cursor.execute("DELETE FROM public.workspaces WHERE id = %s", (bob.workspace_id,))
-        assert cursor.rowcount == 0
+    for table, column, value in targets:
+        # Each in its own transaction: a privilege error aborts the transaction
+        # it is raised in, so a shared one would fail every subsequent statement
+        # for the wrong reason.
+        with admin_connection.transaction():
+            cursor = as_user(admin_connection, alice.user_id)
 
-        cursor.execute("DELETE FROM public.workspaces WHERE id = %s", (alice.workspace_id,))
-        assert cursor.rowcount == 0
+            try:
+                cursor.execute(f"DELETE FROM {table} WHERE {column} = %s", (value,))
+            except psycopg.errors.InsufficientPrivilege:
+                # Denied by the missing grant -- the stronger of the two gates.
+                continue
 
-        cursor.execute("DELETE FROM public.workspace_members WHERE user_id = %s", (bob.user_id,))
-        assert cursor.rowcount == 0
+            # Denied by the missing policy: the command was permitted but
+            # matched no rows.
+            assert cursor.rowcount == 0
+
+    # Whichever gate fired, the rows must still be there. This is the assertion
+    # that actually matters, and it is checked outside the loop over a
+    # connection that bypasses RLS, so a policy cannot hide a deleted row.
+    with admin_connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT count(*) FROM public.workspaces WHERE id = ANY(%s)",
+            ([alice.workspace_id, bob.workspace_id],),
+        )
+        surviving = cursor.fetchone()
+
+    assert surviving is not None
+    assert surviving[0] == 2, "a hard DELETE removed a workspace row"
 
 
 # ------------------------------------------------- the tests testing the tests --

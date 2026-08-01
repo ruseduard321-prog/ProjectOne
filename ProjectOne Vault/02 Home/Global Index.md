@@ -67,6 +67,7 @@ Every note in the vault, grouped by folder. This is the exhaustive map — for c
 ## 05 Architecture
 
 - [[Architecture MOC]]
+- [[Authentication Implementation]]
 
 **Schema:** [[Schema Overview]] · [[Table Conventions]] · [[RLS Policy Pattern]] · [[Table - users]] · [[Table - workspaces]] · [[Table - workspace_members]]
 

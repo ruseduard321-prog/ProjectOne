@@ -42,8 +42,8 @@ Status appears in two places — the step note and the row below — and they mu
 | STEP-07 | [[STEP-07 Supabase Provisioning]] | Done | full |
 | STEP-08 | [[STEP-08 Users and Workspaces Schema]] | Done | full |
 | STEP-09 | [[STEP-09 Row Level Security Policies]] | Done | full |
-| STEP-10 | [[STEP-10 Authentication Backend]] | Not Started | full |
-| STEP-11 | [[STEP-11 Authorization and RBAC]] | Not Started | outline |
+| STEP-10 | [[STEP-10 Authentication Backend]] | Done | full |
+| STEP-11 | [[STEP-11 Authorization and RBAC]] | Not Started | full |
 | STEP-12 | [[STEP-12 API Conventions and Middleware]] | Not Started | outline |
 | STEP-13 | [[STEP-13 Auth Users Workspaces Endpoints]] | Not Started | outline |
 | STEP-14 | [[STEP-14 Design System Tokens]] | Not Started | outline |
@@ -103,10 +103,19 @@ As of 2026-07-31, the project root is a git repository on branch `main` with the
 
 17 isolation tests prove cross-tenant read, update and delete are all blocked, and **15 of them fail when the policies are removed** — verified, because an isolation test that passes with RLS off is testing nothing. CI gained a throwaway PostgreSQL service container to run them, plus a flag making a missing test database a hard failure rather than a silent skip.
 
-> [!danger] RLS does not protect the application yet — STEP-10 must finish the job
-> `postgres` and `service_role` both carry `rolbypassrls`, and `DATABASE_URL` connects as `postgres`. Correct for migrations, wrong for serving requests: an API querying tenant tables over today's connection would get **no isolation at all**, silently, while every isolation test still passed. [[STEP-10 Authentication Backend]] owns choosing a non-bypassing role and setting the per-request JWT claim. Table grants also remain Supabase's permissive defaults until then.
+**STEP-09 was approved by the project owner on 2026-08-01**, clearing its owner approval gate (Critical — security controls, multi-tenancy/RLS), with CI confirmed green.
 
-**STEP-09 carries an owner approval gate** (Critical — security controls, multi-tenancy/RLS). It is `Done` and committed, but STEP-10 does not begin until the owner confirms it — including confirming the CI run, which could not be executed locally for want of Docker. See [[STEP-09 Row Level Security Policies#Outcome]].
+**RLS now protects the application, not just the database** (STEP-10). The API authenticates requests against Supabase Auth, verifies `ES256` access tokens against the project's JWKS public key, and serves every request over a second connection as `projectone_api` — a role created by migration `d7b95c1f4e08` that does **not** carry `rolbypassrls`. Identity reaches the policies through `SET LOCAL ROLE authenticated` plus a transaction-scoped `request.jwt.claim.sub`, so `auth.uid()` resolves and the claim cannot outlive the request on a pooled connection.
+
+Migration `c4f21a86b3de` narrowed table grants to `SELECT`/`INSERT`/`UPDATE` for `authenticated` and nothing for `anon`, and corrected the schema's default privileges so future tables inherit the same rather than Supabase's permissive `GRANT ALL`. `POST /auth/{sign-up,sign-in,sign-out,refresh}`, `GET /auth/me` and a minimal `GET /workspaces` exist; the suite grew from 25 tests to 58. Documented in [[Authentication Implementation]].
+
+Two defects were found and fixed during validation, both reproduced against a live database before being resolved: a **pooled-connection claim leak** (a session-scoped claim survived its transaction and the next session read the previous user's workspace), and **Supabase's default privileges re-granting full DML on every future table**, which would have left the next tenant table open to `anon`. See [[STEP-10 Authentication Backend#Outcome]].
+
+The inherited STEP-07 REST 401 turned out to be a request-shape problem, not a broken key — the `sb_secret_...` key must be sent in both the `apikey` header and `Authorization: Bearer`.
+
+**MFA and OAuth were deliberately deferred** out of STEP-10, and remain unscheduled — see that step's Outcome for the reasoning.
+
+**STEP-10 carries an owner approval gate** (Critical — authentication, security controls, multi-tenancy). It is `Done` and committed, but STEP-11 does not begin until the owner confirms it — including confirming the CI run, which this environment cannot observe on a private repository.
 
 The vault, Claude OS and AI operating capabilities are built and validated ([[Environment Setup]], [[AI Index]]).
 

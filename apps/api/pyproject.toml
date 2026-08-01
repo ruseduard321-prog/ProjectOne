@@ -9,15 +9,25 @@ requires-python = ">=3.12"
 dependencies = [
     "alembic==1.18.5",
     "fastapi==0.121.2",
+    # Supabase signs access tokens with ES256, so verification needs asymmetric
+    # crypto — the [crypto] extra pulls in `cryptography` for that. PyJWT rather
+    # than a hand-rolled verifier because signature verification is the kind of
+    # code that fails silently and catastrophically when written from scratch.
+    "pyjwt[crypto]==2.13.0",
+    "httpx==0.28.1",
     "psycopg[binary]==3.2.10",
-    "pydantic==2.12.4",
+    # [email] supplies the validator behind EmailStr. Validating an address at
+    # the schema boundary is cheaper and safer than discovering it is malformed
+    # after it has reached the identity provider (CLAUDE.md §12).
+    "pydantic[email]==2.12.4",
     "pydantic-settings==2.13.1",
     "uvicorn[standard]==0.38.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "httpx==0.28.1",
+    # httpx is a runtime dependency as of STEP-10 (the Supabase Auth API is
+    # HTTP), so it is no longer listed here — TestClient still gets it.
     "mypy==1.18.2",
     "pytest==8.4.2",
     "ruff==0.14.5",

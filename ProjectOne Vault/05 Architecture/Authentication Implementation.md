@@ -1,0 +1,105 @@
+---
+title: Authentication Implementation
+category: Architecture
+status: stable
+version: "1.0"
+last_updated: 2026-08-01
+tags: [backend, security, authentication, multi-tenancy, standards]
+aliases: ["Auth Implementation", "Authentication Backend"]
+---
+
+# Authentication Implementation
+
+**What was actually built**, as opposed to the intended model in [[Authentication and Authorization]]. Established by [[STEP-10 Authentication Backend]] and binding from that point on.
+
+[[RLS Policy Pattern]] is the companion note: it owns the database side (policies, the two connections, grants). This note owns the request side — how a token becomes a verified identity, and how that identity reaches the database.
+
+## The Shape
+
+```
+request → HTTPBearer → TokenService.verify (ES256, JWKS)
+                            ↓ AuthenticatedUser
+                     RequestSessionFactory.authenticated_as(user.id)
+                            ↓ SET LOCAL ROLE + set_config (per transaction)
+                     RLS policies decide which rows exist
+```
+
+Identity is verified once, at the edge, and then carried into the database rather than re-checked in application code. No route filters by user id in a `WHERE` clause: filtering is the policies' job, and an application-side copy of that rule is a second, weaker implementation that silently stops matching when one of the two is edited.
+
+## Token Verification
+
+Supabase signs this project's access tokens with **`ES256`** — verified against the live project, not assumed. That is asymmetric, so the API verifies with the **public** key from the project's JWKS endpoint and holds no signing secret at all. A read-only copy of this service cannot mint a token, only check one. (The legacy Supabase model used a shared `HS256` secret, where anything able to verify a token can also forge one.)
+
+Five things are checked, and each one is a check that must pass:
+
+| Check | Why it is not optional |
+|---|---|
+| Signature | The base guarantee. |
+| **Algorithm allow-list** (`["ES256"]`) | Reading `alg` from the token's own header is the classic JWT vulnerability — a token claiming `HS256` makes the verifier use the *public* key as a shared secret, and that key is public. |
+| **`iss`** | A signature check alone accepts a correctly-signed token from a *different* Supabase project. Anyone with a free project could otherwise authenticate here. |
+| **`aud`** (`authenticated`) | Distinguishes a user access token from other tokens the project issues. |
+| **`require`** on `exp`, `iat`, `sub`, `aud`, `iss` | Verifying a claim's *value* is not the same as requiring it to *exist*. A forged minimal token walks through the gap. |
+
+`sub` is then parsed as a uuid. It is set as the session variable `auth.uid()` casts, so a non-uuid would otherwise surface as a database error deep inside a query rather than as an authentication failure at the edge.
+
+The JWKS client is built once per process and caches the key set, with a bounded lifespan so a Supabase key rotation is picked up without a redeploy.
+
+### Failures are indistinguishable to the caller
+
+Every rejection returns **401 with the same body**, whether the token was missing, malformed, expired, tampered with, or from the wrong issuer. Distinguishing them hands an attacker an oracle: whether a token was ever valid, whether it has merely expired, whether the signing key is right. The specific cause is preserved in the exception for logs, which is where it is useful and not exploitable ([[CLAUDE|CLAUDE.md]] §24).
+
+One deliberate exception: `SigningKeyUnavailableError` is a distinct type, because a JWKS outage is *our* fault rather than the caller's — the token may well be valid and merely unverifiable. It still returns 401, because an unverifiable token must never be honoured, but conflating it in logs would hide a Supabase outage behind what looks like a wave of bad credentials.
+
+`IdentityProviderError` returns **503**, not 401. Supabase being unreachable means the credentials were never actually judged; returning 401 would tell a user their password is wrong during an outage and hide the outage in the one metric that should reveal it.
+
+## Layering
+
+Router → service → repository, per [[CLAUDE|CLAUDE.md]] §12:
+
+| Layer | Module | Owns |
+|---|---|---|
+| Router | `app/routers/auth.py` | HTTP only — status codes, response shapes |
+| Service | `app/services/auth_service.py` | Registration, sign-in, provisioning decisions |
+| Service | `app/services/token_service.py` | **Token verification is business logic**, not routing |
+| Repository | `app/repositories/supabase_auth.py` | The only module that talks to Supabase Auth |
+| Repository | `app/repositories/session.py` | Request-scoped, RLS-subject connections |
+| Repository | `app/repositories/users.py` | `public.users` rows |
+
+Token verification living in a service rather than a router is the load-bearing part of this split: a router's job is to translate a rejection into a 401, not to decide what makes a token valid.
+
+## Endpoints
+
+| Endpoint | Auth | Notes |
+|---|---|---|
+| `POST /auth/sign-up` | — | 201. Returns `email_confirmation_required` when the project issues no session. |
+| `POST /auth/sign-in` | — | Returns access + refresh tokens. |
+| `POST /auth/sign-out` | Bearer | Revokes **upstream**, using the user's own token. |
+| `POST /auth/refresh` | — | Exchanges a refresh token. |
+| `GET /auth/me` | Bearer | The caller's profile; provisions it if absent. |
+| `GET /workspaces` | Bearer | Read-only. Exists to prove RLS reaches the API. |
+
+Sign-out deliberately calls Supabase rather than discarding the token client-side. A local discard leaves the token valid until it expires, so a "signed out" user still holds working credentials — which is not what signing out means.
+
+No endpoint accepts a user id in its body. Identity always comes from the verified token; a `user_id` field on a sign-in request is an impersonation endpoint with extra steps.
+
+## Errors Are Typed
+
+`app/core/security.py` defines `AuthError` and its subclasses. Routers catch the base type and translate; they never inspect message strings. Every subclass carries a `public_message` safe to return, separate from the detail that goes to logs.
+
+## What This Step Did Not Build
+
+Stated so the next reader does not assume otherwise:
+
+- **MFA and OAuth providers are deferred.** [[Authentication and Authorization]] puts both in scope for the platform. The email/password path plus the RLS connection is already the Critical surface; adding two more identity flows on top of an unreviewed foundation widens the blast radius of a mistake in it. Both belong with [[STEP-16 Sign Up and Sign In UI]] or a step of their own, and the token verification path above is provider-agnostic — an OAuth-issued Supabase token verifies identically.
+- **Roles and permissions.** `workspace_members.role` exists and nothing reads it. [[STEP-11 Authorization and RBAC]] owns that.
+- **Workspace creation.** The INSERT policies deliberately cannot bootstrap a workspace from a client ([[RLS Policy Pattern]]), so it needs an audited service path — [[STEP-13 Auth Users Workspaces Endpoints]].
+- **Rate limiting on auth endpoints.** [[STEP-12 API Conventions and Middleware]] owns middleware. Supabase applies its own limits upstream in the meantime.
+
+---
+
+## Navigation
+
+- **Previous:** [[RLS Policy Pattern]]
+- **Next:** [[Schema Overview]]
+- **Parent:** [[Architecture MOC]]
+- **Related Notes:** [[RLS Policy Pattern]] · [[Authentication and Authorization]] · [[Security Architecture]] · [[Table - users]] · [[Chapter 09 - Security Standards]]

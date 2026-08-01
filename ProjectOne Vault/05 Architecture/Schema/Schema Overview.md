@@ -62,6 +62,8 @@ Applied in order. History is append-only: a correction is a new migration, never
 | `4c310926e967` | Drop `migration_pipeline_check` — it carried no application meaning | [[STEP-08 Users and Workspaces Schema]] |
 | `8a6f39b07c12` | Create `users`, `workspaces`, `workspace_members`, plus the `touch_row` trigger function | [[STEP-08 Users and Workspaces Schema]] |
 | `860a798d204b` | Enable and force RLS on all three tables, add the membership helper and eight policies | [[STEP-09 Row Level Security Policies]] |
+| `c4f21a86b3de` | Narrow table grants to `SELECT/INSERT/UPDATE` for `authenticated`, nothing for `anon`, and correct the schema's default privileges so future tables inherit the same | [[STEP-10 Authentication Backend]] |
+| `d7b95c1f4e08` | Create `projectone_api`, the request-path role that does **not** bypass RLS | [[STEP-10 Authentication Backend]] |
 
 Apply with `./scripts/migrate.sh up` (or `.\scripts\migrate.ps1 up`); see `scripts/README.md`.
 
@@ -75,14 +77,21 @@ Apply with `./scripts/migrate.sh up` (or `.\scripts\migrate.ps1 up`); see `scrip
 | `trg_workspaces_touch_row` | Trigger | Attaches `touch_row()` to `workspaces` |
 | `trg_workspace_members_touch_row` | Trigger | Attaches `touch_row()` to `workspace_members` |
 
+## Roles
+
+| Role | Bypasses RLS | Used by |
+|---|---|---|
+| `postgres` | **Yes** (`rolbypassrls` + `rolsuper`) | Alembic migrations only — `DATABASE_URL` |
+| `projectone_api` | No | Every API request — `REQUEST_DATABASE_URL` |
+| `service_role` | **Yes** (`rolbypassrls`) | Nothing on the request path |
+
+`postgres` and `service_role` bypassing RLS is not fixable in a migration; the control is architectural, and [[STEP-10 Authentication Backend]] resolved it by giving the request path its own non-bypassing role. See [[RLS Policy Pattern#The Two Connections]].
+
 ## Outstanding
 
-> [!danger] `service_role` and `postgres` bypass RLS, and no policy can stop them
-> Both carry `rolbypassrls`. `DATABASE_URL` currently connects as `postgres` — correct for migrations, never for serving requests. The control is architectural: **the API must not use `SUPABASE_SECRET_KEY` or the `postgres` role for tenant-scoped queries** ([[CLAUDE|CLAUDE.md]] §16). [[STEP-10 Authentication Backend]] owns establishing which role the API actually connects as, and it must not be either of these. See [[RLS Policy Pattern#What RLS Cannot Enforce]].
-
-- **Table grants are still Supabase's defaults.** `anon` and `authenticated` hold `SELECT`/`INSERT`/`UPDATE`/`DELETE` on all three tables; RLS is what makes that safe rather than the grants being narrow. Tightening them is [[STEP-10 Authentication Backend]]'s to do alongside choosing the API's role.
-- **No link enforced to `auth.users`.** `users.id` carries the same value as Supabase Auth's identity, but no foreign key exists — see [[Table - users#Relationship to Supabase Auth]]. [[STEP-10 Authentication Backend]] owns this.
 - **Roles have no meaning yet.** `workspace_members.role` fixes a vocabulary; what each role permits is [[STEP-11 Authorization and RBAC]].
+- **Workspace creation has no service path.** The INSERT policies deliberately cannot bootstrap a workspace and its first membership row from a client — [[STEP-13 Auth Users Workspaces Endpoints]] owns the audited path.
+- **`supabase_admin`'s default privileges are untouched.** `postgres` cannot alter them (it is not a superuser on managed Supabase). They govern tables Supabase creates, not ProjectOne's — see [[RLS Policy Pattern#Grants Are a Second, Independent Gate]].
 - **No ORM.** Migrations are hand-written SQL through Alembic's `op` API. Adopting an ORM would be an ADR ([[08 ADR]]), not a quiet change.
 
 ---

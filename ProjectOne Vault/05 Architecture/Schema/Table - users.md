@@ -52,9 +52,19 @@ See [[Table Conventions]] for why the standard five columns exist and how the tr
 
 `users.id` carries the same value as `auth.users.id`, but there is **deliberately no foreign key** to it.
 
-`auth` is owned and migrated by Supabase. A cross-schema foreign key would couple ProjectOne's migration history to a schema this project does not control, and to a role whose grants may change under it. [[STEP-10 Authentication Backend]] owns how the link is established and enforced in practice.
+`auth` is owned and migrated by Supabase. A cross-schema foreign key would couple ProjectOne's migration history to a schema this project does not control, and to a role whose grants may change under it.
 
-`email` is likewise denormalized from `auth.users` rather than joined, because every "who is in this workspace" listing would otherwise cross into a schema the API's role may not read. STEP-10 owns keeping the copy in step with the authoritative value.
+`email` is likewise denormalized from `auth.users` rather than joined, because every "who is in this workspace" listing would otherwise cross into a schema the API's role may not read.
+
+**How the link is established** ([[STEP-10 Authentication Backend]]): an application-side upsert in `UserRepository.ensure_profile`, run on sign-up and on every authenticated read of the caller's own profile. The user id comes from the **verified access token**, not from the response body around it — both should agree, and only one has been cryptographically checked.
+
+A trigger on `auth.users` was the alternative and was rejected. It would fire even for identities created outside this API, which is genuinely attractive, but it requires creating a trigger *on a Supabase-owned table in a Supabase-owned schema* — exactly the coupling the missing FK exists to avoid — and it would live outside Alembic, where the migration history cannot see it and code review cannot reach it.
+
+The trade-off is stated rather than hidden: an identity created directly in the Supabase dashboard has no profile row until it first authenticates here. `ON CONFLICT` makes that self-healing rather than a permanent inconsistency.
+
+**Email reconciliation** happens in the same upsert. The token's address is authoritative; this copy is a denormalization, so a change made upstream is brought back in step on the user's next request. The upsert's `WHERE ... IS DISTINCT FROM` clause means an unchanged address writes nothing — without it every authenticated request would bump `version` and `updated_at` through the STEP-08 trigger, making optimistic concurrency meaningless.
+
+Provisioning runs over the **privileged** connection, and has to: `users` has no INSERT policy, so no client-side role can create a profile row. This is the audited service path [[CLAUDE|CLAUDE.md]] §16 requires for the one operation RLS deliberately forbids, and it is confined to sign-up and email reconciliation. Ordinary reads use the request connection and are fully subject to policy.
 
 ## Indexes
 

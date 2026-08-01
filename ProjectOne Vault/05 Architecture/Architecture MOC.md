@@ -60,6 +60,10 @@ See also: [[AI MOC]]
 - [[API Architecture]]
 - [[Chapter 06 - FastAPI Architecture]]
 
+Implemented (as opposed to intended model):
+
+- [[Authentication Implementation]]
+
 See also: [[Backend MOC]]
 
 ## Frontend

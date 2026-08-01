@@ -18,6 +18,7 @@ is not quietly lost there.
 """
 
 import os
+import urllib.parse
 import uuid
 from collections.abc import Iterator
 
@@ -85,14 +86,33 @@ GRANT USAGE ON SCHEMA public TO anon, authenticated;
 """
 
 # Supabase grants these by default on its own projects; a bare PostgreSQL does
-# not. Without them the isolation tests would pass for the wrong reason --
-# "permission denied for table users" rather than "the policy returned no rows".
-# Granting them makes the test database match production's *starting* posture,
-# so what the tests observe is the policy's work and nothing else.
-_TABLE_GRANTS = """
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.users TO anon, authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.workspaces TO anon, authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.workspace_members TO anon, authenticated;
+# not. Applied *before* migrations so the database starts from the same
+# permissive posture a real Supabase project has -- which is what migration
+# `c4f21a86b3de` then narrows. Without this the grant migration would be
+# revoking privileges that were never granted, and the test database would end
+# up in a state no real environment passes through.
+_DEFAULT_TABLE_GRANTS = """
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
+    ON public.users TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
+    ON public.workspaces TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
+    ON public.workspace_members TO anon, authenticated;
+"""
+
+# The request-path role is created by migration `d7b95c1f4e08`, deliberately
+# with NOLOGIN and no password -- a credential in a migration is a credential in
+# source control. Tests therefore have to supply one, which is what this does,
+# *after* migrations have run.
+#
+# Only LOGIN and the password are added. NOINHERIT and NOBYPASSRLS are left
+# exactly as the migration set them, so what the tests exercise is the real
+# role's attributes rather than a convenient local copy of them.
+_REQUEST_ROLE_NAME = "projectone_api"
+_REQUEST_ROLE_PASSWORD = "projectone-test-request-role"  # noqa: S105 - throwaway test database
+
+_REQUEST_ROLE_LOGIN = f"""
+ALTER ROLE {_REQUEST_ROLE_NAME} WITH LOGIN PASSWORD '{_REQUEST_ROLE_PASSWORD}';
 """
 
 TEST_DATABASE_URL_VAR = "PROJECTONE_TEST_DATABASE_URL"
@@ -154,12 +174,61 @@ def migrated_database() -> Iterator[str]:
     config.set_main_option(
         "sqlalchemy.url", url.replace("postgresql://", "postgresql+psycopg://", 1)
     )
-    command.upgrade(config, "head")
+    # Three phases, and the order is the whole point.
+    #
+    # Supabase's default grants must be in place *before* `c4f21a86b3de` runs,
+    # so the narrowing migration acts on the permissive posture a real project
+    # actually has rather than revoking privileges that were never granted.
+    #
+    # Applying them afterwards instead — which an earlier version of this
+    # fixture did — silently undoes the migration: the database reports itself
+    # at head while the grants are still wide open. That failure is invisible
+    # unless something asserts the grants, which `test_request_session.py` now
+    # does.
+    #
+    # Reaching that revision from *either* direction: a fresh container upgrades
+    # to it, while a database already at head (the normal case when these run
+    # against the development project) downgrades to it. `command.upgrade` alone
+    # is a silent no-op on the latter, which is exactly how the permissive
+    # grants survived and made the migration look applied when it was not.
+    command.upgrade(config, "860a798d204b")
 
     with psycopg.connect(url, autocommit=True) as connection, connection.cursor() as cursor:
-        cursor.execute(_TABLE_GRANTS)
+        cursor.execute("SELECT version_num FROM alembic_version")
+        current = cursor.fetchone()
+
+    if current is not None and current[0] != "860a798d204b":
+        command.downgrade(config, "860a798d204b")
+
+    with psycopg.connect(url, autocommit=True) as connection, connection.cursor() as cursor:
+        cursor.execute(_DEFAULT_TABLE_GRANTS)
+
+    command.upgrade(config, "head")
+
+    # The request role now exists (migration d7b95c1f4e08) but cannot log in --
+    # by design, since the migration must not carry a password. Give the test
+    # copy one, changing nothing else about it.
+    with psycopg.connect(url, autocommit=True) as connection, connection.cursor() as cursor:
+        cursor.execute(_REQUEST_ROLE_LOGIN)
 
     yield url
+
+
+@pytest.fixture(scope="session")
+def request_database_url(migrated_database: str) -> str:
+    """Return a URL connecting as the API's request-path role.
+
+    This is the role the API actually uses, and the distinction is the point:
+    it has no `rolbypassrls`, so a test using it exercises the same isolation a
+    real request gets. A test connecting as the owner would prove nothing about
+    whether RLS protects the application.
+    """
+    parsed = urllib.parse.urlparse(migrated_database)
+    host = parsed.hostname or "localhost"
+    port = f":{parsed.port}" if parsed.port else ""
+    database = parsed.path
+
+    return f"postgresql://{_REQUEST_ROLE_NAME}:{_REQUEST_ROLE_PASSWORD}@{host}{port}{database}"
 
 
 @pytest.fixture

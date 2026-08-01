@@ -51,6 +51,10 @@ def make_settings(**overrides: object) -> Settings:
         "SUPABASE_URL": "https://test.supabase.co",
         "SUPABASE_SECRET_KEY": "sb_secret_test",
         "DATABASE_URL": "postgresql://test:test@127.0.0.1:5432/test",
+        # Required as of STEP-10. Distinct from DATABASE_URL on purpose: the two
+        # are different roles in every real environment, and a test fixture that
+        # collapsed them would model a configuration that must never exist.
+        "REQUEST_DATABASE_URL": "postgresql://projectone_api:test@127.0.0.1:5432/test",
     }
     values.update(overrides)
 

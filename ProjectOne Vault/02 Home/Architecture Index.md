@@ -24,6 +24,7 @@ Every architecture-related document, organized by system layer. See [[Architectu
 - [[Backend Architecture]]
 - [[API Architecture]]
 - [[Chapter 06 - FastAPI Architecture]]
+- [[Authentication Implementation]] — how a token becomes a verified identity that reaches RLS
 
 ## Frontend
 
