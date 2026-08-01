@@ -47,8 +47,8 @@ Status appears in two places — the step note and the row below — and they mu
 | STEP-11a | [[STEP-11a Membership Removal Policy]] | Done | full |
 | STEP-12 | [[STEP-12 API Conventions and Middleware]] | Done | full |
 | STEP-13 | [[STEP-13 Auth Users Workspaces Endpoints]] | Done | full |
-| STEP-14 | [[STEP-14 Design System Tokens]] | Not Started | full |
-| STEP-15 | [[STEP-15 App Shell and Routing]] | Not Started | outline |
+| STEP-14 | [[STEP-14 Design System Tokens]] | Done | full |
+| STEP-15 | [[STEP-15 App Shell and Routing]] | Not Started | full |
 | STEP-16 | [[STEP-16 Sign Up and Sign In UI]] | Not Started | outline |
 | STEP-17 | [[STEP-17 AI Router and Provider Abstraction]] | Not Started | outline |
 | STEP-18 | [[STEP-18 AI Cost Governance Controls]] | Not Started | outline |
@@ -155,6 +155,12 @@ Two gaps are recorded rather than forgotten: **audit retention is unbounded** (n
 **The Design System now specifies values, not only principles** (2026-08-02). The project owner supplied v1 tokens — **explicitly initial values, not permanent branding** — with a binding architectural constraint: *all tokens are expected to change without requiring component rewrites*. [[Design System]] §3a–§6 now hold a two-layer token architecture (primitives → semantic tokens, components referencing **only** the latter), a 4px spacing scale, Inter with a 1.25 type scale, a slate/indigo palette targeting WCAG AA, and dark mode confirmed in scope for v1.
 
 §3a is the load-bearing part: a component says `bg-accent`, never `bg-indigo-600`, so a rebrand is one edit to the semantic mapping rather than a change to every component that ever shipped. [[STEP-14 Design System Tokens]] implements that specification and does not re-decide it; its validation includes a **swap test** — reassign the accent, rebuild, confirm nothing in any component changed — so the constraint is demonstrated rather than asserted. This unblocks STEP-14, which no longer needs owner input before implementation.
+
+**The design system exists as tokens, and the constraint behind it is proven rather than asserted** (STEP-14). `apps/web/src/app/globals.css` holds both layers: primitives sit **outside** Tailwind's `@theme` deliberately, because a primitive registered there becomes a utility class and hands components the `bg-neutral-900` escape hatch §3a forbids — verified by confirming the compiled CSS contains no primitive utility. `@theme inline` is what makes dark mode a pure remapping: utilities emit `var(--color-accent)` instead of a baked-in hex, so the theme changes at runtime with no `dark:` variant anywhere. The **swap test passed** — the accent was reassigned, rebuilt, and all five component files were byte-identical by `git hash-object` afterwards. Inter is self-hosted via `next/font`, confirmed loaded in a real browser rather than inferred from config.
+
+**The contrast check found a defect in the specification, not the implementation.** Two dark-mode pairings failed AA — `--color-text-muted` on `--color-surface-raised` (4.04) and `--color-accent` on `--color-surface` (4.00) — because §6.3's original verification covered `--color-background` and `--color-surface` but never `--color-surface-raised`, a genuinely different surface. Extending the check to all three surfaces exposed a third failure the original set could not have caught (`--color-danger` at 3.89). The owner directed a minimal refinement: four dark-mode values moved one step within existing ramps, two primitives were added (`neutral-800`, `danger-400`), **no hue changed and no new semantic token was needed**. Verification now enumerates every foreground against every surface — 58 pairings, both themes, all passing — because a hand-picked list is what produced the gap. [[Design System]] is updated to v1.2.
+
+The lesson worth carrying: **a pairing that is not checked is not passing, it is unknown.** The failures were latent in an approved specification and would have shipped into every dropdown and dialog had the token layer not been built before any screen consumed it — which is precisely why this step is sequenced ahead of STEP-15.
 
 The vault, Claude OS and AI operating capabilities are built and validated ([[Environment Setup]], [[AI Index]]).
 

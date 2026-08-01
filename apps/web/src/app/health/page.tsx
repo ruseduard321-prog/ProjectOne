@@ -22,14 +22,16 @@ export const metadata: Metadata = {
 export default function HealthPage() {
   return (
     <main className="flex min-h-screen flex-col items-center justify-center gap-3 p-8">
-      <h1 className="text-2xl font-semibold tracking-tight">ProjectOne</h1>
+      <h1 className="text-2xl font-semibold tracking-tight text-text">
+        ProjectOne
+      </h1>
       <p
-        className="rounded-full border border-emerald-600/30 bg-emerald-500/10 px-4 py-1.5 text-sm font-medium text-emerald-700 dark:text-emerald-400"
+        className="rounded-full border border-success bg-surface px-4 py-2 text-sm font-medium text-success"
         role="status"
       >
         Web application is running
       </p>
-      <p className="text-sm text-black/60 dark:text-white/60">
+      <p className="text-sm text-text-muted">
         Environment: <span className="font-medium">{env.environment}</span>
       </p>
     </main>

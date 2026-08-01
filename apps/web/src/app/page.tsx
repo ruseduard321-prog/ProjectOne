@@ -9,11 +9,16 @@ import Link from "next/link";
 export default function HomePage() {
   return (
     <main className="flex min-h-screen flex-col items-center justify-center gap-3 p-8">
-      <h1 className="text-2xl font-semibold tracking-tight">ProjectOne</h1>
-      <p className="text-sm opacity-70">
+      <h1 className="text-2xl font-semibold tracking-tight text-text">
+        ProjectOne
+      </h1>
+      <p className="text-sm text-text-muted">
         An AI Operating System for content businesses.
       </p>
-      <Link href="/health" className="text-sm underline underline-offset-4">
+      <Link
+        href="/health"
+        className="text-sm text-accent underline underline-offset-4"
+      >
         Health
       </Link>
     </main>

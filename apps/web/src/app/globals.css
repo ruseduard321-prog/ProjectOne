@@ -1,26 +1,256 @@
 @import "tailwindcss";
 
+/**
+ * ProjectOne design tokens — the single source of styling truth.
+ *
+ * Implements [[Design System]] §3a–§6. Two layers, and the separation between
+ * them is the deliverable as much as the values are:
+ *
+ *   1. PRIMITIVES — raw values with no meaning. Referenced by the semantic
+ *      layer only, never by a component.
+ *   2. SEMANTIC — a role with no intrinsic value. The only layer components
+ *      may reference.
+ *
+ * A component says `bg-accent`, never `bg-accent-600` and never `bg-blue-600`.
+ * That indirection is what makes a rebrand one edit to the mapping below
+ * instead of a change to every component that ever shipped (§3a, §6.5).
+ *
+ * These are v1 initial values and are expected to change. Changing them is a
+ * specification change: edit [[Design System]] §4–6 first, then this file,
+ * and re-run the contrast check across every pairing in both themes (§6.3).
+ */
+
+/* ------------------------------------------------------------------ *
+ * Layer 1 — Primitives (§6.1)
+ *
+ * Raw color values. NO COMPONENT MAY REFERENCE THESE. They live outside
+ * `@theme` deliberately: they are inputs to the semantic mapping, not
+ * utility classes, and generating `bg-neutral-900` would hand components a
+ * way to reach past the semantic layer entirely.
+ * ------------------------------------------------------------------ */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Neutral (slate) — a slight blue cast; pure black is deliberately absent */
+  --neutral-50: #f8fafc;
+  --neutral-100: #f1f5f9;
+  --neutral-200: #e2e8f0;
+  --neutral-400: #94a3b8;
+  --neutral-500: #64748b;
+  --neutral-600: #475569;
+  --neutral-700: #334155;
+  --neutral-800: #1e293b;
+  --neutral-900: #0f172a;
+  --neutral-950: #020617;
+
+  /* Accent (indigo) — the value most expected to change */
+  --accent-50: #eef2ff;
+  --accent-200: #c7d2fe;
+  --accent-400: #818cf8;
+  --accent-500: #6366f1;
+  --accent-600: #4f46e5;
+  --accent-700: #4338ca;
+
+  /* Success (green) */
+  --success-50: #f0fdf4;
+  --success-500: #22c55e;
+  --success-600: #16a34a;
+  --success-700: #15803d;
+
+  /* Warning (amber) */
+  --warning-50: #fffbeb;
+  --warning-500: #f59e0b;
+  --warning-600: #d97706;
+  --warning-700: #b45309;
+
+  /* Danger (red) */
+  --danger-50: #fef2f2;
+  --danger-400: #f87171;
+  --danger-500: #ef4444;
+  --danger-600: #dc2626;
+  --danger-700: #b91c1c;
+
+  --white: #ffffff;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+/* ------------------------------------------------------------------ *
+ * Layer 2 — Semantic tokens, light theme (§6.2)
+ *
+ * Roles mapped onto primitives. THIS IS THE ONLY LAYER COMPONENTS MAY
+ * REFERENCE. Rebranding is a change to the right-hand side of these
+ * assignments and nothing else.
+ * ------------------------------------------------------------------ */
+
+:root {
+  --color-background: var(--neutral-50);
+  --color-surface: var(--white);
+  --color-surface-raised: var(--white);
+
+  /* Decorative dividers — carries no information a user must perceive */
+  --color-border: var(--neutral-200);
+  /* Interactive boundaries — must clear WCAG 3:1 non-text contrast (§6.2) */
+  --color-border-strong: var(--neutral-500);
+
+  --color-text: var(--neutral-900);
+  --color-text-muted: var(--neutral-500);
+
+  --color-accent: var(--accent-600);
+  --color-accent-hover: var(--accent-700);
+  --color-accent-contrast: var(--white);
+
+  --color-success: var(--success-600);
+  --color-warning: var(--warning-600);
+  --color-danger: var(--danger-600);
+  --color-danger-contrast: var(--white);
+
+  --color-focus-ring: var(--accent-500);
 }
+
+/* ------------------------------------------------------------------ *
+ * Layer 2 — Semantic tokens, dark theme (§6.4)
+ *
+ * Dark mode is a REMAPPING, not a second design. The same semantic names
+ * point at different primitives; no component is theme-aware and no
+ * component's markup changes between themes.
+ *
+ * Accent and semantic hues shift one step lighter: a hue tuned against
+ * white is too dark against near-black (§6.2).
+ * ------------------------------------------------------------------ */
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --color-background: var(--neutral-950);
+    --color-surface: var(--neutral-900);
+    /* neutral-800, not neutral-700: at 700 this surface is light enough that
+       muted text (4.04) and the accent both fall below AA on it (§6.3). */
+    --color-surface-raised: var(--neutral-800);
+
+    --color-border: var(--neutral-700);
+    --color-border-strong: var(--neutral-400);
+
+    --color-text: var(--neutral-100);
+    --color-text-muted: var(--neutral-400);
+
+    /* accent-400, not accent-500: as *text* on a dark card accent-500 is only
+       4.00 and fails AA. accent-hover moves up a step so the two stay
+       distinguishable (§6.3). */
+    --color-accent: var(--accent-400);
+    --color-accent-hover: var(--accent-200);
+    --color-accent-contrast: var(--neutral-950);
+
+    --color-success: var(--success-500);
+    --color-warning: var(--warning-500);
+    /* danger-400, not danger-500: as text on surface-raised, 500 is 3.89. */
+    --color-danger: var(--danger-400);
+    /* Not white: white on the lighter dark-mode red fails outright (§6.2) */
+    --color-danger-contrast: var(--neutral-950);
+
+    --color-focus-ring: var(--accent-400);
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* ------------------------------------------------------------------ *
+ * Tailwind theme registration
+ *
+ * `@theme inline` is what turns a token into a utility class. `inline` is
+ * load-bearing for the color tokens specifically: it makes the generated
+ * utilities reference `var(--color-*)` rather than baking in the value at
+ * build time, which is what allows the dark-mode block above to remap the
+ * semantic layer at runtime without a second set of classes.
+ *
+ * Only semantic color tokens are registered. Primitives are absent by
+ * design — a component cannot reference a class that does not exist.
+ * ------------------------------------------------------------------ */
+
+@theme inline {
+  /* Colors — semantic layer only */
+  --color-background: var(--color-background);
+  --color-surface: var(--color-surface);
+  --color-surface-raised: var(--color-surface-raised);
+  --color-border: var(--color-border);
+  --color-border-strong: var(--color-border-strong);
+  --color-text: var(--color-text);
+  --color-text-muted: var(--color-text-muted);
+  --color-accent: var(--color-accent);
+  --color-accent-hover: var(--color-accent-hover);
+  --color-accent-contrast: var(--color-accent-contrast);
+  --color-success: var(--color-success);
+  --color-warning: var(--color-warning);
+  --color-danger: var(--color-danger);
+  --color-danger-contrast: var(--color-danger-contrast);
+  --color-focus-ring: var(--color-focus-ring);
+
+  /* Typography (§5.1) — --font-inter is supplied by next/font in layout.tsx */
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+
+  /* Type scale (§5.2) — 1.25 major third. Line height tightens as size grows. */
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1.5;
+  --text-sm: 0.875rem;
+  --text-sm--line-height: 1.5;
+  --text-base: 1rem;
+  --text-base--line-height: 1.6;
+  --text-lg: 1.125rem;
+  --text-lg--line-height: 1.5;
+  --text-xl: 1.5rem;
+  --text-xl--line-height: 1.4;
+  --text-2xl: 1.875rem;
+  --text-2xl--line-height: 1.3;
+  --text-3xl: 2.25rem;
+  --text-3xl--line-height: 1.2;
+
+  /* Weights (§5.3) — three only. No 700+. */
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+
+  /* Spacing (§4.1) — 4px base, deliberately non-continuous. rem, not px,
+     so spacing respects the user's browser font size (§9). */
+  --spacing-0: 0;
+  --spacing-1: 0.25rem;
+  --spacing-2: 0.5rem;
+  --spacing-3: 0.75rem;
+  --spacing-4: 1rem;
+  --spacing-6: 1.5rem;
+  --spacing-8: 2rem;
+  --spacing-12: 3rem;
+  --spacing-16: 4rem;
+
+  /* Radius (§4.2) — four values, deliberately */
+  --radius-sm: 0.25rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-full: 9999px;
+
+  /* Elevation (§4.3) — signals what floats above what, not decoration */
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.08);
+  --shadow-lg: 0 10px 20px -5px rgb(0 0 0 / 0.12);
+}
+
+/* ------------------------------------------------------------------ *
+ * Base
+ *
+ * The only global styling. Everything else is a token consumed by a
+ * component. No hardcoded color, font family or pixel value here — that is
+ * how a design system acquires its first exception on day one.
+ * ------------------------------------------------------------------ */
+
+@layer base {
+  body {
+    background-color: var(--color-background);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    font-size: var(--text-base);
+    line-height: var(--text-base--line-height);
+    font-weight: var(--font-weight-regular);
+  }
+
+  /* Focus is an accessibility requirement (§9), so it is defined once here
+     rather than left to each component to remember. */
+  :focus-visible {
+    outline: 2px solid var(--color-focus-ring);
+    outline-offset: 2px;
+  }
 }

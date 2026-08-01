@@ -6,13 +6,13 @@ version: "1.1"
 last_updated: 2026-08-02
 tags: [engineering, workflow, build-step, frontend,design]
 step_id: STEP-14
-step_status: Not Started
+step_status: Done
 detail_level: full
 ---
 
 # STEP-14 — Design System Tokens
 
-**Status:** Not Started
+**Status:** Done
 **Detail level:** full — expanded by [[STEP-13 Auth Users Workspaces Endpoints]], per [[Execution Protocol]].
 
 ## Goal
@@ -77,6 +77,84 @@ Added by [[STEP-13 Auth Users Workspaces Endpoints]]:
 The spacing, radius, elevation, typography and color scales from [[Design System]] §4–6 exist as tokens every later screen consumes, implemented as the two-layer architecture §3a requires; the entire brand can be replaced by editing the semantic mapping alone, demonstrated by the swap test rather than asserted; dark mode works as a remapping with no theme-aware components; every pairing meets WCAG AA; and no `create-next-app` default or hardcoded style survives in the app shell.
 
 **Not a Critical change** ([[CLAUDE|CLAUDE.md]] §21): it touches no schema, auth, API contract, infrastructure or tenant boundary. It does not need an owner approval gate — the design decisions it implements were already made by the owner on 2026-08-02 and recorded in [[Design System]].
+
+## Outcome — Done (2026-08-02)
+
+All six tasks implemented, all validation observed. The step ran in two passes:
+the first was `Blocked` by a contrast failure, and the owner directed a minimal
+refinement rather than a redesign.
+
+### What was built
+
+`apps/web/src/app/globals.css` holds the whole token layer. Primitives sit
+**outside** `@theme` deliberately — a primitive registered as a theme value
+becomes a utility class, which would hand components the `bg-neutral-900` escape
+hatch §3a forbids. Verified: the compiled CSS contains no primitive utility.
+
+`@theme inline` is load-bearing for the color tokens. `inline` makes the
+generated utilities emit `var(--color-accent)` rather than baking the hex in at
+build time, which is what lets the dark-mode block remap the semantic layer at
+runtime with no `dark:` variant anywhere.
+
+Inter is self-hosted through `next/font` and exposed as `--font-inter`, which
+`--font-sans` composes with the fallback stack — so the token layer owns the
+font and components only ever see the semantic name.
+
+### The contrast failure and its correction
+
+The first pass found two dark-mode pairings below AA: `--color-text-muted` on
+`--color-surface-raised` (4.04) and `--color-accent` on `--color-surface`
+(4.00). The cause was a **gap in the specification's verification, not in the
+implementation** — §6.3's original check covered `--color-background` and
+`--color-surface` but never `--color-surface-raised`.
+
+Extending the check to all three surfaces exposed a third failure the original
+set could not have caught: `--color-danger` at 3.89 on the raised surface.
+
+Four values moved, all one step within an existing ramp, no hue changed:
+
+| Token | Was | Now |
+|---|---|---|
+| `--color-surface-raised` (dark) | `neutral-700` | `neutral-800` |
+| `--color-accent` (dark) | `accent-500` | `accent-400` |
+| `--color-accent-hover` (dark) | `accent-400` | `accent-200` |
+| `--color-danger` (dark) | `danger-500` | `danger-400` |
+
+`accent-hover` moved only because `accent` did — the two would otherwise
+collapse onto the same value. Two primitives were added to support this
+(`neutral-800`, `danger-400`); no new semantic token was needed, so the
+architecture is unchanged.
+
+**Verification now enumerates every foreground against every surface** rather
+than a hand-picked list, because a hand-picked list is what produced this. 58
+pairings, both themes, all pass.
+
+### Validation observed
+
+- **Swap test passed** — `--color-accent` reassigned to amber, rebuilt, accent
+  changed throughout; all five component files byte-identical by `git
+  hash-object`. Reverted. This is the evidence the §3a constraint holds.
+- **58/58 contrast pairings pass** across both themes and all three surfaces.
+- **Inter genuinely renders** — `document.fonts.check('16px Inter')` true with a
+  `loaded` font entry in a real browser, not inferred from config. No
+  `fonts.googleapis`/`gstatic` request in the build output.
+- **Both themes verified in-browser** by computed style: light resolves to
+  `#f8fafc`/`#0f172a`/`#4f46e5`, dark to `#020617`/`#f1f5f9`. Markup length
+  identical in both — the theme change touches no component markup.
+- **Zero client JavaScript added**; no `use client` anywhere in `src/`.
+- No hardcoded color, `dark:` variant, arbitrary pixel value or `opacity-*`
+  workaround remains in the app shell.
+- Lint, type-check, 7 tests and build all pass; no console errors.
+
+### Also corrected
+
+`health/page.tsx` carried `border-emerald-600/30`, `text-black/60` and two
+`dark:` variants — the exact defects §3a and §6.4 name, in the app shell this
+step's validation covers. Now on semantic tokens.
+
+[[Design System]] was updated to v1.2 (§6.1–6.3): the corrected values, the two
+added primitives, a rewritten §6.3 recording why the original check missed them,
+and a refreshed margin table. Light mode now carries the tightest margins.
 
 ---
 

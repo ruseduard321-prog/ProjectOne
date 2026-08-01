@@ -2,7 +2,7 @@
 title: Design System
 category: Design
 status: stable
-version: "1.1"
+version: "1.2"
 last_updated: 2026-08-02
 tags: [design, documentation, feature]
 aliases: ["Design System & Visual Language", "Visual Language"]
@@ -153,13 +153,18 @@ Raw values. **No component may reference these.**
 
 A neutral ramp does most of the work in a calm interface, plus one accent and three semantic hues:
 
-| Ramp | 50 | 100 | 200 | 400 | 500 | 600 | 700 | 900 | 950 |
-|---|---|---|---|---|---|---|---|---|---|
-| **Neutral** | `#f8fafc` | `#f1f5f9` | `#e2e8f0` | `#94a3b8` | `#64748b` | `#475569` | `#334155` | `#0f172a` | `#020617` |
-| **Accent** (indigo) | `#eef2ff` | — | `#c7d2fe` | `#818cf8` | `#6366f1` | `#4f46e5` | `#4338ca` | — | — |
-| **Success** (green) | `#f0fdf4` | — | — | — | `#22c55e` | `#16a34a` | `#15803d` | — | — |
-| **Warning** (amber) | `#fffbeb` | — | — | — | `#f59e0b` | `#d97706` | `#b45309` | — | — |
-| **Danger** (red) | `#fef2f2` | — | — | — | `#ef4444` | `#dc2626` | `#b91c1c` | — | — |
+| Ramp | 50 | 100 | 200 | 400 | 500 | 600 | 700 | 800 | 900 | 950 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| **Neutral** | `#f8fafc` | `#f1f5f9` | `#e2e8f0` | `#94a3b8` | `#64748b` | `#475569` | `#334155` | `#1e293b` | `#0f172a` | `#020617` |
+| **Accent** (indigo) | `#eef2ff` | — | `#c7d2fe` | `#818cf8` | `#6366f1` | `#4f46e5` | `#4338ca` | — | — | — |
+| **Success** (green) | `#f0fdf4` | — | — | — | `#22c55e` | `#16a34a` | `#15803d` | — | — | — |
+| **Warning** (amber) | `#fffbeb` | — | — | — | `#f59e0b` | `#d97706` | `#b45309` | — | — | — |
+| **Danger** (red) | `#fef2f2` | — | — | `#f87171` | `#ef4444` | `#dc2626` | `#b91c1c` | — | — | — |
+
+`neutral-800` and `danger-400` were added on 2026-08-02 during STEP-14, when the
+contrast check was extended to cover `--color-surface-raised` — a surface the
+original verification omitted. Neither is a new hue; both are one step within an
+existing ramp. See §6.3.
 
 A slate-based neutral rather than pure grey: a slight blue cast reads as more considered than `#808080`, and pure black (`#000`) is deliberately absent — it is harsher on screen than a very dark slate and is the fastest way to make an interface feel cheap.
 
@@ -173,17 +178,17 @@ Indigo as the v1 accent: distinctive enough to be recognisable (§14), restraine
 |---|---|---|---|
 | `--color-background` | `neutral-50` | `neutral-950` | Page canvas |
 | `--color-surface` | `#ffffff` | `neutral-900` | Cards, panels — sits *above* the canvas |
-| `--color-surface-raised` | `#ffffff` | `neutral-700` | Dropdowns, dialogs |
+| `--color-surface-raised` | `#ffffff` | `neutral-800` | Dropdowns, dialogs |
 | `--color-border` | `neutral-200` | `neutral-700` | **Decorative** dividers and separators |
 | `--color-border-strong` | `neutral-500` | `neutral-400` | **Interactive** boundaries — input outlines, control edges |
 | `--color-text` | `neutral-900` | `neutral-100` | Primary content |
 | `--color-text-muted` | `neutral-500` | `neutral-400` | Secondary, captions, placeholders |
-| `--color-accent` | `accent-600` | `accent-500` | Primary actions, active state, focus |
-| `--color-accent-hover` | `accent-700` | `accent-400` | Accent hover/press |
+| `--color-accent` | `accent-600` | `accent-400` | Primary actions, active state, focus |
+| `--color-accent-hover` | `accent-700` | `accent-200` | Accent hover/press |
 | `--color-accent-contrast` | `#ffffff` | `neutral-950` | Text **on** an accent surface |
 | `--color-success` | `success-600` | `success-500` | Confirmation |
 | `--color-warning` | `warning-600` | `warning-500` | Caution |
-| `--color-danger` | `danger-600` | `danger-500` | Errors, destructive actions |
+| `--color-danger` | `danger-600` | `danger-400` | Errors, destructive actions |
 | `--color-danger-contrast` | `#ffffff` | `neutral-950` | Text **on** a danger surface |
 | `--color-focus-ring` | `accent-500` | `accent-400` | Focus indicator (§9) |
 
@@ -191,7 +196,7 @@ Indigo as the v1 accent: distinctive enough to be recognisable (§14), restraine
 
 **`*-contrast` tokens exist so no component ever guesses what text color survives on a colored background.** That guess is where contrast failures come from, and it is a solved problem if the pairing is named once.
 
-Note that `--color-danger-contrast` is **not** white in both themes. White on the lighter dark-mode red reaches only 3.76:1, below the 4.5 bar; near-black reaches 5.36:1. A `*-contrast` token that is "always white" is an assumption, not a pairing — which is precisely why it is a token rather than a convention.
+Note that `--color-danger-contrast` is **not** white in both themes. White on the lighter dark-mode red fails the 4.5 bar outright; near-black reaches 7.29:1. A `*-contrast` token that is "always white" is an assumption, not a pairing — which is precisely why it is a token rather than a convention.
 
 **Two border tokens, deliberately.** They have genuinely different requirements and collapsing them fails one of the two:
 
@@ -204,7 +209,27 @@ Using the decorative token on an input is the most likely way to break accessibi
 
 Every pairing above targets **WCAG 2.1 AA** — 4.5:1 for body text, 3:1 for non-text and interactive boundaries (§9). A palette that fails contrast is not a style disagreement; it is a broken interface for a substantial number of users.
 
-**All 28 pairings were computed and verified when these values were set (2026-08-02)**, across both themes, against both `--color-background` and `--color-surface`. Two corrections came out of that check rather than out of review — `--color-danger-contrast` in dark mode and the split of `--color-border`. Both are documented above at the point where someone would otherwise undo them.
+**All 58 pairings are computed and verified across both themes**, against **all three** surfaces — `--color-background`, `--color-surface` and `--color-surface-raised` — plus the two text-on-fill pairings (`*-contrast` on their fill).
+
+> [!warning] The original check omitted `--color-surface-raised`, and that omission produced two live failures
+> The first pass (2026-08-02, 28 pairings) verified against `--color-background` and `--color-surface` only. `--color-surface-raised` is a genuinely different surface — in dark mode it is several ramp steps lighter than either — so every foreground appearing on a dropdown or dialog was unverified.
+>
+> Implementing the tokens in STEP-14 surfaced two dark-mode failures as a result: `--color-text-muted` on `--color-surface-raised` at **4.04**, and `--color-accent` on `--color-surface` at **4.00**, both against a 4.5 bar. The second was not a coverage gap but a missed combination — accent *as text* on a dark card, which is the most common way an accent is used.
+>
+> The corrections are recorded in §6.1–6.2 above. **A pairing that is not checked is not passing; it is unknown** — which is why the check now enumerates every foreground against every surface rather than a hand-picked list.
+
+Three corrections came out of checking rather than out of review — `--color-danger-contrast` in dark mode and the split of `--color-border` in the first pass, and the dark-mode surface/accent corrections below in the second.
+
+**The dark-mode corrections (2026-08-02, STEP-14).** All three follow the rule §6.2 already states — semantic colors shift one step lighter in dark mode — applied to the surface that was missed:
+
+| Token | Was | Now | Why |
+|---|---|---|---|
+| `--color-surface-raised` | `neutral-700` | `neutral-800` | At `700` this surface is light enough that muted text (4.04) and the accent both fall below AA on it. `800` clears every foreground while staying visibly raised above `--color-surface`. |
+| `--color-accent` | `accent-500` | `accent-400` | `accent-500` as text is 4.00 on a dark card — below AA on **every** dark surface, not just the raised one. |
+| `--color-accent-hover` | `accent-400` | `accent-200` | Forced by the row above: hover must stay distinguishable from the resting accent. |
+| `--color-danger` | `danger-500` | `danger-400` | 3.89 as text on `surface-raised`. Passed on the two surfaces originally checked, which is precisely how it was missed. |
+
+Nothing here changes a hue — every value is one step within a ramp that already existed, so the slate/indigo identity is unchanged.
 
 **Any future token change must be re-checked the same way.** Contrast is a property of a *pair*, so changing one token silently changes the compliance of every pairing it appears in — this is not something that can be eyeballed, and "it looks fine" is how it gets missed.
 
@@ -212,10 +237,16 @@ The margins worth knowing, because they are where a change will break first:
 
 | Pairing | Ratio | Bar |
 |---|---|---|
-| `text-muted` on `background` (light) | 4.55 | 4.5 |
+| `warning` on `background` (light) | 3.04 | 3.0 |
+| `success` on `background` (light) | 3.15 | 3.0 |
 | `warning` on `surface` (light) | 3.19 | 3.0 |
 | `success` on `surface` (light) | 3.30 | 3.0 |
-| `accent-contrast` on `accent` (dark) | 4.52 | 4.5 |
+| `text-muted` on `background` (light) | 4.55 | 4.5 |
+| `danger` on `background` (light) | 4.62 | 4.5 |
+| `text-muted` on `surface` (light) | 4.76 | 4.5 |
+| `accent` on `surface-raised` (dark) | 4.90 | 4.5 |
+
+Light mode now carries the tightest margins, and `--color-surface-raised` is the surface to check first on any change — it is the lightest dark surface and the darkest light one, so it is where both themes run out of room.
 
 `--color-text-muted` is the token most likely to fail on a future palette, because "muted" pulls toward the background by definition. It is deliberately `neutral-500` rather than anything lighter for exactly that reason — and at 4.55 it has almost no room left.
 

@@ -1,5 +1,21 @@
 import type { Metadata } from "next";
+import { Inter } from "next/font/google";
 import "./globals.css";
+
+/**
+ * Inter, self-hosted at build time by next/font — never a CDN link, which is
+ * a render-blocking dependency on a third party and leaks every visitor's IP
+ * to them ([[Design System]] §5.1).
+ *
+ * Exposed as a CSS variable rather than a class so the token layer owns the
+ * font stack: globals.css maps --font-inter into --font-sans alongside the
+ * fallbacks, and components only ever see the semantic name.
+ */
+const inter = Inter({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-inter",
+});
 
 export const metadata: Metadata = {
   title: "ProjectOne",
@@ -12,7 +28,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="h-full antialiased">
+    <html lang="en" className={`${inter.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
   );
