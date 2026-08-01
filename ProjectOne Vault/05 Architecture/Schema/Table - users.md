@@ -67,8 +67,16 @@ No index on `deleted_at` alone — nothing queries it in isolation, and speculat
 
 ## Row Level Security
 
-> [!warning] Not yet enabled
-> RLS arrives in [[STEP-09 Row Level Security Policies]], immediately after the step that created this table. Until then no application code touches it and it holds no data. See [[Table Conventions#Row Level Security]] — this is a one-time, deliberate exception, not a precedent.
+**Enabled and forced** by migration `860a798d204b` ([[STEP-09 Row Level Security Policies]]). The full pattern is [[RLS Policy Pattern]]; what is specific to this table:
+
+| Policy | Command | Rule |
+|---|---|---|
+| `users_select_self_or_co_member` | SELECT | Self, or anyone sharing a live workspace |
+| `users_update_self` | UPDATE | Self only, and the row cannot be reassigned to another identity |
+
+**This table is not tenant-scoped**, so its policy is unlike every other one: a user is not owned by a workspace, so the question is *which users this requester may see* rather than which workspace a row belongs to. Self, plus co-members — the co-membership clause is what makes member listings possible and is the reason `email` is denormalized here.
+
+No DELETE policy exists, so hard deletes are denied. Removal is a soft delete via `deleted_at` ([[RLS Policy Pattern#DELETE is granted to no one]]).
 
 See [[Chapter 07 - Database Standards]] and [[Authentication and Authorization]].
 
@@ -79,4 +87,4 @@ See [[Chapter 07 - Database Standards]] and [[Authentication and Authorization]]
 - **Previous:** [[Schema Overview]]
 - **Next:** [[Table - workspaces]]
 - **Parent:** [[Database MOC]]
-- **Related Notes:** [[Table Conventions]] · [[Table - workspaces]] · [[Table - workspace_members]] · [[Database Architecture]]
+- **Related Notes:** [[Table Conventions]] · [[RLS Policy Pattern]] · [[Table - workspaces]] · [[Table - workspace_members]] · [[Database Architecture]]

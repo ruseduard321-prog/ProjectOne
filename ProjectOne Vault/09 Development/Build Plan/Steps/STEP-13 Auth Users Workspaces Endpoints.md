@@ -31,7 +31,17 @@ Each endpoint documented with [[API Endpoint Template]]. This is the contract th
 
 - [[API Architecture]]
 - [[API Endpoint Template]]
+- [[RLS Policy Pattern]] — what the database permits a client to do directly
 - [[CLAUDE|CLAUDE.md]] §12/§14
+
+## Inherited from earlier steps
+
+Recorded during synchronization, not expansion.
+
+> [!warning] Workspace creation cannot be a plain INSERT
+> [[STEP-09 Row Level Security Policies]] made this structural. Creating a workspace requires two rows — the `workspaces` row and the creator's first `workspace_members` row — and the membership INSERT policy requires the caller to *already* be a member of that workspace. The creator is not, because the workspace did not exist a statement ago.
+>
+> This is deliberate, not an oversight: it forces workspace creation through an audited service path rather than letting a client assemble a tenant boundary row by row. **This step owns building that path.** Expect it to need a privileged, explicitly audited operation rather than the ordinary request-scoped connection — and see [[RLS Policy Pattern#What RLS Cannot Enforce]] before reaching for the service key, because using it casually would defeat every policy at once.
 
 ## Tasks
 

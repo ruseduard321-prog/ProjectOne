@@ -69,8 +69,22 @@ The two indexes cover both directions of the join deliberately: the unique index
 
 ## Row Level Security
 
-> [!warning] Not yet enabled
-> RLS arrives in [[STEP-09 Row Level Security Policies]]. This table is the one the policies on every other tenant table will consult, so its own policy needs particular care — a recursive policy that queries the table it protects is a common and subtle failure.
+**Enabled and forced** by migration `860a798d204b` ([[STEP-09 Row Level Security Policies]]). The full pattern is [[RLS Policy Pattern]]; what is specific to this table:
+
+| Policy | Command | Rule |
+|---|---|---|
+| `workspace_members_select_same_workspace` | SELECT | Same workspace |
+| `workspace_members_update_same_workspace` | UPDATE | Same workspace, and the row cannot be moved to another |
+| `workspace_members_insert_same_workspace` | INSERT | Same workspace — inviting requires already being in it |
+
+> [!warning] This table's policy cannot query this table
+> A policy on `workspace_members` that subqueries `workspace_members` **recurses** — PostgreSQL raises `infinite recursion detected in policy for relation`. Verified against a live database during STEP-09, not assumed.
+>
+> Every clause above therefore routes through `public.app_current_user_workspaces()`, a locked-down `SECURITY DEFINER` function that reads memberships outside RLS. Inlining it would look like a simplification and would break every authenticated query on this table. `test_membership_policy_does_not_recurse` guards against exactly that.
+
+**The bootstrap case does not pass these policies, deliberately.** A workspace creator's own first membership row has no existing membership to test against, so it cannot be inserted by a client. Workspace creation is a two-statement operation belonging in an audited service path ([[STEP-13 Auth Users Workspaces Endpoints]]), not something assembled row by row from outside. This is the one thing about this policy set likely to surprise whoever writes that endpoint.
+
+Role changes and removal rights are [[STEP-11 Authorization and RBAC]]. No DELETE policy exists; removal is a soft delete ([[RLS Policy Pattern#DELETE is granted to no one]]).
 
 See [[Chapter 07 - Database Standards]] and [[Authentication and Authorization]].
 
@@ -81,4 +95,4 @@ See [[Chapter 07 - Database Standards]] and [[Authentication and Authorization]]
 - **Previous:** [[Table - workspaces]]
 - **Next:** —
 - **Parent:** [[Database MOC]]
-- **Related Notes:** [[Table Conventions]] · [[Table - users]] · [[Table - workspaces]] · [[Database Architecture]]
+- **Related Notes:** [[Table Conventions]] · [[RLS Policy Pattern]] · [[Table - users]] · [[Table - workspaces]] · [[Database Architecture]]

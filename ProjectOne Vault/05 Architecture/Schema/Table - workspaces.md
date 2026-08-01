@@ -66,8 +66,19 @@ No unique constraint on `name`. Two different people may reasonably both have a 
 
 ## Row Level Security
 
-> [!warning] Not yet enabled
-> RLS arrives in [[STEP-09 Row Level Security Policies]]. This is the table the entire isolation model turns on — a flaw in its policy is a cross-tenant data breach, which is why STEP-09 is separated for focused review rather than bundled here.
+**Enabled and forced** by migration `860a798d204b` ([[STEP-09 Row Level Security Policies]]). The full pattern is [[RLS Policy Pattern]]; what is specific to this table:
+
+| Policy | Command | Rule |
+|---|---|---|
+| `workspaces_select_member` | SELECT | Live membership in the workspace |
+| `workspaces_update_member` | UPDATE | Live membership, and the row cannot be moved out of reach |
+| `workspaces_insert_self_owned` | INSERT | The row must name the creator as `owner_id` |
+
+**INSERT is the one genuine asymmetry in the whole policy set.** Membership cannot be the test for creating a workspace, because the creator cannot already belong to a workspace that does not exist yet. Ownership is the test instead: `owner_id = auth.uid()`. This is what stops a workspace being planted in another user's account.
+
+*Which* members may update a workspace — owner and admin but not member — is [[STEP-11 Authorization and RBAC]]. This step fixes the tenant boundary; RBAC refines what happens inside it.
+
+No DELETE policy exists, so hard deletes are denied ([[RLS Policy Pattern#DELETE is granted to no one]]).
 
 See [[Chapter 07 - Database Standards]] and [[Authentication and Authorization]].
 
@@ -78,4 +89,4 @@ See [[Chapter 07 - Database Standards]] and [[Authentication and Authorization]]
 - **Previous:** [[Table - users]]
 - **Next:** [[Table - workspace_members]]
 - **Parent:** [[Database MOC]]
-- **Related Notes:** [[Table Conventions]] · [[Table - users]] · [[Table - workspace_members]] · [[Database Architecture]]
+- **Related Notes:** [[Table Conventions]] · [[RLS Policy Pattern]] · [[Table - users]] · [[Table - workspace_members]] · [[Database Architecture]]

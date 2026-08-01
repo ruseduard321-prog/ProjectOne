@@ -41,8 +41,8 @@ Status appears in two places — the step note and the row below — and they mu
 | STEP-06 | [[STEP-06 Continuous Integration]] | Done | full |
 | STEP-07 | [[STEP-07 Supabase Provisioning]] | Done | full |
 | STEP-08 | [[STEP-08 Users and Workspaces Schema]] | Done | full |
-| STEP-09 | [[STEP-09 Row Level Security Policies]] | Not Started | full |
-| STEP-10 | [[STEP-10 Authentication Backend]] | Not Started | outline |
+| STEP-09 | [[STEP-09 Row Level Security Policies]] | Done | full |
+| STEP-10 | [[STEP-10 Authentication Backend]] | Not Started | full |
 | STEP-11 | [[STEP-11 Authorization and RBAC]] | Not Started | outline |
 | STEP-12 | [[STEP-12 API Conventions and Middleware]] | Not Started | outline |
 | STEP-13 | [[STEP-13 Auth Users Workspaces Endpoints]] | Not Started | outline |
@@ -97,9 +97,16 @@ As of 2026-07-31, the project root is a git repository on branch `main` with the
 
 **The first application tables exist** (STEP-08): `users`, `workspaces` and `workspace_members`, created by migration `8a6f39b07c12`. They carry the standard column set every later table inherits — `id uuid`, `created_at`, `updated_at`, `deleted_at`, `version` — with `updated_at` and `version` maintained by a database trigger. Constraints enforce integrity at the database layer and were each verified by observing a rejection. Documented in [[Schema Overview]] and [[Table Conventions]].
 
-**No table has Row Level Security yet.** That is [[STEP-09 Row Level Security Policies]], deliberately separated for focused review. The tables hold no data and no application code touches them until it is `Done`.
+**STEP-08 was approved by the project owner on 2026-08-01**, clearing its owner approval gate (Critical — database schema).
 
-**STEP-08 carries an owner approval gate** (Critical — database schema). It is `Done` and committed, but STEP-09 does not begin until the owner confirms it. See [[STEP-08 Users and Workspaces Schema#Outcome]].
+**Workspace isolation is now enforced at the database layer** (STEP-09). Migration `860a798d204b` enables *and forces* RLS on all three tables, adds eight per-command policies scoped `TO authenticated`, and installs `app_current_user_workspaces()` — a locked-down `SECURITY DEFINER` helper that exists because a policy on `workspace_members` cannot query `workspace_members` without recursing. Identity reaches the policies through `auth.uid()`, which returns NULL without a JWT claim, so every policy denies by default. The pattern every future tenant table copies is [[RLS Policy Pattern]].
+
+17 isolation tests prove cross-tenant read, update and delete are all blocked, and **15 of them fail when the policies are removed** — verified, because an isolation test that passes with RLS off is testing nothing. CI gained a throwaway PostgreSQL service container to run them, plus a flag making a missing test database a hard failure rather than a silent skip.
+
+> [!danger] RLS does not protect the application yet — STEP-10 must finish the job
+> `postgres` and `service_role` both carry `rolbypassrls`, and `DATABASE_URL` connects as `postgres`. Correct for migrations, wrong for serving requests: an API querying tenant tables over today's connection would get **no isolation at all**, silently, while every isolation test still passed. [[STEP-10 Authentication Backend]] owns choosing a non-bypassing role and setting the per-request JWT claim. Table grants also remain Supabase's permissive defaults until then.
+
+**STEP-09 carries an owner approval gate** (Critical — security controls, multi-tenancy/RLS). It is `Done` and committed, but STEP-10 does not begin until the owner confirms it — including confirming the CI run, which could not be executed locally for want of Docker. See [[STEP-09 Row Level Security Policies#Outcome]].
 
 The vault, Claude OS and AI operating capabilities are built and validated ([[Environment Setup]], [[AI Index]]).
 

@@ -80,6 +80,7 @@ Implemented schema (as opposed to intended model):
 
 - [[Schema Overview]]
 - [[Table Conventions]]
+- [[RLS Policy Pattern]]
 - [[Table - users]] · [[Table - workspaces]] · [[Table - workspace_members]]
 
 See also: [[Database MOC]]

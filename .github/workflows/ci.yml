@@ -71,19 +71,52 @@ jobs:
       run:
         working-directory: apps/api
 
+    # A throwaway PostgreSQL for the RLS isolation tests (STEP-09), which assert
+    # what the database itself does with a policy and so cannot be stubbed — a
+    # false pass there is a cross-tenant data breach (CLAUDE.md §16).
+    #
+    # Ephemeral and created per run, never the development Supabase project: the
+    # tests write and delete rows, and CI is granted a database it can safely
+    # destroy rather than one holding real data (least privilege, §16). The
+    # image is stock `postgres`, so Supabase's `auth.uid()` is absent and the
+    # test harness shims it — see apps/api/tests/conftest.py.
+    services:
+      postgres:
+        # Pinned to the major version the development project runs (17.6), so
+        # CI cannot pass against policy behaviour a different server would treat
+        # differently.
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: ci-throwaway
+          POSTGRES_DB: projectone_test
+        ports:
+          - 5432:5432
+        # Without this the job races the container: the first connection can
+        # arrive before the server accepts them, which fails intermittently —
+        # the worst kind of CI failure to diagnose.
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     # Non-secret placeholders. These are required settings, so the app refuses
     # to start without them and CI would be red on arrival (STEP-05/STEP-07).
     #
-    # Deliberately fake: no CI job currently touches the database. The tests are
-    # unit tests over configuration and the health service, and Alembic is never
-    # invoked here. Wiring a real credential in would grant CI database access it
-    # has no use for — least privilege (CLAUDE.md §16). When a job genuinely
-    # needs a database, it gets a throwaway one, never the development project.
+    # SUPABASE_URL and SUPABASE_SECRET_KEY remain deliberately fake: nothing in
+    # CI authenticates against a Supabase project, and a real key here would
+    # grant access the pipeline has no use for.
+    #
+    # DATABASE_URL points at the throwaway service container above rather than
+    # at a real project. PROJECTONE_TEST_DATABASE_URL is what the isolation
+    # tests read; they skip when it is unset, so it is set explicitly here to
+    # keep that coverage from being lost silently.
     env:
       PROJECTONE_ENVIRONMENT: development
       SUPABASE_URL: https://ci-placeholder.supabase.co
       SUPABASE_SECRET_KEY: sb_secret_ci_placeholder_not_a_real_key
-      DATABASE_URL: postgresql://postgres:ci-placeholder@127.0.0.1:5432/postgres
+      DATABASE_URL: postgresql://postgres:ci-throwaway@127.0.0.1:5432/projectone_test
+      PROJECTONE_TEST_DATABASE_URL: postgresql://postgres:ci-throwaway@127.0.0.1:5432/projectone_test
 
     steps:
       - uses: actions/checkout@v4
@@ -109,5 +142,16 @@ jobs:
       - name: Type-check
         run: mypy app
 
+      # `-ra` reports skip reasons in the summary, so a skipped isolation test
+      # is visible in the log rather than hidden behind a green tick.
+      #
+      # PROJECTONE_REQUIRE_DATABASE_TESTS turns the isolation tests' skip into a
+      # hard failure. Those tests skip when no database is configured — correct
+      # on a developer machine without PostgreSQL, wrong here. Without it, a
+      # broken service container would silently downgrade the security suite to
+      # skips and CI would still report green, losing precisely the coverage
+      # this job exists to provide.
       - name: Test
-        run: pytest
+        env:
+          PROJECTONE_REQUIRE_DATABASE_TESTS: '1'
+        run: pytest -ra

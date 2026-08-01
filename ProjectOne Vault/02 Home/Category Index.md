@@ -41,7 +41,7 @@ Notes grouped by `category` frontmatter value.
 
 ## database
 
-[[Database Architecture]] · [[Chapter 07 - Database Standards]] · [[Schema Overview]] · [[Table Conventions]] · [[Table - users]] · [[Table - workspaces]] · [[Table - workspace_members]]
+[[Database Architecture]] · [[Chapter 07 - Database Standards]] · [[Schema Overview]] · [[Table Conventions]] · [[RLS Policy Pattern]] · [[Table - users]] · [[Table - workspaces]] · [[Table - workspace_members]]
 
 ## security
 

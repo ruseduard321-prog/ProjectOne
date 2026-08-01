@@ -121,7 +121,9 @@ CONSTRAINT ck_workspace_members_role_valid CHECK (role IN ('owner', 'admin', 'me
 
 **Every tenant-scoped table ships its RLS policy in the same migration that creates it** ([[CLAUDE|CLAUDE.md]] §16). A table without RLS is an incomplete migration, not a follow-up task.
 
-[[STEP-08 Users and Workspaces Schema]] is the one deliberate exception in the project's history: the foundational tables were created without RLS because policy work was separated into [[STEP-09 Row Level Security Policies]] for its own focused review. They held no data and no application code touched them in between. **That exception does not generalize** — see [[Schema Overview]] for the current state.
+The policies themselves follow one reviewed pattern — **[[RLS Policy Pattern]]** — rather than being improvised per table. Read it before adding any tenant-scoped table; it covers the membership helper, the `USING`/`WITH CHECK` split, why `FORCE` is required alongside `ENABLE`, and the isolation test a new table must come with.
+
+[[STEP-08 Users and Workspaces Schema]] is the one deliberate exception in the project's history: the foundational tables were created without RLS because policy work was separated into [[STEP-09 Row Level Security Policies]] for its own focused review. They held no data and no application code touched them in between. That gap is now closed — all three tables have RLS enabled and forced. **The exception does not generalize.**
 
 ## Migration Discipline
 
@@ -135,6 +137,6 @@ CONSTRAINT ck_workspace_members_role_valid CHECK (role IN ('owner', 'admin', 'me
 ## Navigation
 
 - **Previous:** —
-- **Next:** [[Schema Overview]]
+- **Next:** [[RLS Policy Pattern]]
 - **Parent:** [[Database MOC]]
-- **Related Notes:** [[Schema Overview]] · [[Table - users]] · [[Table - workspaces]] · [[Table - workspace_members]] · [[Chapter 07 - Database Standards]] · [[Database Architecture]]
+- **Related Notes:** [[RLS Policy Pattern]] · [[Schema Overview]] · [[Table - users]] · [[Table - workspaces]] · [[Table - workspace_members]] · [[Chapter 07 - Database Standards]] · [[Database Architecture]]

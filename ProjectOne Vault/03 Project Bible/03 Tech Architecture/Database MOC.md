@@ -24,6 +24,7 @@ What actually exists in the database, as opposed to the intended model above.
 
 - [[Schema Overview]] — current tables, migration history, what is still outstanding
 - [[Table Conventions]] — the standard column set, trigger and naming rules every table follows
+- [[RLS Policy Pattern]] — the tenant-isolation pattern every new tenant-scoped table copies
 - [[Table - users]] — application-side profile, keyed to Supabase Auth
 - [[Table - workspaces]] — the tenant boundary
 - [[Table - workspace_members]] — user ↔ workspace membership and role

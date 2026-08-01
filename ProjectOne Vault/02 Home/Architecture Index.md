@@ -39,6 +39,7 @@ Every architecture-related document, organized by system layer. See [[Architectu
 - [[Chapter 07 - Database Standards]]
 - [[Schema Overview]] — implemented tables and migration history
 - [[Table Conventions]] — standard columns, trigger, naming rules
+- [[RLS Policy Pattern]] — tenant-isolation policies every new tenant table copies
 - [[Table - users]] · [[Table - workspaces]] · [[Table - workspace_members]]
 
 ## Platform / Infrastructure
