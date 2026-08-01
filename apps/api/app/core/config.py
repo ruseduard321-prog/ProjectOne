@@ -14,7 +14,7 @@ import sys
 from enum import StrEnum
 from functools import lru_cache
 
-from pydantic import ValidationError
+from pydantic import Field, SecretStr, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -53,6 +53,26 @@ class Settings(BaseSettings):
 
     app_name: str = "ProjectOne API"
     version: str = "0.1.0"
+
+    # Supabase / PostgreSQL. Required: the API is not useful without its
+    # database, and a process that starts without one only fails later, on a
+    # request, somewhere less obvious.
+    #
+    # These carry explicit aliases because they are named by Supabase, not by
+    # ProjectOne — the PROJECTONE_ prefix would make them PROJECTONE_SUPABASE_URL,
+    # which no Supabase documentation, dashboard or tutorial would ever show.
+    #
+    # SecretStr keeps the values out of logs, tracebacks and repr() output: it
+    # renders as "**********" unless explicitly unwrapped with
+    # .get_secret_value() (CLAUDE.md §16, §25).
+    supabase_url: str = Field(alias="SUPABASE_URL")
+    supabase_secret_key: SecretStr = Field(alias="SUPABASE_SECRET_KEY")
+    database_url: SecretStr = Field(alias="DATABASE_URL")
+
+    # Bounded on purpose. A health check that can hang holds a worker and turns
+    # a degraded database into an unresponsive API — the failure mode the check
+    # exists to report, caused by the check itself.
+    database_health_timeout_seconds: int = 5
 
 
 @lru_cache

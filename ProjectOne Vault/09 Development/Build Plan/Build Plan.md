@@ -39,7 +39,7 @@ Status appears in two places — the step note and the row below — and they mu
 | STEP-04 | [[STEP-04 API App Skeleton]] | Done | full |
 | STEP-05 | [[STEP-05 Environment and Secrets]] | Done | full |
 | STEP-06 | [[STEP-06 Continuous Integration]] | Done | full |
-| STEP-07 | [[STEP-07 Supabase Provisioning]] | Not Started | full |
+| STEP-07 | [[STEP-07 Supabase Provisioning]] | Done | full |
 | STEP-08 | [[STEP-08 Users and Workspaces Schema]] | Not Started | full |
 | STEP-09 | [[STEP-09 Row Level Security Policies]] | Not Started | full |
 | STEP-10 | [[STEP-10 Authentication Backend]] | Not Started | outline |
@@ -90,6 +90,10 @@ As of 2026-07-31, the project root is a git repository on branch `main` with the
 **A GitHub remote now exists** at `github.com/ruseduard321-prog/ProjectOne` (private), and all six commits are pushed. CI is committed and triggered: every push and pull request runs lint, type-check, tests and build for both apps. `apps/web` gained a Vitest runner and its first 7 tests.
 
 **CI is live and green** — the project owner confirmed both jobs succeeded on 2026-07-31, closing STEP-06 (see [[STEP-06 Continuous Integration#Outcome]]). Note that confirming a CI run is an owner action for now: the build environment cannot observe workflow results on a private repository.
+
+**A database exists** (STEP-07). A development Supabase project (PostgreSQL 17.6) is connected through the STEP-05 config system, Alembic applies and rolls back migrations via `scripts/migrate.{sh,ps1}`, and `/health` is now a **readiness** check reporting real database connectivity — 503 when it is unreachable. No application tables yet; the first schema is STEP-08.
+
+**STEP-07 carries an owner approval gate** (Critical — database/infrastructure). It is `Done` and committed, but STEP-08 does not begin until the owner confirms it. See [[STEP-07 Supabase Provisioning#Outcome]].
 
 The vault, Claude OS and AI operating capabilities are built and validated ([[Environment Setup]], [[AI Index]]).
 

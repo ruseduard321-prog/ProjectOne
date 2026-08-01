@@ -2,8 +2,8 @@
 title: STEP-08 Users and Workspaces Schema
 category: Development/Build Step
 status: draft
-version: "1.0"
-last_updated: 2026-07-31
+version: "1.1"
+last_updated: 2026-08-01
 tags: [engineering, workflow, build-step, database]
 step_id: STEP-08
 step_status: Not Started
@@ -32,6 +32,10 @@ The two foundational tables — `users` and `workspaces` — plus the column con
 ## Tasks
 
 1. Write the migration creating `users` and `workspaces` with the membership relationship between them.
+
+   **Tooling exists** as of [[STEP-07 Supabase Provisioning]]: create the file with `./scripts/migrate.sh new "<message>"`, write plain SQL through Alembic's `op` API (there is no ORM, so no autogenerate), and apply with `./scripts/migrate.sh up`. Write the `downgrade()` body at the same time as `upgrade()` — Validation requires a clean rollback, and it is far easier to write while the schema is fresh in mind.
+
+   **Also remove migration `e37e521504a3`** (`migration_pipeline_check`). It was STEP-07's throwaway table proving the pipeline works, carries no application meaning, and should not survive into a schema with real tables. Deleting it is a migration of its own, not an edit to the existing file — history stays append-only.
 2. Apply the standard column set to both: primary key, `created_at`, `updated_at`, soft-deletion column, and version/audit columns per [[CLAUDE|CLAUDE.md]] §13. **This step sets the pattern every later table copies** — get it right here rather than reconciling twelve tables later.
 3. Add constraints enforcing integrity at the database layer, not in application code.
 4. Index only the columns queried on the known access paths — no speculative indexing ([[CLAUDE|CLAUDE.md]] §13).

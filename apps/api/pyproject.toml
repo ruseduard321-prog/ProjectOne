@@ -7,7 +7,9 @@ requires-python = ">=3.12"
 # Pinned exactly. A skeleton that resolves to different versions on different
 # machines is not a reproducible baseline (Environment Setup).
 dependencies = [
+    "alembic==1.18.5",
     "fastapi==0.121.2",
+    "psycopg[binary]==3.2.10",
     "pydantic==2.12.4",
     "pydantic-settings==2.13.1",
     "uvicorn[standard]==0.38.0",
@@ -44,6 +46,14 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["ANN", "D"]
+# Alembic generates these from its own template, with a fixed header format and
+# module-level names (revision, down_revision) it requires verbatim. Enforcing
+# our docstring and naming conventions on machine-generated scaffolding means
+# hand-editing every new migration to satisfy a linter — so the generated shape
+# is accepted and review attention goes to the upgrade/downgrade bodies, which
+# are hand-written and do carry docstrings.
+"migrations/versions/*" = ["D", "N"]
+"migrations/env.py" = ["D103"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"

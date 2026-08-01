@@ -2,7 +2,7 @@
 title: Environment Setup
 category: Development
 status: stable
-version: "1.6"
+version: "1.7"
 last_updated: 2026-07-31
 tags: [engineering, documentation, ai, mcp]
 aliases: ["Local Development Setup", "AI Tooling Setup"]
@@ -26,6 +26,7 @@ For how configuration and secrets are handled across environments — the dev/st
 - **Continuous integration:** GitHub Actions runs `.github/workflows/ci.yml` on every push and pull request as of STEP-06 — a `web` job (lint, type-check, test, build) and an `api` job (lint, format, type-check, test). Both are green. The workflow is the authority on what must pass before a merge; run the same commands locally first. **Confirming a run's result is currently an owner action** — the repository is private and this environment cannot read workflow results (no `gh` CLI, no workflow-run tool in the [[MCP/GitHub|GitHub MCP]]).
 - **Web application:** `apps/web` exists as of STEP-03 — Next.js 16.2.12, React 19.2.4, TypeScript strict, Tailwind v4, ESLint 9. Run it with `npm run dev` from `apps/web` (defaults to port 3000). `npm run lint`, `npm run typecheck` and `npm test` (Vitest 4) are the validation entry points. Note that `next lint` was removed in Next.js 16; lint runs through ESLint directly. Requires `.env.local` — it will not build or start without one ([[Environment and Secrets]]).
 - **API application:** `apps/api` exists as of STEP-04 — FastAPI 0.121.2, Pydantic 2.12.4, Uvicorn 0.38.0, with Ruff 0.14.5, mypy 1.18.2 and pytest 8.4.2 as dev tooling. Dependencies are pinned exactly in `pyproject.toml` and installed into a local virtual environment at `apps/api/.venv/` (git-ignored). Run it with `.venv/Scripts/python -m uvicorn app.main:app --reload` from `apps/api` (port 8000). Validation entry points: `ruff check .`, `ruff format --check .`, `mypy app`, `pytest`. Interactive API docs are at `/docs`, the OpenAPI contract at `/openapi.json`. Requires `.env` — it will not start without one ([[Environment and Secrets]]).
+- **Database:** a development Supabase project (PostgreSQL 17.6) as of STEP-07, reached with `psycopg` 3. Migrations run through Alembic via `./scripts/migrate.sh up` (or `.\scripts\migrate.ps1 up`) — see `scripts/README.md`. `GET /health` reports database connectivity and returns 503 when it is unreachable. Credentials live in `apps/api/.env` and are never committed.
 
 ## AI Operating Capabilities — Status Summary
 
@@ -38,7 +39,7 @@ See [[AI Index]] for the full catalog. Summary as of this validation pass:
 | [[MCP/Playwright|Playwright]] | Harness-native, Playwright-backed | No installation needed, fully validated (Chromium only) |
 | [[MCP/Computer Use|Computer Use]] | Built-in harness capability | No installation needed, fully validated against a real native app — **see security incident in the note** |
 | [[MCP/GitHub|GitHub]] | Official MCP server | Configured (outside project `.mcp.json`); PAT-authenticated and tool manifest confirmed loadable; no real repository operation exercised yet |
-| [[MCP/Supabase|Supabase]] | MCP server (reserved) | Not yet installed or validated — no database layer exists yet |
+| [[MCP/Supabase|Supabase]] | MCP server (reserved) | Still not installed. A development Supabase project **does** exist as of STEP-07, but the API reaches it over plain PostgreSQL (`psycopg`) and migrations run through Alembic — neither needs the MCP. Install it only if a task genuinely requires dashboard-level operations. |
 | [[MCP/Vercel|Vercel]] | MCP server (reserved) | Not yet installed or validated — no deployable frontend exists yet |
 
 ## Project-Level MCP Configuration
@@ -81,7 +82,7 @@ Two details worth knowing before editing these rules:
 
 ## Setting Up a New Machine
 
-1. Clone the repository rather than initializing one — git version control already exists (STEP-01). A remote is not configured yet, so GitHub MCP operations that presuppose one still cannot be used.
+1. Clone the repository rather than initializing one — `github.com/ruseduard321-prog/ProjectOne` (private).
 2. Install Node.js and npm (validated against v24.18.0 / 11.16.0 — the exact versions are not a hard requirement, but this is the last known-good baseline). Then run `npm install` in `apps/web`.
 3. Install Python 3.12 or newer (validated against 3.14.6). Create the API's virtual environment and install its pinned dependencies from `apps/api`:
 
@@ -98,11 +99,12 @@ Two details worth knowing before editing these rules:
    cp apps/web/.env.example apps/web/.env.local
    ```
 
-   The template defaults are correct for local development. Neither file is ever committed.
-5. Ensure `.mcp.json` is present at the project root — the Filesystem server bootstraps automatically via `npx` on first use, no manual install step required.
-6. Terminal, Playwright (Chromium), and Computer Use are available immediately with no setup — they ship with the Claude Code harness itself.
-7. If GitHub operations are needed, confirm the GitHub MCP server is configured at the appropriate level (user/global config) — this is outside `.mcp.json` and outside this repository's version control.
-8. Firefox and WebKit browser binaries are **not** installed by default (Chromium only) — install deliberately with `npx playwright install firefox webkit` only if cross-browser manual validation becomes necessary; this is a real download/disk-write action, not a no-op.
+   The web template's defaults are correct as-is. **`apps/api/.env` needs real Supabase credentials** — the API will not start without `SUPABASE_URL`, `SUPABASE_SECRET_KEY` and `DATABASE_URL`. Get them from the Supabase dashboard (Project Settings → API and → Database). Neither file is ever committed.
+5. Apply migrations so the local database schema matches the code: `./scripts/migrate.sh up` (or `.\scripts\migrate.ps1 up`). Safe to re-run — it is a no-op when already current.
+6. Ensure `.mcp.json` is present at the project root — the Filesystem server bootstraps automatically via `npx` on first use, no manual install step required.
+7. Terminal, Playwright (Chromium), and Computer Use are available immediately with no setup — they ship with the Claude Code harness itself.
+8. If GitHub operations are needed, confirm the GitHub MCP server is configured at the appropriate level (user/global config) — this is outside `.mcp.json` and outside this repository's version control.
+9. Firefox and WebKit browser binaries are **not** installed by default (Chromium only) — install deliberately with `npx playwright install firefox webkit` only if cross-browser manual validation becomes necessary; this is a real download/disk-write action, not a no-op.
 
 ## Known Gaps
 

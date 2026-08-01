@@ -15,14 +15,26 @@ from typing import Annotated
 from fastapi import Depends
 
 from app.core.config import Settings, get_settings
+from app.repositories.database import DatabaseRepository
 from app.services.health_service import HealthService
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 
 
-def get_health_service(settings: SettingsDep) -> HealthService:
+def get_database_repository(settings: SettingsDep) -> DatabaseRepository:
+    """Construct the database repository."""
+    return DatabaseRepository(settings)
+
+
+DatabaseRepositoryDep = Annotated[DatabaseRepository, Depends(get_database_repository)]
+
+
+def get_health_service(
+    settings: SettingsDep,
+    database: DatabaseRepositoryDep,
+) -> HealthService:
     """Construct the health service with its dependencies."""
-    return HealthService(settings)
+    return HealthService(settings, database)
 
 
 HealthServiceDep = Annotated[HealthService, Depends(get_health_service)]

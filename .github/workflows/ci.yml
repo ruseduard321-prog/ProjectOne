@@ -71,8 +71,19 @@ jobs:
       run:
         working-directory: apps/api
 
+    # Non-secret placeholders. These are required settings, so the app refuses
+    # to start without them and CI would be red on arrival (STEP-05/STEP-07).
+    #
+    # Deliberately fake: no CI job currently touches the database. The tests are
+    # unit tests over configuration and the health service, and Alembic is never
+    # invoked here. Wiring a real credential in would grant CI database access it
+    # has no use for — least privilege (CLAUDE.md §16). When a job genuinely
+    # needs a database, it gets a throwaway one, never the development project.
     env:
       PROJECTONE_ENVIRONMENT: development
+      SUPABASE_URL: https://ci-placeholder.supabase.co
+      SUPABASE_SECRET_KEY: sb_secret_ci_placeholder_not_a_real_key
+      DATABASE_URL: postgresql://postgres:ci-placeholder@127.0.0.1:5432/postgres
 
     steps:
       - uses: actions/checkout@v4
