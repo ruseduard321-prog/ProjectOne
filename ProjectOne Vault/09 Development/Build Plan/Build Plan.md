@@ -152,8 +152,9 @@ Two gaps are recorded rather than forgotten: **audit retention is unbounded** (n
 
 **STEP-13 carries an owner approval gate** (Critical — public API contract, authorization, multi-tenancy, database schema). It is `Done` and committed, but STEP-14 does not begin until the owner confirms it — including confirming the CI run, which this environment cannot observe on a private repository.
 
-> [!warning] STEP-14 needs owner input before implementation, not only approval to start
-> [[Design System]] is still `status: draft` at v0.1 and states **principles, not values** — "a modern sans-serif typeface", "one primary accent color", "consistent grid" — with no typeface, no hex codes and no base spacing unit. A token layer *is* the concrete values, so [[STEP-14 Design System Tokens]] cannot be implemented from the document as written, and inventing a brand palette would propagate into every screen built afterwards. Its task 1 is resolving those choices with the project owner and recording them in [[Design System]]. Flagged here so it is known before the session starts rather than discovered inside it.
+**The Design System now specifies values, not only principles** (2026-08-02). The project owner supplied v1 tokens — **explicitly initial values, not permanent branding** — with a binding architectural constraint: *all tokens are expected to change without requiring component rewrites*. [[Design System]] §3a–§6 now hold a two-layer token architecture (primitives → semantic tokens, components referencing **only** the latter), a 4px spacing scale, Inter with a 1.25 type scale, a slate/indigo palette targeting WCAG AA, and dark mode confirmed in scope for v1.
+
+§3a is the load-bearing part: a component says `bg-accent`, never `bg-indigo-600`, so a rebrand is one edit to the semantic mapping rather than a change to every component that ever shipped. [[STEP-14 Design System Tokens]] implements that specification and does not re-decide it; its validation includes a **swap test** — reassign the accent, rebuild, confirm nothing in any component changed — so the constraint is demonstrated rather than asserted. This unblocks STEP-14, which no longer needs owner input before implementation.
 
 The vault, Claude OS and AI operating capabilities are built and validated ([[Environment Setup]], [[AI Index]]).
 
