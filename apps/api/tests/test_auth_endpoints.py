@@ -101,14 +101,14 @@ def client() -> Iterator[TestClient]:
 
 
 def test_a_request_with_no_token_is_rejected(client: TestClient) -> None:
-    response = client.get("/workspaces")
+    response = client.get("/api/v1/workspaces")
 
     assert response.status_code == 401
     assert response.headers.get("WWW-Authenticate") == "Bearer"
 
 
 def test_a_request_with_an_invalid_token_is_rejected(client: TestClient) -> None:
-    response = client.get("/workspaces", headers={"Authorization": "Bearer nonsense"})
+    response = client.get("/api/v1/workspaces", headers={"Authorization": "Bearer nonsense"})
 
     assert response.status_code == 401
 
@@ -116,7 +116,7 @@ def test_a_request_with_an_invalid_token_is_rejected(client: TestClient) -> None
 def test_a_request_with_a_tampered_token_is_rejected(client: TestClient) -> None:
     """A token that fails verification is rejected regardless of its shape."""
     response = client.get(
-        "/workspaces", headers={"Authorization": f"Bearer {VALID_TOKEN}-tampered"}
+        "/api/v1/workspaces", headers={"Authorization": f"Bearer {VALID_TOKEN}-tampered"}
     )
 
     assert response.status_code == 401
@@ -128,18 +128,20 @@ def test_rejections_do_not_reveal_why(client: TestClient) -> None:
     Distinguishing "expired" from "bad signature" from "no token" hands an
     attacker a free oracle for refining an attack. The reason stays in the log.
     """
-    bodies = {
-        client.get("/workspaces").json()["detail"],
-        client.get("/workspaces", headers={"Authorization": "Bearer nope"}).json()["detail"],
-        client.get("/workspaces", headers={"Authorization": "Bearer jwks-down"}).json()["detail"],
-    }
+
+    def detail(token: str | None) -> str:
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
+
+        return str(client.get("/api/v1/workspaces", headers=headers).json()["detail"])
+
+    bodies = {detail(None), detail("nope"), detail("jwks-down")}
 
     assert bodies == {"Not authenticated"}
 
 
 def test_an_unverifiable_token_is_not_admitted(client: TestClient) -> None:
     """A JWKS outage must reject the request, never let it through unverified."""
-    response = client.get("/workspaces", headers={"Authorization": "Bearer jwks-down"})
+    response = client.get("/api/v1/workspaces", headers={"Authorization": "Bearer jwks-down"})
 
     assert response.status_code == 401
 
@@ -154,7 +156,7 @@ def test_a_valid_token_reaches_the_route(client: TestClient) -> None:
     app = client.app
     app.dependency_overrides[get_tenant_connection] = StubConnection  # type: ignore[attr-defined]
 
-    response = client.get("/workspaces", headers={"Authorization": f"Bearer {VALID_TOKEN}"})
+    response = client.get("/api/v1/workspaces", headers={"Authorization": f"Bearer {VALID_TOKEN}"})
 
     assert response.status_code == 200
     assert response.json() == []
@@ -163,14 +165,16 @@ def test_a_valid_token_reaches_the_route(client: TestClient) -> None:
 def test_sign_up_validates_its_input(client: TestClient) -> None:
     """A short password is rejected before it reaches the identity provider."""
     response = client.post(
-        "/auth/sign-up", json={"email": "user@example.test", "password": "short"}
+        "/api/v1/auth/sign-up", json={"email": "user@example.test", "password": "short"}
     )
 
     assert response.status_code == 422
 
 
 def test_sign_up_rejects_a_malformed_address(client: TestClient) -> None:
-    response = client.post("/auth/sign-up", json={"email": "not-an-email", "password": "a" * 12})
+    response = client.post(
+        "/api/v1/auth/sign-up", json={"email": "not-an-email", "password": "a" * 12}
+    )
 
     assert response.status_code == 422
 
@@ -195,7 +199,7 @@ def test_the_tenant_connection_is_opened_for_the_verified_identity(
     app = client.app
     app.dependency_overrides[get_request_session_factory] = RecordingFactory  # type: ignore[attr-defined]
 
-    response = client.get("/workspaces", headers={"Authorization": f"Bearer {VALID_TOKEN}"})
+    response = client.get("/api/v1/workspaces", headers={"Authorization": f"Bearer {VALID_TOKEN}"})
 
     assert response.status_code == 200
     assert scoped_to == [USER.id]

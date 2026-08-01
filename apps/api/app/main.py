@@ -1,61 +1,44 @@
 """FastAPI application entry point.
 
-Composition root: it builds the application and mounts routers. No business
-logic lives here, and no router imports this module -- keeping the dependency
+Composition root: it builds the application, installs the cross-cutting
+conventions every endpoint inherits, and mounts routers. No business logic
+lives here, and no router imports this module -- keeping the dependency
 direction one-way (CLAUDE.md 28).
+
+The conventions themselves live next door: the error contract in
+`app.core.errors`, the middleware in `app.core.middleware`, the version prefix
+in `app.core.api`. This module only decides that they apply.
 """
 
-from fastapi import FastAPI, Request, status
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI
 
+from app.core.api import API_PREFIX
 from app.core.config import get_settings
-from app.core.security import AuthorizationError, LastOwnerError
+from app.core.errors import EXCEPTION_HANDLERS
+from app.core.logging import configure_logging
+from app.core.middleware import RateLimitMiddleware, RateLimitRule, RequestContextMiddleware
 from app.routers import auth, health, workspaces
 
-
-def _last_owner_conflict(_request: Request, exception: Exception) -> JSONResponse:
-    """Translate the last-owner rule into a 409.
-
-    **409, not 403.** The caller holds every permission the action requires --
-    an owner leaving their own workspace has `LEAVE_WORKSPACE`. What refuses
-    them is the workspace's state, and no amount of re-authenticating or
-    role-changing would help. A 403 here would send an owner looking for a
-    permission problem that does not exist.
-
-    Unlike the authorization messages, this body is deliberately specific: it
-    names transferring ownership as the remedy. It leaks nothing an owner does
-    not already know, and withholding it would leave them stuck.
-    """
-    message = getattr(exception, "public_message", "Conflict")
-
-    return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"detail": message})
-
-
-def _authorization_denied(_request: Request, exception: Exception) -> JSONResponse:
-    """Translate a refused permission into a 403.
-
-    Registered once here rather than repeated as a `try/except` in every route
-    that can raise it. A service may enforce a permission without the route
-    knowing (see `DataOwnershipService`), and a check whose HTTP mapping depends
-    on each router remembering to catch it is a check that eventually surfaces
-    as a 500.
-
-    403, not 401: the caller authenticated successfully and the answer is still
-    no. `public_message` names neither the caller's role nor the permission
-    required -- that detail is a map of the permission model, and belongs in the
-    log (CLAUDE.md §24).
-    """
-    # Starlette types every handler as taking `Exception`, so the narrowing is
-    # done here rather than in the signature. It cannot fail in practice --
-    # FastAPI only routes the class this is registered against — but falling
-    # back to the base message keeps a mis-registration a correct 403 rather
-    # than an AttributeError inside the error handler.
-    message = getattr(exception, "public_message", AuthorizationError.public_message)
-
-    return JSONResponse(
-        status_code=status.HTTP_403_FORBIDDEN,
-        content={"detail": message},
-    )
+#: Rate limits, keyed by full request path.
+#:
+#: The authentication endpoints only. These are the routes reachable *without*
+#: a credential, which makes them the ones an attacker can attempt in volume:
+#: sign-in is the credential-stuffing target, sign-up the account-spam one, and
+#: refresh takes a long-lived token worth guessing at.
+#:
+#: Authenticated routes are not limited here. They already require a verified
+#: token, and a per-workspace quota is a different mechanism answering a
+#: different question (cost governance, CLAUDE.md §15a) -- it belongs with the
+#: AI work that needs it, not bolted onto an IP-keyed limiter.
+#:
+#: The numbers are deliberately generous enough that a human never meets them
+#: and an automated attempt does. A legitimate user signs in a handful of times
+#: an hour; ten attempts a minute from one address is a script.
+_RATE_LIMITS = {
+    f"{API_PREFIX}/auth/sign-in": RateLimitRule(limit=10, window_seconds=60),
+    f"{API_PREFIX}/auth/sign-up": RateLimitRule(limit=5, window_seconds=60),
+    f"{API_PREFIX}/auth/refresh": RateLimitRule(limit=30, window_seconds=60),
+}
 
 
 def create_app() -> FastAPI:
@@ -67,18 +50,37 @@ def create_app() -> FastAPI:
     """
     settings = get_settings()
 
+    configure_logging()
+
     app = FastAPI(
         title=settings.app_name,
         version=settings.version,
         description="ProjectOne backend API.",
+        # The generated OpenAPI document is served under the version prefix
+        # too. A v2 mounted alongside v1 would otherwise overwrite the schema
+        # of the version it was meant to coexist with.
+        openapi_url=f"{API_PREFIX}/openapi.json",
+        docs_url=f"{API_PREFIX}/docs",
+        redoc_url=None,
     )
 
-    app.add_exception_handler(AuthorizationError, _authorization_denied)
-    app.add_exception_handler(LastOwnerError, _last_owner_conflict)
+    for exception_type, handler in EXCEPTION_HANDLERS:
+        app.add_exception_handler(exception_type, handler)
 
+    # Starlette runs middleware in reverse registration order, so the context
+    # middleware is added *last* to run *first*. That ordering matters: the
+    # rate limiter logs its refusals, and a refusal logged without a
+    # correlation id is the one log line a user cannot quote back.
+    app.add_middleware(RateLimitMiddleware, rules=_RATE_LIMITS)
+    app.add_middleware(RequestContextMiddleware)
+
+    # `/health` is mounted unversioned, deliberately -- see `API_PREFIX`. It is
+    # consumed by orchestrators and uptime checks, and versioning it would mean
+    # a deploy configuration change every time the API version moves.
     app.include_router(health.router)
-    app.include_router(auth.router)
-    app.include_router(workspaces.router)
+
+    app.include_router(auth.router, prefix=API_PREFIX)
+    app.include_router(workspaces.router, prefix=API_PREFIX)
 
     return app
 

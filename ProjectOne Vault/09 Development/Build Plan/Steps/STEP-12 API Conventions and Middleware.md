@@ -2,17 +2,17 @@
 title: STEP-12 API Conventions and Middleware
 category: Development/Build Step
 status: draft
-version: "1.1"
+version: "1.2"
 last_updated: 2026-08-01
 tags: [engineering, workflow, build-step, backend,api]
 step_id: STEP-12
-step_status: Not Started
+step_status: Done
 detail_level: full
 ---
 
 # STEP-12 — API Conventions and Middleware
 
-**Status:** Not Started
+**Status:** Done
 **Detail level:** full — expanded by [[STEP-11 Authorization and RBAC]], per [[Execution Protocol]].
 
 ## Goal
@@ -83,6 +83,35 @@ Added by [[STEP-11a Membership Removal Policy]]:
 Every endpoint shares one versioning scheme, one response envelope, one error contract and one logging path; error translation lives in handlers rather than routers; the auth endpoints are rate limited; and no log or response body leaks a credential or the reason a request was rejected.
 
 **Critical change** ([[CLAUDE|CLAUDE.md]] §21 — public API contract, security controls): flag for owner review.
+
+## Outcome
+
+**Every endpoint now shares one contract.** The decisions and their reasoning are [[API Conventions]]; only what a reader of this step needs is recorded here.
+
+**The versioning decision was `/api/v1` as a URL prefix**, with header negotiation rejected: a version that is invisible in a log, a `curl` command and an edge routing rule fails in the one direction that matters — silently, when a client forgets it. `/health` stays unversioned because it is infrastructure rather than a product contract. The six existing endpoints were **migrated, not duplicated**, and `test_the_unversioned_path_no_longer_answers` is what proves it: had both paths answered, the prefix would have been decoration.
+
+**The envelope kept FastAPI's `detail` key** rather than inventing one, and added `request_id` as a *sibling* rather than nesting it. That placement is load-bearing — the identical-401-body and identical-403-body properties are compared on `detail`, and an id that varies per request cannot live inside the compared value without weakening the tests that guard them. Both properties were re-proven against the new envelope.
+
+**Error translation left the routers.** `AuthError` was the last mapping living in one (`app/routers/auth.py::_reject`); it now sits in `app/core/errors.py` alongside the 403, 409, 422, 404 and 500 handlers, registered from a single table. Sign-up's `CredentialsRejectedError` → 400 stayed in the router deliberately: the same exception from sign-in correctly means 401, so it is an endpoint decision rather than a type-to-status mapping.
+
+**Credential redaction was built as a log filter rather than a convention**, and that choice is the substance of task 4. "Do not log the `Authorization` header" holds until someone debugging an auth problem logs the request headers — at which point the token is in the log file and nothing turns red. Enforcing it in the pipeline turns that change into a redacted line instead of a leaked credential. It is tested both directly and through a real request.
+
+**Rate limiting is in-process and per-worker**, stated as a limitation rather than hidden. Exact global limits need shared state, which is new infrastructure and therefore an ADR ([[CLAUDE|CLAUDE.md]] §10, §28) — out of scope for a conventions step, and an approximate limit still stops the attacks it exists for.
+
+**[[API Endpoint Template]] already existed** (task 6) and was updated to match these conventions rather than rewritten.
+
+### Defects found during validation
+
+Both were found by running the tests, not by reading:
+
+- **A test fixture silently disabled authentication.** Overriding `get_tenant_connection` replaces the entire dependency subtree beneath it — including `get_current_user` — so an unauthenticated request reached the handler and returned 200. Four rejection tests were passing against an app that was not checking anything. The fixture was split in two (`client` and `authenticated_client`), with the trap documented on both, since the same override appears in earlier test modules and the failure mode is invisible.
+- **Errors that never reach an exception handler bypassed the envelope.** Starlette answers an unmatched route from inside its router, and the rate limiter returns its 429 directly from middleware; neither passes through the handler chain, so both lacked a `request_id`. Stamped by the context middleware on the way out — which is the only place that sees *every* response. Without it the rule would have held for most errors and failed on exactly the two a confused caller is most likely to report.
+
+### Validation
+
+Run against a real PostgreSQL — a throwaway database on the development Supabase instance, created and dropped for the run, with the genuine `auth.uid()`. **160 passed, 0 failed, 0 skipped** (up from 133), including the full STEP-09, STEP-10, STEP-11 and STEP-11a suites. `apps/web`: 7 passed. Lint, format and `mypy app` (strict) all clean.
+
+Observed rather than assumed, per the Validation section above: the *n+1*th sign-in inside the window is genuinely refused with 429 and `Retry-After`, a log line carries the same correlation id the response header returned, and no log line from a real request contains a token or an `Authorization` value.
 
 ---
 

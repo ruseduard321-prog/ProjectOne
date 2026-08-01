@@ -119,7 +119,7 @@ The `workspace_id` path parameter is read from the URL **by name**, so every rou
 
 Conflating them is a correctness bug before it is a security one: a 401 tells a correct client its session is broken and sends it into a refresh loop over what is a settled refusal.
 
-The mapping is registered **once**, as an exception handler in `app/main.py`, rather than repeated as a `try/except` in every router — a check whose HTTP mapping depends on each router remembering to catch it eventually surfaces as a 500.
+The mapping is registered **once**, as an exception handler, rather than repeated as a `try/except` in every router — a check whose HTTP mapping depends on each router remembering to catch it eventually surfaces as a 500. [[STEP-12 API Conventions and Middleware]] moved the handler itself from `app/main.py` into `app/core/errors.py`, alongside every other error in the contract ([[API Conventions]]); `main.py` now registers the table rather than defining the mappings. The status codes and bodies are unchanged.
 
 > [!important] A non-member and an insufficient role return the same response
 > `WorkspaceAccessError` (no live membership) and `AuthorizationError` (role too low) surface **identically** — same status, same body. A 404-versus-403 difference would reveal whether a workspace id exists at all, turning every endpoint taking one into an existence oracle. Only the log knows which happened.
@@ -150,6 +150,6 @@ Erasure of `workspace_members` works as of [[STEP-11a Membership Removal Policy]
 ## Navigation
 
 - **Previous:** [[Authentication Implementation]]
-- **Next:** [[Schema Overview]]
+- **Next:** [[API Conventions]]
 - **Parent:** [[Architecture MOC]]
 - **Related Notes:** [[RLS Policy Pattern]] · [[Authentication Implementation]] · [[Authentication and Authorization]] · [[Privacy and Data Protection]] · [[Security Architecture]] · [[Table - workspace_members]]

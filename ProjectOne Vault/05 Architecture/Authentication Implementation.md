@@ -58,25 +58,29 @@ Router → service → repository, per [[CLAUDE|CLAUDE.md]] §12:
 
 | Layer | Module | Owns |
 |---|---|---|
-| Router | `app/routers/auth.py` | HTTP only — status codes, response shapes |
+| Router | `app/routers/auth.py` | HTTP only — request/response shapes |
 | Service | `app/services/auth_service.py` | Registration, sign-in, provisioning decisions |
 | Service | `app/services/token_service.py` | **Token verification is business logic**, not routing |
 | Repository | `app/repositories/supabase_auth.py` | The only module that talks to Supabase Auth |
 | Repository | `app/repositories/session.py` | Request-scoped, RLS-subject connections |
 | Repository | `app/repositories/users.py` | `public.users` rows |
 
-Token verification living in a service rather than a router is the load-bearing part of this split: a router's job is to translate a rejection into a 401, not to decide what makes a token valid.
+Token verification living in a service rather than a router is the load-bearing part of this split: a router's job is to accept a request and return a response, not to decide what makes a token valid.
+
+**Status-code translation left the routers in [[STEP-12 API Conventions and Middleware]].** `AuthError` and its subclasses are now mapped by application-wide exception handlers ([[API Conventions]]), so a router raises or propagates and never maps. The reasoning is there rather than restated here.
 
 ## Endpoints
 
+Paths are shown with the `/api/v1` prefix STEP-12 introduced. They were unversioned when STEP-10 built them, and were migrated — not duplicated — onto the prefix; the unversioned paths no longer answer.
+
 | Endpoint | Auth | Notes |
 |---|---|---|
-| `POST /auth/sign-up` | — | 201. Returns `email_confirmation_required` when the project issues no session. |
-| `POST /auth/sign-in` | — | Returns access + refresh tokens. |
-| `POST /auth/sign-out` | Bearer | Revokes **upstream**, using the user's own token. |
-| `POST /auth/refresh` | — | Exchanges a refresh token. |
-| `GET /auth/me` | Bearer | The caller's profile; provisions it if absent. |
-| `GET /workspaces` | Bearer | Read-only. Exists to prove RLS reaches the API. |
+| `POST /api/v1/auth/sign-up` | — | 201. Returns `email_confirmation_required` when the project issues no session. Rate limited. |
+| `POST /api/v1/auth/sign-in` | — | Returns access + refresh tokens. Rate limited. |
+| `POST /api/v1/auth/sign-out` | Bearer | Revokes **upstream**, using the user's own token. |
+| `POST /api/v1/auth/refresh` | — | Exchanges a refresh token. Rate limited. |
+| `GET /api/v1/auth/me` | Bearer | The caller's profile; provisions it if absent. |
+| `GET /api/v1/workspaces` | Bearer | Read-only. Exists to prove RLS reaches the API. |
 
 Sign-out deliberately calls Supabase rather than discarding the token client-side. A local discard leaves the token valid until it expires, so a "signed out" user still holds working credentials — which is not what signing out means.
 
@@ -84,7 +88,9 @@ No endpoint accepts a user id in its body. Identity always comes from the verifi
 
 ## Errors Are Typed
 
-`app/core/security.py` defines `AuthError` and its subclasses. Routers catch the base type and translate; they never inspect message strings. Every subclass carries a `public_message` safe to return, separate from the detail that goes to logs.
+`app/core/security.py` defines `AuthError` and its subclasses. Every subclass carries a `public_message` safe to return, separate from the detail that goes to logs, and nothing inspects message strings to decide a status code.
+
+Translation is owned by the handlers in `app/core/errors.py`, registered once for the application ([[API Conventions]]). The identical-401-body property this note depends on is unchanged and still guarded by `test_rejections_do_not_reveal_why` — moving the mapping did not move the rule.
 
 ## What This Step Did Not Build
 

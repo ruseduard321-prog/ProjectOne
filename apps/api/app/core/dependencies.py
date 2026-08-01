@@ -16,13 +16,13 @@ from functools import lru_cache
 from typing import Annotated
 
 import psycopg
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt import PyJWKClient
 
 from app.core.config import Settings, get_settings
 from app.core.permissions import WorkspacePermission, WorkspaceRole
-from app.core.security import AuthError, AuthorizationError
+from app.core.security import InvalidTokenError
 from app.repositories.database import DatabaseRepository
 from app.repositories.memberships import MembershipRepository
 from app.repositories.session import RequestSessionFactory
@@ -119,27 +119,19 @@ def get_current_user(
     missing check turns into a silent security hole instead of a 401.
 
     Raises:
-        HTTPException: 401 when no valid token is present.
+        InvalidTokenError: when no bearer token is present. Translated to 401
+            by `app.core.errors`, with the same body as a token that was
+            present and bad — a caller cannot tell the two apart, which is the
+            point (CLAUDE.md §24).
     """
     if credentials is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise InvalidTokenError("No bearer credentials supplied")
 
-    try:
-        return auth_service.authenticate(credentials.credentials)
-    except AuthError as error:
-        # `error.public_message` is returned; `str(error)` — which says whether
-        # the token expired, failed its signature, or carried the wrong issuer —
-        # is not. That distinction is an oracle for an attacker and a debugging
-        # aid for us, so it belongs in logs only (CLAUDE.md §24).
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=error.public_message,
-            headers={"WWW-Authenticate": "Bearer"},
-        ) from error
+    # Deliberately not wrapped in a try/except. Letting the typed error
+    # propagate to the registered handler is what keeps the 401 body identical
+    # across every cause: a local `HTTPException` here is a second place the
+    # message could drift from the one the handler produces.
+    return auth_service.authenticate(credentials.credentials)
 
 
 CurrentUserDep = Annotated[AuthenticatedUser, Depends(get_current_user)]
@@ -152,14 +144,10 @@ def get_access_token(credentials: BearerCredentialsDep) -> str:
     it. Every other route wants the verified identity, not the string.
 
     Raises:
-        HTTPException: 401 when no bearer token is present.
+        InvalidTokenError: when no bearer token is present.
     """
     if credentials is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise InvalidTokenError("No bearer credentials supplied")
 
     return credentials.credentials
 
@@ -269,21 +257,17 @@ def requires(permission: WorkspacePermission) -> Callable[..., WorkspaceRole]:
         user: CurrentUserDep,
         authorization: AuthorizationServiceDep,
     ) -> WorkspaceRole:
-        try:
-            return authorization.require(workspace_id, user.id, permission)
-        except AuthorizationError as error:
-            # 403, never 401. The caller authenticated successfully; re-issuing
-            # a 401 here would tell a correct client its session had failed and
-            # send it into a refresh loop over what is a settled "no".
-            #
-            # `error.public_message` is returned rather than `str(error)`, which
-            # names the caller's actual role and the required permission -- an
-            # outline of the permission model, and a debugging aid, so it belongs
-            # in the log (CLAUDE.md §24).
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=error.public_message,
-            ) from error
+        # `AuthorizationError` propagates to the handler registered in
+        # `app.core.errors`, which answers 403 -- never 401. Re-issuing a 401
+        # here would tell a correct client its session had failed and send it
+        # into a refresh loop over what is a settled "no".
+        #
+        # Translated there rather than here so that a refusal raised *inside* a
+        # service (DataOwnershipService does exactly this) produces the same
+        # status and the same body as one raised by this dependency. Two
+        # translation sites is how those two answers drift apart, and a
+        # difference between them is an oracle (CLAUDE.md §24).
+        return authorization.require(workspace_id, user.id, permission)
 
     return dependency
 

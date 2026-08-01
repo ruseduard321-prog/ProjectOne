@@ -136,7 +136,7 @@ def test_a_member_is_refused_an_owner_only_action(client: TestClient, roles: Rol
     was identified, and the answer is still no.
     """
     response = client.delete(
-        f"/workspaces/{roles.workspace_id}/data",
+        f"/api/v1/workspaces/{roles.workspace_id}/data",
         headers=roles.token_for(roles.member),
     )
 
@@ -155,7 +155,7 @@ def test_an_owner_is_allowed_the_same_action(client: TestClient, roles: Roles) -
     impossible for every role.
     """
     response = client.delete(
-        f"/workspaces/{roles.workspace_id}/data",
+        f"/api/v1/workspaces/{roles.workspace_id}/data",
         headers=roles.token_for(roles.owner),
     )
 
@@ -173,7 +173,7 @@ def test_a_member_cannot_rename_the_workspace_through_the_api(
     that was never written.
     """
     response = client.patch(
-        f"/workspaces/{roles.workspace_id}",
+        f"/api/v1/workspaces/{roles.workspace_id}",
         json={"name": "renamed by a member"},
         headers=roles.token_for(roles.member),
     )
@@ -185,7 +185,7 @@ def test_an_admin_can_rename_the_workspace_through_the_api(
     client: TestClient, roles: Roles
 ) -> None:
     response = client.patch(
-        f"/workspaces/{roles.workspace_id}",
+        f"/api/v1/workspaces/{roles.workspace_id}",
         json={"name": "renamed by an admin"},
         headers=roles.token_for(roles.admin),
     )
@@ -197,7 +197,7 @@ def test_an_admin_can_rename_the_workspace_through_the_api(
 def test_a_member_cannot_export_the_workspace(client: TestClient, roles: Roles) -> None:
     """An export is a bulk copy of every member's data, not ordinary reading."""
     response = client.get(
-        f"/workspaces/{roles.workspace_id}/export",
+        f"/api/v1/workspaces/{roles.workspace_id}/export",
         headers=roles.token_for(roles.member),
     )
 
@@ -206,7 +206,7 @@ def test_a_member_cannot_export_the_workspace(client: TestClient, roles: Roles) 
 
 def test_an_admin_can_export_the_workspace(client: TestClient, roles: Roles) -> None:
     response = client.get(
-        f"/workspaces/{roles.workspace_id}/export",
+        f"/api/v1/workspaces/{roles.workspace_id}/export",
         headers=roles.token_for(roles.admin),
     )
 
@@ -217,7 +217,7 @@ def test_an_admin_can_export_the_workspace(client: TestClient, roles: Roles) -> 
 def test_a_member_can_still_read_what_their_role_permits(client: TestClient, roles: Roles) -> None:
     """RBAC must narrow, never break the product for ordinary members."""
     response = client.get(
-        f"/workspaces/{roles.workspace_id}/permissions",
+        f"/api/v1/workspaces/{roles.workspace_id}/permissions",
         headers=roles.token_for(roles.member),
     )
 
@@ -230,7 +230,7 @@ def test_a_member_can_still_read_what_their_role_permits(client: TestClient, rol
 
 def test_an_owner_holds_every_permission(client: TestClient, roles: Roles) -> None:
     response = client.get(
-        f"/workspaces/{roles.workspace_id}/permissions",
+        f"/api/v1/workspaces/{roles.workspace_id}/permissions",
         headers=roles.token_for(roles.owner),
     )
 
@@ -244,7 +244,7 @@ def test_an_owner_holds_every_permission(client: TestClient, roles: Roles) -> No
 def test_authentication_failure_is_still_401(client: TestClient, roles: Roles) -> None:
     """The two must not be conflated -- the whole point of the new error type."""
     response = client.patch(
-        f"/workspaces/{roles.workspace_id}",
+        f"/api/v1/workspaces/{roles.workspace_id}",
         json={"name": "anything"},
         headers={"Authorization": "Bearer nonsense"},
     )
@@ -254,7 +254,7 @@ def test_authentication_failure_is_still_401(client: TestClient, roles: Roles) -
 
 def test_a_missing_token_is_401_not_403(client: TestClient, roles: Roles) -> None:
     """No credentials means "I do not know who you are", which is 401."""
-    response = client.patch(f"/workspaces/{roles.workspace_id}", json={"name": "anything"})
+    response = client.patch(f"/api/v1/workspaces/{roles.workspace_id}", json={"name": "anything"})
 
     assert response.status_code == 401
     assert response.headers.get("WWW-Authenticate") == "Bearer"
@@ -273,11 +273,11 @@ def test_a_non_member_is_refused_and_told_nothing(client: TestClient, roles: Rol
     stranger_workspace = uuid.uuid4()
 
     absent = client.get(
-        f"/workspaces/{stranger_workspace}/permissions",
+        f"/api/v1/workspaces/{stranger_workspace}/permissions",
         headers=roles.token_for(roles.member),
     )
     forbidden = client.get(
-        f"/workspaces/{roles.workspace_id}/export",
+        f"/api/v1/workspaces/{roles.workspace_id}/export",
         headers=roles.token_for(roles.member),
     )
 
@@ -296,7 +296,7 @@ def test_a_role_change_takes_effect_on_the_next_request(
     request" is the documented window rather than a discovered one.
     """
     before = client.patch(
-        f"/workspaces/{roles.workspace_id}",
+        f"/api/v1/workspaces/{roles.workspace_id}",
         json={"name": "while still an admin"},
         headers=roles.token_for(roles.admin),
     )
@@ -311,7 +311,7 @@ def test_a_role_change_takes_effect_on_the_next_request(
         )
 
     after = client.patch(
-        f"/workspaces/{roles.workspace_id}",
+        f"/api/v1/workspaces/{roles.workspace_id}",
         json={"name": "after demotion"},
         headers=roles.token_for(roles.admin),
     )

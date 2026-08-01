@@ -45,8 +45,8 @@ Status appears in two places — the step note and the row below — and they mu
 | STEP-10 | [[STEP-10 Authentication Backend]] | Done | full |
 | STEP-11 | [[STEP-11 Authorization and RBAC]] | Done | full |
 | STEP-11a | [[STEP-11a Membership Removal Policy]] | Done | full |
-| STEP-12 | [[STEP-12 API Conventions and Middleware]] | Not Started | full |
-| STEP-13 | [[STEP-13 Auth Users Workspaces Endpoints]] | Not Started | outline |
+| STEP-12 | [[STEP-12 API Conventions and Middleware]] | Done | full |
+| STEP-13 | [[STEP-13 Auth Users Workspaces Endpoints]] | Not Started | full |
 | STEP-14 | [[STEP-14 Design System Tokens]] | Not Started | outline |
 | STEP-15 | [[STEP-15 App Shell and Routing]] | Not Started | outline |
 | STEP-16 | [[STEP-16 Sign Up and Sign In UI]] | Not Started | outline |
@@ -128,7 +128,17 @@ Three defects were found during validation, each reproduced against a live datab
 
 Two mechanisms carry it. The `deleted_at` filter **moved out of the SELECT policy into the queries** — a policy answers "whose rows may this caller touch", which is a tenant question `deleted_at` has nothing to do with — and the last-owner rule became a **deferrable constraint trigger**, because it counts remaining owners and no RLS predicate can do that without recursing. Tenant isolation is provably unchanged: `app_current_user_workspaces()` still filters the caller's own membership, so a removed member still loses access immediately, and a test proves the widening stopped at the workspace boundary. The suite grew from 96 tests to 133.
 
-**STEP-11a carries an owner approval gate** (Critical — authorization, security controls, multi-tenancy/RLS). It is `Done` and committed, but STEP-12 does not begin until the owner confirms it — including confirming the CI run, which this environment cannot observe on a private repository.
+**STEP-11a was approved by the project owner on 2026-08-01**, with CI confirmed green, clearing its owner approval gate (Critical — authorization, security controls, multi-tenancy/RLS).
+
+**Every endpoint now shares one API contract** (STEP-12). Routes moved onto a `/api/v1` URL prefix — migrated, not duplicated, so the unversioned paths return 404 — with `/health` deliberately left unversioned as infrastructure. One error envelope (`{"detail", "request_id"}`) covers 401, 403, 409, 422, 404 and 500, and translation moved out of the routers entirely into a handler table in `app/core/errors.py`, finishing what STEP-11 started. Every request carries a correlation id, echoed in the `X-Request-ID` header and in every error body, and the auth endpoints are rate limited. The decisions and their reasoning are [[API Conventions]]; the suite grew from 133 tests to 160.
+
+The rule that no credential reaches a log became **structural rather than conventional**: a redacting filter on the log handler strips bearer tokens, `Authorization` values, passwords and API keys from every record, including ones emitted by `httpx` and `uvicorn`. The reasoning is that "do not log the header" holds until someone debugging logs the headers, and that failure is silent and permanent.
+
+Two defects were found by running the tests: **a fixture that silently disabled authentication** (overriding `get_tenant_connection` replaces `get_current_user` beneath it, so four rejection tests were passing against an app checking nothing), and **errors bypassing the envelope** when they never reached a handler — Starlette's 404 and the limiter's own 429. Both are fixed; see [[STEP-12 API Conventions and Middleware#Outcome]].
+
+Two things [[API Architecture]] requires are explicitly **not** built yet and are recorded rather than forgotten: **audit logging** (request logging is not audit logging) and **idempotency keys** (nothing yet creates a resource from a client-supplied request). Both are named in STEP-13's inherited notes.
+
+**STEP-12 carries an owner approval gate** (Critical — public API contract, security controls). It is `Done` and committed, but STEP-13 does not begin until the owner confirms it — including confirming the CI run, which this environment cannot observe on a private repository.
 
 The vault, Claude OS and AI operating capabilities are built and validated ([[Environment Setup]], [[AI Index]]).
 
