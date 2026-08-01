@@ -12,7 +12,7 @@ aliases: ["Implementation Plan", "Build Roadmap", "Step Index"]
 
 The ordered execution index taking ProjectOne from an empty repository to first public release. **26 sequential steps**, each sized for a single Claude Code session.
 
-This note is an **index, not a plan** — it holds only ID, title and status. Step detail lives in one note per step under `Steps/`, so a session reads this index plus exactly one step file and nothing else.
+This note is an **index, not a plan** — it holds only ID, title and status. Step detail lives in one note per step under `Steps/`, so a session reads this index plus exactly one step file, and beyond that only what [[Execution Protocol#Context Discipline]] permits.
 
 **To execute:** say *"Implement the next step."* Claude follows [[Execution Protocol]] — no other instruction needed.
 

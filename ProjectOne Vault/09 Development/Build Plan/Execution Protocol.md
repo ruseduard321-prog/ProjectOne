@@ -2,8 +2,8 @@
 title: Execution Protocol
 category: Development
 status: stable
-version: "1.3"
-last_updated: 2026-07-31
+version: "1.5"
+last_updated: 2026-08-01
 tags: [engineering, workflow, governance, ai]
 aliases: ["Build Plan Protocol", "Step Execution Rules"]
 ---
@@ -18,7 +18,7 @@ The rules Claude follows when the user says **"Implement the next step."** This 
 2. **Select** — scan the step table top to bottom; take the **first step whose Status is not `Done`**. That is the step. There is no judgment call here.
 3. **Verify the predecessor** — before any new work, confirm the previous step actually completed: its Status is `Done` in both places, and its Definition of Done genuinely holds against the current state of the project. A `Done` marking that no longer matches reality is a defect to surface, not a green light — stop and report it rather than building on top of it.
 4. **Check the working tree** — run `git status`. It should be clean. Uncommitted changes mean a previous session ended `Blocked` and left its work in place ([[#Blocked Steps Are Never Committed]]) — **do not discard them and do not commit them**. Identify the blocked step, confirm with the user whether to resume it, discard it, or commit it, and act on that answer before starting anything new.
-5. **Read** — open that one step note. Read only the documents its *Required Documentation* section names, plus [[Start Here]] per [[CLAUDE|CLAUDE.md]] §6 step 0. Nothing else.
+5. **Read** — open that one step note, then read only what [[#Context Discipline]] permits. The step's *Required Documentation* is a candidate list, not a reading list.
 6. **Mark In Progress** — set the step's Status to `In Progress` in both the step note and the [[Build Plan]] index, before implementing.
 7. **Implement** — perform the step's Tasks, and only those tasks.
 8. **Validate** — run the step's Validation section. Every check must actually pass, observed, not assumed. On any failure, go to [[#Validation Failure and Rollback]] — do not continue down this list.
@@ -37,10 +37,52 @@ The rules Claude follows when the user says **"Implement the next step."** This 
 - **Never mark `Done` on unvalidated work.** A step whose Validation did not pass is `In Progress` or `Blocked`, never `Done`. Partial completion is not completion ([[CLAUDE|CLAUDE.md]] §22).
 - **Never widen scope.** Work not in the step's Tasks belongs to a later step or to no step. No opportunistic refactors ([[CLAUDE|CLAUDE.md]] §29/§35).
 - **Never invent missing information.** If a step depends on a schema, contract or decision that is not documented, stop and say exactly what is missing ([[CLAUDE|CLAUDE.md]] §33–34). That is a `Blocked` step, not a guess.
+- **Never read a document without a question it answers.** Reading is scoped by [[#Context Discipline]], not by a checklist. This never overrides the rule above it — when a fact is genuinely needed and only a document holds it, read the document.
 - **Status lives in two places and must agree.** The step note and the index. Updating one without the other is a defect.
 - **One step, one commit.** A completed step produces exactly one commit — never several, and never a commit that spans two steps. Splitting a step across commits is only permitted when the user explicitly asks for it ([[#One Step One Commit]]).
 - **Never commit a partially implemented step.** A `Blocked` step produces **no commit** — not the partial work, not the `Blocked` status marking. Committing any of it requires explicit user approval, asked for and received ([[#Blocked Steps Are Never Committed]]).
 - **Never leave the project in a partially completed or inconsistent state.** Every session ends at a coherent boundary: the step is finished and committed, or it is `Blocked` — rolled back where safe, reported where not — and left uncommitted for the user to decide on. Half-applied work with no marker is the one outcome this protocol exists to prevent.
+
+## Context Discipline
+
+Context is a finite budget spent against one step. Every token spent on a document that changes nothing is a token unavailable to the implementation, the validation, and the debugging that follows — and long steps end with debugging, which is where context runs short. These rules govern loop item 5 and every read after it.
+
+**They reduce reading, never rigour.** Implementation quality, validation quality and safety are unchanged. A step still stops rather than guessing when something genuinely is not documented ([[CLAUDE|CLAUDE.md]] §33–34) — reading less is not the same as knowing less, and the moment those two conflict, read.
+
+### The Rules
+
+1. **Read only what the current step needs.** Necessity is judged against this step's Tasks and Validation, not against the subject area in general.
+2. **A checklist is not a reason to read.** A document named in *Required Documentation* is a candidate. It earns a read when it answers a question this implementation actually has — otherwise it is skipped, and the step note's summary of it stands.
+3. **Never reread [[CLAUDE|CLAUDE.md]] during implementation.** It is in context on every turn. Opening it duplicates what is already loaded.
+4. **The Claude OS routing notes are read once per project, or when they change.** [[Start Here]], [[Documentation Discovery]], [[Reading Priority]] and [[Task Workflow]] describe how to find documentation. Their routing is known; re-deriving it each session buys nothing. They are **not part of this loop** — see [[#Relationship to CLAUDE.md §6 Step 0]].
+5. **Never reread a file created or modified earlier in the same session** unless debugging requires that specific file. The edit tools fail loudly; a verification read confirms nothing that silence did not already confirm.
+6. **Read before implementing only what influences implementation.** Documents that are *outputs* of the step — indexes, MOCs, [[Environment Setup]], [[Schema Overview]], Navigation blocks — are opened during loop item 9, not item 5. Reading them up front means reading them twice.
+7. **One architecture document at a time.** When a step names several, read the single one that answers the current question. Read a second only when the first proves insufficient — which is a fact discovered, not assumed in advance.
+8. **Name the unknown before opening a High-cost document.** State the specific question it resolves. If no concrete unknown exists, do not open it. This rule catches the most expensive habit: reading a large document to feel prepared rather than to learn something.
+9. **Prefer established code over documentation.** Once the repository demonstrably implements a pattern — the router→service→repository layering, the migration shape, the test fixtures — the code is the more accurate and far cheaper specification. Read the handbook chapter when introducing a pattern, not when following one.
+10. **Quality is held constant.** These rules exist to cut unnecessary loading only. Nothing here licenses skipping validation, skipping documentation updates, or implementing against an assumption instead of a source.
+
+### Relationship to CLAUDE.md §6 Step 0
+
+[[CLAUDE|CLAUDE.md]] §6 step 0 requires every ProjectOne task to begin at [[Start Here]]. **For build-plan execution, this protocol satisfies that requirement and replaces the reading.**
+
+The intent of step 0 is that no task begins without the vault's operating procedure governing it — not that four routing notes are re-read to reach a conclusion already known. This protocol *is* that procedure in its stricter build-plan form, it is read every step (rule 4 does not apply to this note), and it is more specific than what the routing notes would have pointed to. Following it is compliance with step 0, not an exception to it.
+
+This narrowing is scoped to build-plan steps. Any other ProjectOne task still enters through [[Start Here]] as §6 requires.
+
+### What This Does Not Change
+
+- **The step note is always read in full**, every step, without exception.
+- **[[Build Plan]] is always read** — the index to select the step, plus the recent Current State entries.
+- **Every code file being modified is read before editing it.**
+- **Genuine unknowns are always resolved from a source.** Rule 2 permits skipping a document that answers nothing; it never permits guessing at what the document would have said. A step that needs an undocumented fact is `Blocked` ([[#Blocking]]), exactly as before.
+- **Validation is untouched.** Observed, not assumed, every check, every step.
+
+### Why
+
+Audited after STEP-10: of roughly eighteen vault documents read, about six changed nothing about the outcome — two large security documents restating [[CLAUDE|CLAUDE.md]] §16, the four routing notes, and several read because a checklist named them. Both defects that step found — a pooled-connection claim leak and Supabase's default privileges re-granting DML on every future table — were found by testing against a live database, not by reading. The context those six documents consumed was most needed later, during exactly that debugging.
+
+The governing habit is the one rule 8 encodes: **open a document to answer a question, not to satisfy a list.**
 
 ## One Step One Commit
 
@@ -180,6 +222,17 @@ Steps far from execution stay at outline level: goal and scope, no task breakdow
 
 This is not laziness — a task list written against a codebase that does not exist yet is a guess, and guesses in a plan are worse than gaps because they read as decisions.
 
+## Amending This Protocol
+
+This note is **operational policy, not architecture** — it governs how Claude executes work, not how the system is built. Under [[CLAUDE|CLAUDE.md]] §39, changing it does **not** require an ADR. That includes the loop, reading scope ([[#Context Discipline]]), commit mechanics, reporting format, synchronization rules, and the ordering of validation and documentation work.
+
+What an amendment does require: the project owner's approval, the change written into this note rather than carried as a session habit, every document it contradicts updated in the same change ([[CLAUDE|CLAUDE.md]] §19), and the reasoning recorded so a later session sees why the rule exists rather than only that it does.
+
+Two changes fall outside that latitude and need the fuller scrutiny:
+
+- **Lowering a quality, validation or safety bar.** Reordering when checks run is operational. Removing a check, weakening [[#Step Completion]], or relaxing [[#Owner Approval Gates]] changes the standard itself.
+- **An execution rule that encodes an architectural constraint.** Where a rule is genuinely both, the architectural half governs and an ADR is required.
+
 ## Why This Exists
 
 [[Task Workflow]] describes the lifecycle of *any* ProjectOne task. This protocol is the narrower contract for *build-plan execution specifically*, closing the failure modes that break long multi-session builds:
@@ -189,6 +242,7 @@ This is not laziness — a task list written against a codebase that does not ex
 - **Inconsistent state left behind on failure** — closed by [[#Validation Failure and Rollback]]: every session ends finished and committed, or `Blocked` and uncommitted, never half-applied and never committed halfway.
 - **A plan drifting from the code it describes** — closed by [[#Future Step Synchronization]], which reconciles the remaining outline against what was actually built.
 - **History that no longer matches the plan** — closed by [[#One Step One Commit]]: one step is one commit, so the log and the Build Plan stay readable as the same sequence.
+- **Context exhausted before the work is finished** — closed by [[#Context Discipline]]: reading is scoped to questions the step actually has, so the budget survives to the debugging that ends most steps.
 
 Every session starts from the same question and ends at a verifiable boundary with a report of what changed.
 

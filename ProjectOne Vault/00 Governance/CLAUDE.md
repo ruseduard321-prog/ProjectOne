@@ -2,8 +2,8 @@
 title: CLAUDE.md
 category: Meta/Governance
 status: stable
-version: "1.2"
-last_updated: 2026-07-31
+version: "1.3"
+last_updated: 2026-08-01
 tags: [documentation, engineering, governance, ai]
 aliases: ["ProjectOne Constitution", "AI Operating Manual"]
 canonical: true
@@ -122,7 +122,7 @@ Drawn from the Project Bible's architecture documents and held as binding constr
 - **Component-driven, reusable UI**, with a hard separation between presentation and business logic.
 - **Everything versioned, everything logged, everything testable** — direct inheritance from the Philosophy document's Engineering Principles.
 
-New architecture must be proposed as an ADR (`08 ADR/`, template: `ADR Template.md`) before being treated as settled. Silent architectural drift is a Forbidden Behavior (Section 35).
+New architecture must be proposed as an ADR (`08 ADR/`, template: `ADR Template.md`) before being treated as settled. Silent architectural drift is a Forbidden Behavior (Section 35). This governs *architectural* decisions specifically — changes to Claude's own execution and working practices are operational policy and are governed by Section 39, not by this requirement.
 
 **ADR lifecycle.** Every ADR moves through explicit states: `Draft` (being written, not yet binding) → `Review` (circulated for feedback, not yet binding) → `Accepted` (binding — implementation may begin) or `Rejected` (not adopted, kept for record). An accepted ADR later reversed becomes `Deprecated` (no longer recommended, existing usage tolerated) or `Superseded` (replaced by a named, linked successor ADR). **Implementation may only begin once an ADR reaches `Accepted`.** The project owner is the approver who moves an ADR from `Review` to `Accepted` or `Rejected` — Claude may draft and recommend, but does not self-approve its own architectural proposals. Code written against a `Draft` or `Review` ADR is scoped as an explicit spike/prototype, not production work.
 
@@ -593,6 +593,19 @@ From the Release Strategy and Deployment Strategy documents:
 - Every product decision should improve ProjectOne not only for today's users but for future growth (Product Principles, Principle 10).
 - When a pattern repeats three times across the codebase, treat it as a signal to formalize it — as a shared package, a documented convention, or an ADR — rather than letting it silently diverge in each new copy.
 - Revisit and update this CLAUDE.md itself via ADR when the Engineering Handbook or Project Bible materially change — this document must never drift from the documents it summarizes.
+
+**Architectural change and operational policy are governed differently.** An ADR is the instrument for *architectural* decisions; it is not a general-purpose change-control gate on everything written down.
+
+**An ADR is required** to change the project's architecture, technology choices (Section 10), security model, database model, multi-tenancy model, public API contracts, AI/agent architecture, or any other decision that constrains how the system is built. These are hard to reverse, outlive the person who made them, and are exactly what `08 ADR/` exists to record.
+
+**An ADR is not required** to change *how Claude executes work* — operational policy. This covers context loading, reading order and reading scope, execution workflow, token optimization, the ordering and mechanics of validation, documentation workflow, and implementation process. These are working practices: cheap to reverse, observable in effect within a session or two, and improved by iteration rather than by review. Requiring architectural review for them would freeze the operating manual at whatever was first written down, which is the opposite of this section's purpose.
+
+Operational policy changes still follow the ordinary rules — the project owner approves them, the change is written into the governing document rather than held as tribal knowledge, every document it contradicts is updated in the same change (Section 19), and the reasoning is recorded so a future session sees why the rule exists. What they do not need is an ADR.
+
+**Two boundaries on that exemption.** Operational latitude is about *how* work is done, not about how much rigour it gets:
+
+- **A change that lowers a quality, validation or safety bar is not operational**, whatever document it lives in. Reordering when checks run is process; removing a check, weakening Definition of Done (Section 22), or relaxing an owner approval gate (Section 21) is a change to the standard itself, and needs the same scrutiny as any architectural decision.
+- **When a change is genuinely both** — an execution rule that encodes an architectural constraint — the architectural half governs and an ADR is required. Ambiguous cases resolve toward the ADR, consistent with Section 21's rule that uncertainty defaults to Critical.
 
 ## 40. Final Principles
 

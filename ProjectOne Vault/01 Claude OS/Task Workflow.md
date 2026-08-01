@@ -2,8 +2,8 @@
 title: Task Workflow
 category: Claude OS
 status: stable
-version: "1.1"
-last_updated: 2026-07-31
+version: "1.2"
+last_updated: 2026-08-01
 tags: [governance, workflow, ai]
 aliases: ["Development Workflow (Claude OS)"]
 ---
@@ -14,6 +14,8 @@ The end-to-end process for every ProjectOne task, from receipt to completion. Th
 
 > [!important] Build-plan work follows a stricter contract
 > When the task is *"Implement the next step"* — executing the [[Build Plan]] — [[Execution Protocol]] governs and adds binding rules this general lifecycle does not state: verify the predecessor before starting, roll back and mark `Blocked` on validation failure, satisfy every completion condition before marking `Done`, capture the whole step in exactly one commit ([[Execution Protocol#One Step One Commit]]) — and commit nothing at all if the step ends `Blocked` ([[Execution Protocol#Blocked Steps Are Never Committed]]) — emit a completion report, and re-sync affected future steps. Follow it in full; this note remains the lifecycle it sits inside.
+>
+> It also **narrows step 3 below**: build-plan reading is scoped by [[Execution Protocol#Context Discipline]], which reads a document only when it answers a question the step actually has, keeps this note and the other Claude OS routing notes out of the per-step loop, and defers output-only documentation to step 7. The discovery principles are unchanged — that section is [[Documentation Discovery]] applied strictly.
 
 ## The Workflow
 
