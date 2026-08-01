@@ -146,12 +146,13 @@ def test_a_member_is_refused_an_owner_only_action(client: TestClient, roles: Rol
 def test_an_owner_is_allowed_the_same_action(client: TestClient, roles: Roles) -> None:
     """The permission half. Without it, a check denying everyone would pass.
 
-    Asserts the owner is *admitted* -- 200 rather than 403 -- which is what this
-    test is about. The count is 0 because `workspace_members` cannot currently be
-    erased over the request path at all: STEP-09's SELECT policy blocks every
-    soft delete on that table, for every role. See
-    `DataOwnershipService.WorkspaceMembersStore.erase` for the reproduction and
-    why the store reports 0 rather than raising or bypassing RLS.
+    Two members are erased, not three: the actor's own owner row is excluded
+    deliberately, because the last-owner trigger would otherwise refuse the
+    statement and fail the whole erasure. See
+    `WorkspaceMembersStore.erase`.
+
+    This returned 0 until STEP-11a, when erasing any membership row was
+    impossible for every role.
     """
     response = client.delete(
         f"/workspaces/{roles.workspace_id}/data",
@@ -159,7 +160,7 @@ def test_an_owner_is_allowed_the_same_action(client: TestClient, roles: Roles) -
     )
 
     assert response.status_code == 200
-    assert response.json()["erased"] == {"workspace_members": 0}
+    assert response.json()["erased"] == {"workspace_members": 2}
 
 
 def test_a_member_cannot_rename_the_workspace_through_the_api(
@@ -222,7 +223,9 @@ def test_a_member_can_still_read_what_their_role_permits(client: TestClient, rol
 
     assert response.status_code == 200
     assert response.json()["role"] == "member"
-    assert response.json()["permissions"] == ["workspace:view"]
+    # `workspace:leave` joined the member's set in STEP-11a -- nobody is kept in
+    # a workspace against their will. Sorted, so the order is the enum's.
+    assert response.json()["permissions"] == ["workspace:leave", "workspace:view"]
 
 
 def test_an_owner_holds_every_permission(client: TestClient, roles: Roles) -> None:

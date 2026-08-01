@@ -51,10 +51,13 @@ The lookup itself runs over the **tenant connection**, subject to the same polic
 | Permission | `owner` | `admin` | `member` |
 |---|:---:|:---:|:---:|
 | `workspace:view` — read the workspace and its members | ✅ | ✅ | ✅ |
+| `workspace:leave` — leave the workspace | ✅ | ✅ | ✅ |
 | `workspace:update` — rename, change settings | ✅ | ✅ | — |
-| `workspace:manage_members` — add, remove, change roles | ✅ | ✅ | — |
+| `workspace:manage_members` — add, change roles | ✅ | ✅ | — |
+| `workspace:remove_member` — remove someone else | ✅ | ✅ | — |
 | `workspace:export` — export every record the workspace holds | ✅ | ✅ | — |
 | `workspace:delete` — soft-delete the workspace itself | ✅ | — | — |
+| `workspace:transfer_ownership` — hand ownership to another member | ✅ | — | — |
 
 Read as: an owner may do anything; an admin runs the workspace day to day but cannot destroy it or take it over; a member participates and reads.
 
@@ -64,6 +67,28 @@ Two rows carry the most weight:
 - **`admin` holds `workspace:export` but `member` does not.** An export is a bulk copy of everyone's data in the workspace, a materially different act from reading the screens one has access to. Treating it as ordinary read access is how a data-exfiltration path gets built by accident.
 
 Permissions are named after **actions, not endpoints**. A permission named `can_call_patch_workspace` has to be reinvented the moment a second route performs the same action, and the two copies then drift.
+
+### Removal is ranked, which a permission set cannot express
+
+`workspace:remove_member` says an admin may remove *someone*, not that they may remove *anyone*. The owner's rules make removal a comparison between the actor's role and the target's, so `may_remove(actor, target)` holds it:
+
+| Actor ↓ / Target → | `owner` | `admin` | `member` |
+|---|:---:|:---:|:---:|
+| `owner` | — | ✅ | ✅ |
+| `admin` | — | — | ✅ |
+| `member` | — | — | — |
+
+**Strictly greater, never `>=`.** The two dashes on the diagonal are the point: an owner may not remove a co-owner and an admin may not remove another admin. A `>=` reads identically and quietly permits both.
+
+**Removing oneself is not removal — it is leaving**, a separate act with its own permission. Routing it through this comparison would compare a role against itself, and "fixing" that by relaxing the operator is exactly how co-owner removal gets re-introduced.
+
+### Leaving, and the last-owner rule
+
+Every role holds `workspace:leave`: nobody is kept in a workspace against their will. The one bar is that **the last owner may never leave or be removed** — enforced by a database trigger, not by this matrix, because it depends on the workspace's state rather than the caller's role.
+
+That distinction is why it answers **409, not 403**. An owner leaving holds the permission; what refuses them is that they are the last one, and no amount of re-authenticating or role-changing would help. The message names transferring ownership as the remedy — unlike the authorization messages, it is deliberately specific, because it leaks nothing an owner does not already know and withholding it would leave them stuck.
+
+**Ownership transfer is atomic and owner-only.** Promoting the successor and demoting the outgoing owner happen in one transaction, so the workspace is never ownerless or double-owned in a state anyone has to reason about. The outgoing owner becomes an `admin` rather than being removed — transfer and departure are separate acts, and fusing them would eject someone who only meant to hand over the role.
 
 ## Requiring a Permission
 
@@ -111,14 +136,14 @@ Structural only at this stage — the UI is a later step. It exists now because 
 
 `ErasureResult` reports **per-store counts** rather than a success flag, because "deletion succeeded" is not a useful claim about a multi-store erasure.
 
-> [!warning] Erasure of `workspace_members` does not work yet
-> Not an authorization limit — a policy one. Soft-deleting any `workspace_members` row is rejected for every role, because STEP-09's SELECT policy filters `deleted_at IS NULL`. See [[RLS Policy Pattern]] for the reproduction. The store reports `0` rather than raising or bypassing RLS, so a caller sees that nothing was erased instead of a success message over data that is still there.
+Erasure of `workspace_members` works as of [[STEP-11a Membership Removal Policy]], which removed the policy blocker described in [[RLS Policy Pattern]]. **The actor's own row is excluded** — they are necessarily an owner to have reached the operation, and the last-owner trigger would otherwise refuse the statement and fail the entire erasure. Everything erasable is erased and the workspace keeps the single owner who asked, who can then transfer or leave deliberately rather than having the choice made by a bulk operation.
 
 ## What This Does Not Cover
 
 - **Cross-workspace and platform-level roles.** There is no "platform admin" and no role that spans workspaces. Cross-tenant access remains default-forbidden and requires an ADR ([[CLAUDE|CLAUDE.md]] §16).
 - **Per-resource permissions.** Roles are scoped to a workspace, not to individual projects or documents. Finer granularity is a change to this model, not an extension of it.
-- **Membership management endpoints.** Adding and removing members belongs to [[STEP-13 Auth Users Workspaces Endpoints]], which owns the audited service path the INSERT policies require — and which will have to resolve the erasure limitation above.
+- **Membership management endpoints.** The *rules* are enforced and the service exists ([[STEP-11a Membership Removal Policy]]); the HTTP routes that expose them belong to [[STEP-13 Auth Users Workspaces Endpoints]], along with the audited path the INSERT policies require for adding members.
+- **Inviting new members.** Adding someone to a workspace still has no client-reachable path — the INSERT policy requires the caller to already be a member of the workspace being written to.
 
 ---
 

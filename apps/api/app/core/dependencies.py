@@ -32,6 +32,7 @@ from app.services.auth_service import AuthService
 from app.services.authorization_service import AuthorizationService
 from app.services.data_ownership_service import REGISTERED_STORES, DataOwnershipService
 from app.services.health_service import HealthService
+from app.services.membership_service import MembershipService
 from app.services.token_service import AuthenticatedUser, TokenService, build_jwk_client
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
@@ -206,6 +207,17 @@ def get_authorization_service(memberships: MembershipRepositoryDep) -> Authoriza
 
 
 AuthorizationServiceDep = Annotated[AuthorizationService, Depends(get_authorization_service)]
+
+
+def get_membership_service(
+    memberships: MembershipRepositoryDep,
+    authorization: AuthorizationServiceDep,
+) -> MembershipService:
+    """Construct the membership service with its dependencies."""
+    return MembershipService(memberships, authorization)
+
+
+MembershipServiceDep = Annotated[MembershipService, Depends(get_membership_service)]
 
 
 def get_data_ownership_service(

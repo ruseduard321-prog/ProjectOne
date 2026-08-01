@@ -211,36 +211,10 @@ def test_member_can_edit_their_own_membership_row(
         assert cursor.rowcount == 1
 
 
-def test_self_removal_is_blocked_by_the_step_09_select_policy(
-    admin_connection: psycopg.Connection, workspace: Workspace
-) -> None:
-    """A member cannot currently leave a workspace, and this pins that as known.
-
-    Leaving would be an UPDATE setting one's own `deleted_at` -- there is no
-    DELETE policy anywhere by design. It is rejected, and **not** by the RBAC
-    predicate this step added: STEP-09's `workspace_members_select_same_workspace`
-    filters `deleted_at IS NULL`, so the soft-deleted row becomes invisible to
-    the statement writing it and PostgreSQL refuses the update.
-
-    Reproduced against a live database during STEP-11 validation, and confirmed
-    by observing the same update succeed once that `deleted_at` filter was
-    lifted. Fixing it means changing a STEP-09 SELECT policy -- a Critical
-    multi-tenancy decision of its own, not an RBAC detail (CLAUDE.md §21/§29).
-
-    This test exists so the limitation is recorded as a **known, asserted**
-    behaviour rather than rediscovered as a bug. When self-removal is
-    implemented, this test should fail, and that failure is the signal to delete
-    it -- not to work around it.
-    """
-    with admin_connection.transaction():
-        cursor = as_user(admin_connection, workspace.member.user_id)
-
-        with pytest.raises(psycopg.errors.InsufficientPrivilege):
-            cursor.execute(
-                "UPDATE public.workspace_members SET deleted_at = now() "
-                "WHERE workspace_id = %s AND user_id = %s",
-                (workspace.id, workspace.member.user_id),
-            )
+# `test_self_removal_is_blocked_by_the_step_09_select_policy` lived here and was
+# deleted by STEP-11a, exactly as its own docstring instructed: it pinned a
+# limitation that no longer exists. Leaving and removal are now governed by the
+# owner's rules and covered by `tests/test_membership_rules.py`.
 
 
 def test_member_cannot_hand_their_membership_to_someone_else(

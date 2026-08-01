@@ -58,6 +58,22 @@ class WorkspacePermission(StrEnum):
     #: UPDATE_WORKSPACE precisely because it is not a reversible edit.
     DELETE_WORKSPACE = "workspace:delete"
 
+    #: Remove *another* member from the workspace. Distinct from MANAGE_MEMBERS
+    #: because removal is ranked: holding this does not mean holding it over
+    #: everyone (see `may_remove`). Owner and admin hold it; who each may
+    #: actually remove differs.
+    REMOVE_MEMBER = "workspace:remove_member"
+
+    #: Leave the workspace. Every role holds it -- nobody can be kept in a
+    #: workspace against their will -- but the last owner is still blocked, by
+    #: the database rather than by this matrix (see `may_remove`).
+    LEAVE_WORKSPACE = "workspace:leave"
+
+    #: Hand ownership to another member. Owner only: it is the one act that
+    #: changes who holds DELETE_WORKSPACE, so anyone else holding it could
+    #: manufacture themselves an owner.
+    TRANSFER_OWNERSHIP = "workspace:transfer_ownership"
+
 
 # The role model, stated once.
 #
@@ -82,9 +98,16 @@ _ROLE_PERMISSIONS: dict[WorkspaceRole, frozenset[WorkspacePermission]] = {
             WorkspacePermission.UPDATE_WORKSPACE,
             WorkspacePermission.MANAGE_MEMBERS,
             WorkspacePermission.EXPORT_WORKSPACE_DATA,
+            WorkspacePermission.REMOVE_MEMBER,
+            WorkspacePermission.LEAVE_WORKSPACE,
         }
     ),
-    WorkspaceRole.MEMBER: frozenset({WorkspacePermission.VIEW_WORKSPACE}),
+    WorkspaceRole.MEMBER: frozenset(
+        {
+            WorkspacePermission.VIEW_WORKSPACE,
+            WorkspacePermission.LEAVE_WORKSPACE,
+        }
+    ),
 }
 
 # Roles whose members may write to the workspace row, in the order the database
@@ -94,9 +117,46 @@ _ROLE_PERMISSIONS: dict[WorkspaceRole, frozenset[WorkspacePermission]] = {
 WRITE_ROLES: tuple[WorkspaceRole, ...] = (WorkspaceRole.OWNER, WorkspaceRole.ADMIN)
 
 
+# Removal rights are **ranked**, which a flat permission set cannot express:
+# `REMOVE_MEMBER` says an admin may remove someone, not that they may remove
+# *anyone*. Rules 2 and 4 (owner removes admins and members; admin removes
+# members only) are a comparison between the actor's role and the target's.
+#
+# Higher number outranks lower. The values themselves are meaningless -- only
+# the ordering is -- so they are never stored or serialized.
+_REMOVAL_RANK: dict[WorkspaceRole, int] = {
+    WorkspaceRole.OWNER: 3,
+    WorkspaceRole.ADMIN: 2,
+    WorkspaceRole.MEMBER: 1,
+}
+
+
 def permissions_for(role: WorkspaceRole) -> frozenset[WorkspacePermission]:
     """Return everything a role may do."""
     return _ROLE_PERMISSIONS[role]
+
+
+def may_remove(actor: WorkspaceRole, target: WorkspaceRole) -> bool:
+    """Return whether `actor` may remove a member holding `target`.
+
+    Encodes the owner's rules 2 and 4 as a strict rank comparison:
+
+    - An **owner** outranks admins and members, so removes both.
+    - An **admin** outranks members only -- never another admin, never an owner.
+      Rule 4 states this by omission; the strict `>` states it outright.
+    - A **member** outranks nobody and can remove no one.
+
+    Strict rather than `>=` deliberately: `>=` would let an admin remove another
+    admin and an owner remove a co-owner, neither of which the rules permit.
+    Removing *oneself* is leaving, a separate act with its own permission --
+    routing it through this function is what would quietly re-introduce co-owner
+    removal.
+
+    This is the application-layer copy of the `workspace_members_update_privileged`
+    USING clause. The policy remains authoritative ([[Authorization Model]]);
+    this exists so the API can answer 403 rather than silently affecting no rows.
+    """
+    return _REMOVAL_RANK[actor] > _REMOVAL_RANK[target]
 
 
 def role_allows(role: WorkspaceRole, permission: WorkspacePermission) -> bool:

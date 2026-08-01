@@ -13,6 +13,7 @@ system not subject to the isolation it enforces.
 """
 
 import uuid
+from contextlib import AbstractContextManager
 
 import psycopg
 
@@ -64,3 +65,66 @@ class MembershipRepository:
         # "no permissions" would hide a schema/code divergence, and treating it
         # as any known role would grant access on the strength of a typo.
         return WorkspaceRole(row[0])
+
+    def transaction(self) -> AbstractContextManager[psycopg.Transaction]:
+        """Return a transaction over this request's connection.
+
+        Exposed so a service can make several writes atomic without reaching for
+        the connection itself. Ownership transfer is the case that needs it: two
+        role changes that must not be observable apart.
+
+        Typed as the context manager `psycopg.Connection.transaction()` actually
+        returns, rather than as `Transaction` -- the latter is what the `with`
+        block binds, not what the call produces.
+        """
+        return self._connection.transaction()
+
+    def live_owner_count(self, workspace_id: uuid.UUID) -> int:
+        """Return how many live owners a workspace has.
+
+        Read *before* a removal or demotion so the service can refuse with a
+        clear 409 rather than letting the caller hit the database trigger and
+        surface a raw constraint violation. The trigger remains the authority --
+        this is the same two-layer split as everywhere else in
+        [[Authorization Model]]: the database makes it impossible, the
+        application makes the answer legible.
+        """
+        with self._connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT count(*) FROM public.workspace_members "
+                "WHERE workspace_id = %s AND role = 'owner' AND deleted_at IS NULL",
+                (workspace_id,),
+            )
+            row = cursor.fetchone()
+
+        return int(row[0]) if row is not None else 0
+
+    def soft_delete(self, workspace_id: uuid.UUID, user_id: uuid.UUID) -> bool:
+        """Soft-delete one membership row, returning whether it existed.
+
+        An `UPDATE`, never a `DELETE`: no table has a DELETE policy and
+        `authenticated` holds no DELETE grant, both deliberately
+        ([[RLS Policy Pattern]]). Removal is `deleted_at`.
+
+        Returns False when nothing matched, which after an authorization check
+        means the row was already removed -- not that permission was lacking.
+        """
+        with self._connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE public.workspace_members SET deleted_at = now() "
+                "WHERE workspace_id = %s AND user_id = %s AND deleted_at IS NULL",
+                (workspace_id, user_id),
+            )
+
+            return cursor.rowcount > 0
+
+    def set_role(self, workspace_id: uuid.UUID, user_id: uuid.UUID, role: WorkspaceRole) -> bool:
+        """Change one member's role, returning whether the row existed."""
+        with self._connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE public.workspace_members SET role = %s "
+                "WHERE workspace_id = %s AND user_id = %s AND deleted_at IS NULL",
+                (role.value, workspace_id, user_id),
+            )
+
+            return cursor.rowcount > 0

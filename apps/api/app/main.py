@@ -9,8 +9,26 @@ from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 
 from app.core.config import get_settings
-from app.core.security import AuthorizationError
+from app.core.security import AuthorizationError, LastOwnerError
 from app.routers import auth, health, workspaces
+
+
+def _last_owner_conflict(_request: Request, exception: Exception) -> JSONResponse:
+    """Translate the last-owner rule into a 409.
+
+    **409, not 403.** The caller holds every permission the action requires --
+    an owner leaving their own workspace has `LEAVE_WORKSPACE`. What refuses
+    them is the workspace's state, and no amount of re-authenticating or
+    role-changing would help. A 403 here would send an owner looking for a
+    permission problem that does not exist.
+
+    Unlike the authorization messages, this body is deliberately specific: it
+    names transferring ownership as the remedy. It leaks nothing an owner does
+    not already know, and withholding it would leave them stuck.
+    """
+    message = getattr(exception, "public_message", "Conflict")
+
+    return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"detail": message})
 
 
 def _authorization_denied(_request: Request, exception: Exception) -> JSONResponse:
@@ -56,6 +74,7 @@ def create_app() -> FastAPI:
     )
 
     app.add_exception_handler(AuthorizationError, _authorization_denied)
+    app.add_exception_handler(LastOwnerError, _last_owner_conflict)
 
     app.include_router(health.router)
     app.include_router(auth.router)

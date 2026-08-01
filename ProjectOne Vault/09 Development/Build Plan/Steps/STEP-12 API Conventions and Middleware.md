@@ -2,12 +2,12 @@
 title: STEP-12 API Conventions and Middleware
 category: Development/Build Step
 status: draft
-version: "1.0"
-last_updated: 2026-07-31
+version: "1.1"
+last_updated: 2026-08-01
 tags: [engineering, workflow, build-step, backend,api]
 step_id: STEP-12
 step_status: Not Started
-detail_level: outline
+detail_level: full
 ---
 
 # STEP-12 — API Conventions and Middleware
@@ -26,6 +26,7 @@ Conventions and middleware only — the endpoints that use them are STEP-13. Bui
 ## Prerequisites
 
 - [[STEP-11 Authorization and RBAC]] — `Done`
+- [[STEP-11a Membership Removal Policy]] — `Done`
 
 ## Required Documentation
 
@@ -52,6 +53,11 @@ Added by [[STEP-11 Authorization and RBAC]]:
 - **The 403 mapping already lives where this step wants mappings to live** — an `add_exception_handler` in `app/main.py`, not a router. That is the precedent to generalize, and the `AuthError`→401 mapping still sitting in `app/routers/auth.py` is the thing to bring in line with it.
 - **Two response-body properties must survive any refactor**, both currently guarded by tests: every *authentication* failure returns an identical 401 body whichever cause, and every *authorization* refusal returns an identical 403 body whether the caller lacked the role or was not a member at all. The second is what stops a workspace id becoming an existence oracle.
 - **Endpoint count has grown.** `/auth/*`, `GET /workspaces`, `GET /workspaces/{id}/permissions`, `PATCH /workspaces/{id}`, `GET /workspaces/{id}/export`, `DELETE /workspaces/{id}/data`. Conventions apply retroactively to all of them.
+
+Added by [[STEP-11a Membership Removal Policy]]:
+
+- **A third status code is now in play: 409.** `LastOwnerError` is deliberately not an `AuthorizationError`, and its handler already sits alongside the 403 one in `app/main.py`. The error envelope must carry 401, 403, 409 and 422 without collapsing any pair.
+- **One error message is deliberately specific, and must stay that way.** The last-owner 409 names transferring ownership as the remedy. The generic-body rule protects *authentication and authorization* answers, where specificity is an oracle; here it leaks nothing an owner does not already know, and withholding it would leave them stuck.
 
 ## Tasks
 
@@ -82,6 +88,6 @@ Every endpoint shares one versioning scheme, one response envelope, one error co
 
 ## Navigation
 
-- **Previous:** [[STEP-11 Authorization and RBAC]]
+- **Previous:** [[STEP-11a Membership Removal Policy]]
 - **Next:** [[STEP-13 Auth Users Workspaces Endpoints]]
 - **Parent:** [[Build Plan]]

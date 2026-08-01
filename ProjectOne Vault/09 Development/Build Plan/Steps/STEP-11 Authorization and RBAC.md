@@ -100,7 +100,10 @@ Not an authorization limit. STEP-09's `workspace_members_select_same_workspace` 
 - `WorkspaceMembersStore.erase` returns `0` rather than raising or running over the privileged connection. Bypassing RLS for the erasure path would make it the one component exempt from the isolation it enforces ([[CLAUDE|CLAUDE.md]] §16).
 - `test_self_removal_is_blocked_by_the_step_09_select_policy` pins it as known behaviour. It is *expected to fail* when this is fixed, and that failure is the signal to delete it.
 
-Fixing it means changing a STEP-09 SELECT policy — a Critical multi-tenancy decision of its own ([[CLAUDE|CLAUDE.md]] §21/§29), not something an RBAC step folds in silently. **It needs an owner decision and a step of its own; [[STEP-13 Auth Users Workspaces Endpoints]] cannot deliver member removal without it.**
+Fixing it means changing a STEP-09 SELECT policy — a Critical multi-tenancy decision of its own ([[CLAUDE|CLAUDE.md]] §21/§29), not something an RBAC step folds in silently.
+
+> [!success] Resolved by [[STEP-11a Membership Removal Policy]]
+> The project owner supplied the governing rules on 2026-08-01 and the blocker was fixed in its own step. Removal, departure and ownership transfer all work; the pinning test named above was deleted, exactly as its docstring instructed.
 
 ### Validation
 
@@ -117,5 +120,5 @@ Run against a real PostgreSQL — a throwaway database on the development Supaba
 ## Navigation
 
 - **Previous:** [[STEP-10 Authentication Backend]]
-- **Next:** [[STEP-12 API Conventions and Middleware]]
+- **Next:** [[STEP-11a Membership Removal Policy]]
 - **Parent:** [[Build Plan]]

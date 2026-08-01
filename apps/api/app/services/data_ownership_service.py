@@ -132,41 +132,36 @@ class WorkspaceMembersStore:
                 for row in cursor
             ]
 
-    def erase(self, _connection: psycopg.Connection, _workspace_id: uuid.UUID) -> int:
-        """Report that membership rows cannot yet be erased, without pretending.
+    def erase(self, connection: psycopg.Connection, workspace_id: uuid.UUID) -> int:
+        """Soft-delete every membership row of a workspace except the actor's.
 
-        > **This store is not erasable over the request path today, and the
-        > blocker is STEP-09's SELECT policy, not authorization.**
+        Returned 0 unconditionally until STEP-11a: soft-deleting *any*
+        `workspace_members` row was impossible for every role, because the SELECT
+        policy filtered `deleted_at IS NULL` and the row vanished from the
+        statement writing it. That policy no longer carries the filter, so this
+        works.
 
-        Erasure would be an UPDATE setting `deleted_at` -- there is no DELETE
-        policy anywhere by design (RLS Policy Pattern). Every such statement is
-        rejected, for *any* role and *any* row, because
-        `workspace_members_select_same_workspace` filters `deleted_at IS NULL`:
-        the soft-deleted row becomes invisible to the same statement writing it
-        and PostgreSQL refuses the update. Reproduced against a live database
-        during STEP-11 validation for a member erasing their own row, for a
-        member erasing another's, and for an **owner** erasing a member's --
-        all three fail identically.
+        An `UPDATE`, never a `DELETE` -- no table has a DELETE policy and
+        `authenticated` holds no DELETE grant, both deliberately
+        ([[RLS Policy Pattern]]).
 
-        Returning 0 rather than attempting the UPDATE is the honest option, and
-        the alternatives were rejected deliberately:
-
-        - **Attempting it** raises `InsufficientPrivilege` on every call, so the
-          endpoint is a guaranteed 500 rather than a working feature.
-        - **Running it over the privileged connection** would work, and would
-          make the erasure path the one component in the system exempt from the
-          isolation it enforces (CLAUDE.md §16 -- admin tooling does not bypass
-          RLS). That is precisely the bypass STEP-09 exists to prevent.
-        - **Changing the SELECT policy** is the actual fix, and it is a Critical
-          multi-tenancy decision belonging to its own step, not something an
-          RBAC step folds in silently (CLAUDE.md §21/§29).
-
-        The count is what makes this visible rather than hidden: a caller sees
-        `{"workspace_members": 0}` and knows nothing was erased, instead of a
-        success message over data that is still there. `ErasureResult` reports
-        per-store counts for exactly this reason.
+        **The actor's own row is excluded**, and this time for a rule rather than
+        a defect: they are necessarily an `owner` to have reached here
+        (`DELETE_WORKSPACE`), and the last-owner trigger would refuse the
+        statement outright, failing the whole erasure. Excluding it erases
+        everything erasable and leaves the workspace with the single owner who
+        asked for it -- who can then transfer or leave deliberately, rather than
+        having the choice made for them by a bulk operation.
         """
-        return 0
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE public.workspace_members SET deleted_at = now() "
+                "WHERE workspace_id = %s AND deleted_at IS NULL "
+                "AND user_id <> auth.uid()",
+                (workspace_id,),
+            )
+
+            return cursor.rowcount
 
 
 class DataOwnershipService:

@@ -141,23 +141,43 @@ def test_soft_deleted_membership_loses_access(
 ) -> None:
     """A removed member must not retain access while their row still exists.
 
-    Membership is soft-deleted, so the row survives removal. A policy that
-    forgot `deleted_at IS NULL` would keep serving that member indefinitely --
-    a silent failure, because everything still looks correct.
+    Membership is soft-deleted, so the row survives removal. `deleted_at IS NULL`
+    in `app_current_user_workspaces()` is what stops that row still granting
+    access -- forget it and a removed member is served indefinitely, silently,
+    because everything still looks correct.
+
+    **Bob is removed rather than Alice, and that matters.** Alice is the sole
+    owner of her workspace, and since [[STEP-11a]] the last owner cannot be
+    removed at all -- rule 1, enforced by
+    `trg_workspace_members_protect_last_owner`. Removing her would now fail on
+    that trigger rather than proving anything about access, so the test uses a
+    member whose departure is actually permitted. The property under test is
+    unchanged.
     """
-    alice, _bob = tenants
+    alice, bob = tenants
 
     with admin_connection.cursor() as cursor:
         cursor.execute(
-            "UPDATE public.workspace_members SET deleted_at = now() WHERE user_id = %s",
-            (alice.user_id,),
+            "INSERT INTO public.workspace_members (workspace_id, user_id, role) "
+            "VALUES (%s, %s, 'member')",
+            (alice.workspace_id, bob.user_id),
+        )
+        cursor.execute(
+            "UPDATE public.workspace_members SET deleted_at = now() "
+            "WHERE workspace_id = %s AND user_id = %s",
+            (alice.workspace_id, bob.user_id),
         )
 
+    # Bob keeps his own workspace, so the assertion is that he lost *Alice's* --
+    # not that he can see nothing at all, which would also pass if the fixture
+    # were broken.
     with admin_connection.transaction():
-        cursor = as_user(admin_connection, alice.user_id)
+        cursor = as_user(admin_connection, bob.user_id)
         cursor.execute("SELECT id FROM public.workspaces")
+        visible = {row[0] for row in cursor.fetchall()}
 
-        assert cursor.fetchall() == []
+    assert alice.workspace_id not in visible
+    assert visible == {bob.workspace_id}
 
 
 def test_session_without_an_identity_sees_nothing(

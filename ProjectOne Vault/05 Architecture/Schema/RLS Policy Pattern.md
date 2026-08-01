@@ -93,8 +93,8 @@ Written **per command**, never as one `FOR ALL` policy. `FOR ALL` applies a sing
 | `workspaces` | SELECT | Live membership required |
 | `workspaces` | UPDATE | **`owner` or `admin` only** ([[STEP-11 Authorization and RBAC]]) |
 | `workspaces` | INSERT | The row must name the creator as `owner_id` |
-| `workspace_members` | SELECT | Same workspace |
-| `workspace_members` | UPDATE | **`owner`/`admin` on any row; a `member` on their own row only, and never their own `role`** |
+| `workspace_members` | SELECT | Same workspace — **including soft-deleted rows** ([[STEP-11a Membership Removal Policy]]) |
+| `workspace_members` | UPDATE | **Ranked removal: owner > admin > member; anyone may edit their own row, never their own `role`** |
 | `workspace_members` | INSERT | Same workspace |
 
 ### The role predicate
@@ -114,12 +114,34 @@ USING (
 
 The role vocabulary and what each role permits are defined once, in `apps/api/app/core/permissions.py`. **If that matrix and these policies disagree, the policies are correct and the matrix is a bug** — see [[Authorization Model]].
 
-> [!warning] Soft-deleting a `workspace_members` row is currently impossible
-> For every role, including `owner`. `workspace_members_select_same_workspace` filters `deleted_at IS NULL`, so a row being soft-deleted becomes invisible to the very statement writing it and PostgreSQL rejects the `UPDATE` with `new row violates row-level security policy`.
->
-> Reproduced against a live database during STEP-11 validation in all three directions — a member erasing their own row, a member erasing another's, and an owner erasing a member's — and confirmed by observing the same update succeed once the `deleted_at` filter was lifted.
->
-> **Consequence:** removing a member and leaving a workspace both have no working database path yet, and `WorkspaceMembersStore.erase` reports 0 rather than raising or bypassing RLS. Fixing it means changing this SELECT policy, which is a Critical multi-tenancy decision of its own ([[CLAUDE|CLAUDE.md]] §21) rather than something an RBAC step folds in. Pinned by `test_self_removal_is_blocked_by_the_step_09_select_policy`, which is expected to fail — and be deleted — when that decision is made.
+### `workspace_members` SELECT does not filter `deleted_at`
+
+**A deliberate exception to the rule above, and the only one.** Every other policy filters `deleted_at IS NULL`; this one does not, and removing that filter is what made membership removal possible at all.
+
+STEP-11 found that soft-deleting a `workspace_members` row was rejected for **every** role including `owner`: the row being written became invisible to the policy governing the statement writing it, and PostgreSQL refused with *"new row violates row-level security policy"*. Verified in all three directions, and confirmed by observing the same update succeed once the filter was lifted.
+
+The filter therefore **moved out of the policy and into the queries**:
+
+- **A policy answers "whose rows may this caller touch"** — a tenant question, which `deleted_at` has nothing to do with.
+- **A query answers "which of those rows do I want"** — excluding removed members from a listing, which always was a query concern.
+
+**What this does not weaken.** `app_current_user_workspaces()` still filters `deleted_at IS NULL` on the caller's *own* membership, so a removed member still loses access to everything immediately. That is the property STEP-09's isolation tests assert, and it is untouched. The tenant predicate is untouched too.
+
+> [!warning] Every query on `workspace_members` must now say `deleted_at IS NULL` itself
+> A listing that inherited the filter from the policy and never said so will now show removed members. `test_removed_members_are_excluded_from_listings` guards the shape; `test_the_select_policy_still_blocks_the_other_tenant` guards that the widening stopped at the workspace boundary.
+
+**What genuinely widened:** a live member can read the soft-deleted membership rows of their own workspace — who used to be in a workspace you are in. Never another tenant's data, and information any member list showing "removed" states needs anyway.
+
+### The last-owner rule is a trigger, not a policy
+
+`trg_workspace_members_protect_last_owner` ([[STEP-11a Membership Removal Policy]]) refuses to leave a workspace ownerless. **It cannot be an RLS predicate**: it depends on how many owners remain *after* the statement, which means counting `workspace_members` from inside a policy on `workspace_members` — the recursion the helper function exists to break.
+
+It closes **both** routes to an ownerless workspace, which is the part that is easy to get half-right:
+
+- Soft-deleting the last owner (leaving, or being removed).
+- **Demoting** the last owner — the same hole through a different statement.
+
+`DEFERRABLE INITIALLY IMMEDIATE`, so ownership transfer can promote and demote in either order within one transaction. Without deferrability the rule would silently depend on statement ordering.
 
 ### `USING` versus `WITH CHECK`
 

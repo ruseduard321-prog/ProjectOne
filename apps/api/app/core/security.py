@@ -66,6 +66,31 @@ class AuthorizationError(Exception):
     public_message = "You do not have permission to perform this action"
 
 
+class LastOwnerError(Exception):
+    """The action would leave a workspace with no owner.
+
+    Deliberately **not** an `AuthorizationError`, because it is not one: the
+    caller has every permission required and the request is refused anyway. An
+    owner leaving their own workspace holds `LEAVE_WORKSPACE`; what stops them
+    is the state of the workspace, not their role.
+
+    Mapping it to 403 would tell an owner they lack a permission they demonstrably
+    have, and no amount of re-authenticating or role-changing would fix it. It is
+    a **409 Conflict** -- the request conflicts with the resource's current state,
+    and the caller resolves it by transferring ownership first.
+
+    The database enforces this independently, via
+    `trg_workspace_members_protect_last_owner`. This exception exists so the
+    answer is legible rather than a raw constraint violation.
+    """
+
+    #: Unlike the authorization messages, this one is deliberately specific and
+    #: actionable. It leaks nothing -- the caller is an owner of the workspace
+    #: and already knows who is in it -- and withholding the reason here would
+    #: leave them unable to work out what to do next.
+    public_message = "The last owner cannot leave. Transfer ownership to another member first."
+
+
 class WorkspaceAccessError(AuthorizationError):
     """The caller is not a live member of the workspace they addressed.
 

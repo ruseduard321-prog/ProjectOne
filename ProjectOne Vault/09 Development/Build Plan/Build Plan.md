@@ -44,6 +44,7 @@ Status appears in two places — the step note and the row below — and they mu
 | STEP-09 | [[STEP-09 Row Level Security Policies]] | Done | full |
 | STEP-10 | [[STEP-10 Authentication Backend]] | Done | full |
 | STEP-11 | [[STEP-11 Authorization and RBAC]] | Done | full |
+| STEP-11a | [[STEP-11a Membership Removal Policy]] | Done | full |
 | STEP-12 | [[STEP-12 API Conventions and Middleware]] | Not Started | full |
 | STEP-13 | [[STEP-13 Auth Users Workspaces Endpoints]] | Not Started | outline |
 | STEP-14 | [[STEP-14 Design System Tokens]] | Not Started | outline |
@@ -121,10 +122,13 @@ The inherited STEP-07 REST 401 turned out to be a request-shape problem, not a b
 
 Three defects were found during validation, each reproduced against a live database: **`migrations/env.py` discarded the test harness's database URL** (so a test run migrated whatever `DATABASE_URL` pointed at — invisible in CI, a live-database hazard on a developer machine), a **branched migration history**, and an **own-row `WITH CHECK` that rejected the very operation it was written for**. All three are fixed.
 
-> [!danger] Removing a member has no working database path
-> Soft-deleting a `workspace_members` row is rejected for **every** role, including `owner`: STEP-09's SELECT policy filters `deleted_at IS NULL`, so the row becomes invisible to the statement writing it. Verified in all three directions. Leaving a workspace and removing a member are both blocked, and **[[STEP-13 Auth Users Workspaces Endpoints]] cannot deliver member removal until a STEP-09 SELECT policy change is decided** — a Critical multi-tenancy call for the owner ([[CLAUDE|CLAUDE.md]] §21). Pinned by a test that is expected to fail when it is fixed. See [[STEP-11 Authorization and RBAC#Outcome]].
+**STEP-11 was approved by the project owner on 2026-08-01**, with CI confirmed green, clearing its owner approval gate (Critical — authorization, security controls, multi-tenancy).
 
-**STEP-11 carries an owner approval gate** (Critical — authorization, security controls, multi-tenancy). It is `Done` and committed, but STEP-12 does not begin until the owner confirms it — including confirming the CI run, which this environment cannot observe on a private repository.
+**Membership removal now works, governed by explicit rules** (STEP-11a — a step inserted by owner decision on 2026-08-01, since the fix was a Critical multi-tenancy change rather than an API convention). STEP-11 had found that soft-deleting a `workspace_members` row was impossible for *every* role including `owner`. Migration `b8e1d94c50a7` resolves it and encodes the owner's five rules: the last owner may never leave or be removed, removal is strictly ranked owner > admin > member, a member may only leave themselves, and an owner may transfer ownership before leaving.
+
+Two mechanisms carry it. The `deleted_at` filter **moved out of the SELECT policy into the queries** — a policy answers "whose rows may this caller touch", which is a tenant question `deleted_at` has nothing to do with — and the last-owner rule became a **deferrable constraint trigger**, because it counts remaining owners and no RLS predicate can do that without recursing. Tenant isolation is provably unchanged: `app_current_user_workspaces()` still filters the caller's own membership, so a removed member still loses access immediately, and a test proves the widening stopped at the workspace boundary. The suite grew from 96 tests to 133.
+
+**STEP-11a carries an owner approval gate** (Critical — authorization, security controls, multi-tenancy/RLS). It is `Done` and committed, but STEP-12 does not begin until the owner confirms it — including confirming the CI run, which this environment cannot observe on a private repository.
 
 The vault, Claude OS and AI operating capabilities are built and validated ([[Environment Setup]], [[AI Index]]).
 

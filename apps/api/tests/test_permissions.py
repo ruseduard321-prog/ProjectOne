@@ -16,6 +16,7 @@ from app.core.permissions import (
     WRITE_ROLES,
     WorkspacePermission,
     WorkspaceRole,
+    may_remove,
     permissions_for,
     role_allows,
 )
@@ -56,15 +57,64 @@ def test_a_member_cannot_export_the_workspace() -> None:
     assert role_allows(WorkspaceRole.ADMIN, WorkspacePermission.EXPORT_WORKSPACE_DATA)
 
 
-def test_a_member_may_only_view() -> None:
+def test_a_member_may_only_view_and_leave() -> None:
     """The narrowest role, pinned exactly.
 
     Asserting equality rather than a set of individual denials: a permission
     added to the enum later is silently granted to nobody by a denial-shaped
     test, and silently granted to `member` by a careless matrix edit. Equality
     catches the second.
+
+    `LEAVE_WORKSPACE` is here because nobody is kept in a workspace against
+    their will (STEP-11a rule 5). The last-owner bar is a *state* rule enforced
+    by the database, not a permission withheld here.
     """
-    assert permissions_for(WorkspaceRole.MEMBER) == frozenset({WorkspacePermission.VIEW_WORKSPACE})
+    assert permissions_for(WorkspaceRole.MEMBER) == frozenset(
+        {WorkspacePermission.VIEW_WORKSPACE, WorkspacePermission.LEAVE_WORKSPACE}
+    )
+
+
+def test_only_an_owner_may_transfer_ownership() -> None:
+    """Rule 3. Anyone else holding this could manufacture themselves an owner."""
+    holders = {
+        role for role in WorkspaceRole if role_allows(role, WorkspacePermission.TRANSFER_OWNERSHIP)
+    }
+
+    assert holders == {WorkspaceRole.OWNER}
+
+
+def test_every_role_may_leave() -> None:
+    """Rule 5 -- departure is never a privilege."""
+    for role in WorkspaceRole:
+        assert role_allows(role, WorkspacePermission.LEAVE_WORKSPACE)
+
+
+def test_removal_rights_are_strictly_ranked() -> None:
+    """Rules 2 and 4, as the exhaustive actor-target matrix.
+
+    Written out in full rather than as a loop over a rule, because the rule and
+    the assertion would then be the same expression and the test would prove
+    nothing. The two entries that matter most are the `False` on the diagonal
+    for owner and admin: an owner may not remove a co-owner, and an admin may
+    not remove another admin. Both are what a `>=` would silently permit.
+    """
+    owner, admin, member = WorkspaceRole.OWNER, WorkspaceRole.ADMIN, WorkspaceRole.MEMBER
+
+    expected = {
+        (owner, owner): False,
+        (owner, admin): True,
+        (owner, member): True,
+        (admin, owner): False,
+        (admin, admin): False,
+        (admin, member): True,
+        (member, owner): False,
+        (member, admin): False,
+        (member, member): False,
+    }
+
+    actual = {(a, t): may_remove(a, t) for a in WorkspaceRole for t in WorkspaceRole}
+
+    assert actual == expected
 
 
 def test_every_role_may_view() -> None:

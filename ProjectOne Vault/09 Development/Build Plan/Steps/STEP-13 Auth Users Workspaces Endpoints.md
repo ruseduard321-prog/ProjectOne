@@ -52,10 +52,12 @@ Added by [[STEP-10 Authentication Backend]]:
 
 Added by [[STEP-11 Authorization and RBAC]]:
 
-> [!danger] Member removal has no working database path, and this step cannot deliver it unaided
-> Soft-deleting a `workspace_members` row is rejected for **every** role, including `owner`. STEP-09's `workspace_members_select_same_workspace` filters `deleted_at IS NULL`, so the row becomes invisible to the statement writing it and PostgreSQL refuses the `UPDATE`. Reproduced against a live database in all three directions during STEP-11 — see [[STEP-11 Authorization and RBAC#Outcome]] and [[RLS Policy Pattern]].
->
-> Fixing it means changing that SELECT policy: a Critical multi-tenancy change needing an owner decision ([[CLAUDE|CLAUDE.md]] §21). **Surface it before planning "remove a member" or "leave a workspace" — do not work around it here**, and specifically do not reach for the privileged connection to sidestep a policy, which would defeat the isolation this endpoint set exists inside.
+Added by [[STEP-11a Membership Removal Policy]]:
+
+- **Removal, departure and ownership transfer are built — this step only exposes them.** `MembershipService` implements the owner's five rules and the database enforces them independently ([[Authorization Model]]). The work here is HTTP routes over `remove_member`, `leave_workspace` and `transfer_ownership`, not re-deciding the rules.
+- **`LastOwnerError` maps to 409, not 403**, and the handler already exists in `app/main.py`. A route that catches it and returns 403 would tell an owner they lack a permission they hold.
+- **Every query on `workspace_members` must filter `deleted_at IS NULL` explicitly.** The SELECT policy no longer does it — that is what made removal possible. A member listing that omits the filter shows removed members.
+- **Inviting a member is still unsolved.** The INSERT policy requires the caller to already be a member of the target workspace, so adding someone needs the same audited service path as workspace creation.
 
 - **Authorization is already built; endpoints declare it rather than implement it.** `requires(<permission>)` gates a route, `AuthorizationService` decides, and a single handler maps refusals to 403 ([[Authorization Model]]). A new endpoint writes a permission into its signature — it does not add an `if` to a handler, and it does not invent a second role check.
 - **Every route taking a `workspace_id` must declare it as a path parameter.** `requires(...)` reads it from the URL by name, so a route that accepts a workspace id in the body cannot be authorized by it — deliberately, since a body-supplied id is the caller choosing their own permission check.
