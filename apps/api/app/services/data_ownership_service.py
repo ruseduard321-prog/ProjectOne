@@ -164,6 +164,70 @@ class WorkspaceMembersStore:
             return cursor.rowcount
 
 
+class AuditLogStore:
+    """A workspace's audit trail: exportable, deliberately **not** erasable.
+
+    Registered so the trail appears in an export -- a user is entitled to a copy
+    of the record of what was done in their workspace -- while `erase` is a
+    documented no-op.
+
+    **This is the one store that deliberately does not erase, and it is a legal
+    exception rather than an oversight.** CLAUDE.md §16 states that audit logs
+    are retained on their own schedule, independent of user deletion requests,
+    "because audit trails exist precisely to survive the events they record".
+    An erasure that wiped the audit log would let anyone with `DELETE_WORKSPACE`
+    destroy the evidence of what they did on the way out, which is the single
+    outcome an audit log exists to prevent.
+
+    It could not erase even if it wanted to: `audit_log` has no `deleted_at`
+    column, no UPDATE policy and no UPDATE grant (migration `a3c07d5e91f4`).
+    Returning 0 here is the honest report of that, and the per-store count makes
+    the exception **visible in the erasure response** rather than silent -- a
+    caller sees `"audit_log": 0` and can ask why, which is exactly the
+    transparency CLAUDE.md §16 requires when disclosing a retention exception.
+    """
+
+    name = "audit_log"
+
+    def export(
+        self, connection: psycopg.Connection, workspace_id: uuid.UUID
+    ) -> list[ExportedRecord]:
+        """Return the workspace's audit trail.
+
+        Subject to `audit_log_select_same_workspace` like every other read, so
+        an export cannot reach another tenant's trail by being handed the wrong
+        workspace id.
+        """
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT created_at, action, actor_id, actor_email, target_id, detail "
+                "FROM public.audit_log WHERE workspace_id = %s ORDER BY created_at",
+                (workspace_id,),
+            )
+
+            return [
+                {
+                    "created_at": row[0].isoformat(),
+                    "action": row[1],
+                    "actor_id": str(row[2]),
+                    "actor_email": row[3],
+                    "target_id": str(row[4]) if row[4] else None,
+                    "detail": row[5],
+                }
+                for row in cursor
+            ]
+
+    def erase(self, _connection: psycopg.Connection, _workspace_id: uuid.UUID) -> int:
+        """Erase nothing, and report that plainly.
+
+        See the class docstring: this is a documented retention exception, not a
+        gap. Returning 0 rather than raising keeps a whole-workspace erasure
+        succeeding for every other store -- the alternative would be an erasure
+        that fails entirely because one store is legally required to persist.
+        """
+        return 0
+
+
 class DataOwnershipService:
     """Exports and erases everything a workspace owns."""
 
@@ -233,4 +297,10 @@ class DataOwnershipService:
 # data anywhere is responsible for registering that store with the deletion
 # process). The tuple is the checklist: a store absent from it is absent from
 # every export and every erasure.
-REGISTERED_STORES: tuple[ExportableStore, ...] = (WorkspaceMembersStore(),)
+#
+# `AuditLogStore` is registered for export but erases nothing, by design -- see
+# its docstring. It is in this tuple rather than omitted from it precisely so
+# the exception is visible: a store absent from the registry is invisible, while
+# one reporting `"audit_log": 0` in every erasure result is a disclosed
+# retention exception a reader can question.
+REGISTERED_STORES: tuple[ExportableStore, ...] = (WorkspaceMembersStore(), AuditLogStore())

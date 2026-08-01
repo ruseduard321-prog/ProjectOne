@@ -23,17 +23,20 @@ from jwt import PyJWKClient
 from app.core.config import Settings, get_settings
 from app.core.permissions import WorkspacePermission, WorkspaceRole
 from app.core.security import InvalidTokenError
+from app.repositories.audit import AuditRepository
 from app.repositories.database import DatabaseRepository
 from app.repositories.memberships import MembershipRepository
 from app.repositories.session import RequestSessionFactory
 from app.repositories.supabase_auth import SupabaseAuthRepository
 from app.repositories.users import UserRepository
+from app.services.audit_service import AuditService
 from app.services.auth_service import AuthService
 from app.services.authorization_service import AuthorizationService
 from app.services.data_ownership_service import REGISTERED_STORES, DataOwnershipService
 from app.services.health_service import HealthService
 from app.services.membership_service import MembershipService
 from app.services.token_service import AuthenticatedUser, TokenService, build_jwk_client
+from app.services.workspace_service import WorkspaceService
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 
@@ -197,15 +200,59 @@ def get_authorization_service(memberships: MembershipRepositoryDep) -> Authoriza
 AuthorizationServiceDep = Annotated[AuthorizationService, Depends(get_authorization_service)]
 
 
+def get_audit_repository(settings: SettingsDep) -> AuditRepository:
+    """Construct the audit repository."""
+    return AuditRepository(settings)
+
+
+AuditRepositoryDep = Annotated[AuditRepository, Depends(get_audit_repository)]
+
+
+def get_audit_service(audit: AuditRepositoryDep) -> AuditService:
+    """Construct the audit service."""
+    return AuditService(audit)
+
+
+AuditServiceDep = Annotated[AuditService, Depends(get_audit_service)]
+
+
 def get_membership_service(
     memberships: MembershipRepositoryDep,
     authorization: AuthorizationServiceDep,
+    audit: AuditServiceDep,
 ) -> MembershipService:
     """Construct the membership service with its dependencies."""
-    return MembershipService(memberships, authorization)
+    return MembershipService(memberships, authorization, audit)
 
 
 MembershipServiceDep = Annotated[MembershipService, Depends(get_membership_service)]
+
+
+def get_workspace_service(
+    settings: SettingsDep,
+    connection: TenantConnectionDep,
+    memberships: MembershipRepositoryDep,
+    authorization: AuthorizationServiceDep,
+    audit: AuditServiceDep,
+) -> WorkspaceService:
+    """Construct the workspace service.
+
+    The privileged DSN is unwrapped here rather than inside the service, so the
+    one place in the wiring that hands out a bypass-capable credential is
+    visible in this module alongside every other dependency — the same reason
+    `REGISTERED_STORES` is passed in rather than imported internally.
+    """
+    return WorkspaceService(
+        connection,
+        memberships,
+        authorization,
+        audit,
+        settings.database_url.get_secret_value(),
+        settings.database_health_timeout_seconds,
+    )
+
+
+WorkspaceServiceDep = Annotated[WorkspaceService, Depends(get_workspace_service)]
 
 
 def get_data_ownership_service(

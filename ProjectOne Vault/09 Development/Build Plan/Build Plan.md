@@ -46,8 +46,8 @@ Status appears in two places — the step note and the row below — and they mu
 | STEP-11 | [[STEP-11 Authorization and RBAC]] | Done | full |
 | STEP-11a | [[STEP-11a Membership Removal Policy]] | Done | full |
 | STEP-12 | [[STEP-12 API Conventions and Middleware]] | Done | full |
-| STEP-13 | [[STEP-13 Auth Users Workspaces Endpoints]] | Not Started | full |
-| STEP-14 | [[STEP-14 Design System Tokens]] | Not Started | outline |
+| STEP-13 | [[STEP-13 Auth Users Workspaces Endpoints]] | Done | full |
+| STEP-14 | [[STEP-14 Design System Tokens]] | Not Started | full |
 | STEP-15 | [[STEP-15 App Shell and Routing]] | Not Started | outline |
 | STEP-16 | [[STEP-16 Sign Up and Sign In UI]] | Not Started | outline |
 | STEP-17 | [[STEP-17 AI Router and Provider Abstraction]] | Not Started | outline |
@@ -138,7 +138,22 @@ Two defects were found by running the tests: **a fixture that silently disabled 
 
 Two things [[API Architecture]] requires are explicitly **not** built yet and are recorded rather than forgotten: **audit logging** (request logging is not audit logging) and **idempotency keys** (nothing yet creates a resource from a client-supplied request). Both are named in STEP-13's inherited notes.
 
-**STEP-12 carries an owner approval gate** (Critical — public API contract, security controls). It is `Done` and committed, but STEP-13 does not begin until the owner confirms it — including confirming the CI run, which this environment cannot observe on a private repository.
+**STEP-12 was approved by the project owner on 2026-08-01**, with CI confirmed green, clearing its owner approval gate (Critical — public API contract, security controls). The in-process rate limiting and the deferral of audit logging to STEP-13 were approved alongside it.
+
+**Every workspace and membership operation is now reachable over HTTP, and the consequential ones are audited** (STEP-13). Creation, member listing and addition, removal, departure, ownership transfer and the audit trail join the endpoints STEP-10 and STEP-11 built; the full contract is [[API Endpoints]]. Migration `a3c07d5e91f4` adds `audit_log` ([[Table - audit_log]]) — append-only, RLS-scoped to the workspace, with immutability resting on absent policies, absent grants (`TRUNCATE` especially, which RLS does not govern) and writes confined to the privileged path so a client cannot forge entries. It is exportable but **not** erasable, a documented [[CLAUDE|CLAUDE.md]] §16 retention exception that a workspace erasure discloses as `"audit_log": 0` rather than hiding. The suite grew from 160 tests to 191.
+
+**The project owner made two decisions on 2026-08-01**, both asked before any code was written: members are added by existing `user_id` rather than by email (an email-keyed endpoint is an account-enumeration oracle unless every response is identical, and a full invitation flow is a larger scope), and audit logging lands in this step rather than a later one. **Inviting someone with no ProjectOne account remains unbuilt and unscheduled.**
+
+**A defect in the plan itself was found by probing the database before designing.** The inherited notes recorded member invitation as "unsolved, needs the privileged path". That conflated two cases: the INSERT policy tests the *caller's* membership, so an existing member adding someone else is permitted over the ordinary tenant connection — verified against a live database. Only the bootstrap (a creator's own first membership row) is genuinely refused, and it is the sole operation using the privileged connection. Routing invitation through that path would have discarded RLS for an operation that never needed it. [[Authorization Model]] carried the incorrect claim and is corrected.
+
+Three defects were found during validation: **a partial unique index does not prevent a duplicate live membership** (re-adding a removed member with a plain INSERT leaves one dead and one live row, passing the constraint while corrupting every count), **audit rows blocked test teardown** because `audit_log.workspace_id` is deliberately `RESTRICT`, and **a cluster-wide role grant left by the STEP-12 run** blocked the harness. All three are fixed; see [[STEP-13 Auth Users Workspaces Endpoints#Outcome]].
+
+Two gaps are recorded rather than forgotten: **audit retention is unbounded** (no purge schedule — needs a decision by [[STEP-25 Launch Readiness Criteria]]), and **authentication events are not audited** — sign-in, sign-out and failed attempts are arguably the most security-relevant events of all. **Idempotency keys** remain unbuilt, and `POST /workspaces` is now the first endpoint that could use them.
+
+**STEP-13 carries an owner approval gate** (Critical — public API contract, authorization, multi-tenancy, database schema). It is `Done` and committed, but STEP-14 does not begin until the owner confirms it — including confirming the CI run, which this environment cannot observe on a private repository.
+
+> [!warning] STEP-14 needs owner input before implementation, not only approval to start
+> [[Design System]] is still `status: draft` at v0.1 and states **principles, not values** — "a modern sans-serif typeface", "one primary accent color", "consistent grid" — with no typeface, no hex codes and no base spacing unit. A token layer *is* the concrete values, so [[STEP-14 Design System Tokens]] cannot be implemented from the document as written, and inventing a brand palette would propagate into every screen built afterwards. Its task 1 is resolving those choices with the project owner and recording them in [[Design System]]. Flagged here so it is known before the session starts rather than discovered inside it.
 
 The vault, Claude OS and AI operating capabilities are built and validated ([[Environment Setup]], [[AI Index]]).
 

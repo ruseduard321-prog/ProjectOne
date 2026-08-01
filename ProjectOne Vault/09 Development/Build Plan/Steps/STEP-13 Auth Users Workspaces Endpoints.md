@@ -2,17 +2,17 @@
 title: STEP-13 Auth, Users and Workspaces Endpoints
 category: Development/Build Step
 status: draft
-version: "1.1"
-last_updated: 2026-08-01
+version: "1.2"
+last_updated: 2026-08-02
 tags: [engineering, workflow, build-step, backend,api]
 step_id: STEP-13
-step_status: Not Started
+step_status: Done
 detail_level: full
 ---
 
 # STEP-13 — Auth, Users and Workspaces Endpoints
 
-**Status:** Not Started
+**Status:** Done
 **Detail level:** full — expanded by [[STEP-12 API Conventions and Middleware]], per [[Execution Protocol]].
 
 ## Goal
@@ -98,6 +98,44 @@ Added by [[STEP-12 API Conventions and Middleware]]:
 Every authentication, user and workspace operation the platform needs is reachable over HTTP, documented with [[API Endpoint Template]], built on the STEP-12 conventions rather than around them; workspace creation and invitation go through an audited service path rather than raw client INSERTs; and no endpoint introduces a second, weaker copy of a rule the database already enforces.
 
 **Critical change** ([[CLAUDE|CLAUDE.md]] §21 — public API contract, authorization, multi-tenancy): flag for owner review.
+
+## Outcome
+
+**Every workspace and membership operation is now reachable over HTTP**, and the first consequential mutations are audited. The endpoint contract is [[API Endpoints]]; the audit table is [[Table - audit_log]]. Neither is restated here.
+
+### The owner's two decisions
+
+Both were put to the project owner on 2026-08-01 before any code was written, per task 3's instruction to stop and ask:
+
+- **Adding a member is by existing `user_id`, not by email.** An email-keyed endpoint reveals whether an address has a ProjectOne account unless every response is identical either way, and a full invitation flow is a larger scope than this step. Consequence stated rather than discovered: someone with no account cannot yet be added, and a real invitation flow is unscheduled.
+- **Audit logging lands here, not in a later step.** This step creates the first auditable mutations, so deferring would ship them unaudited.
+
+### A defect in the plan, found by probing rather than reading
+
+The inherited notes said inviting a member was "still unsolved" and needed the privileged path, because the INSERT policy requires the caller to already be a member of the target workspace. **That conflated two different cases**, and the difference matters:
+
+- **Adding a member is not blocked.** The policy tests the *caller's* membership, which an existing member has. Probed against a live database before designing anything: the insert succeeds over the ordinary tenant connection. Routing it through the privileged path would have discarded RLS for an operation that never needed it.
+- **The bootstrap genuinely is blocked.** A creator's own first membership row has no prior membership to test against. Also probed: the `workspaces` row inserts fine, the membership row is refused. That is the only operation using the privileged connection, and `test_a_client_cannot_bootstrap_a_workspace_by_direct_insert` asserts the refusal permanently, so the day it stops being true the suite says so.
+
+[[Authorization Model]] carried the incorrect claim and has been corrected.
+
+### The audit log breaks two conventions on purpose
+
+No `deleted_at`, no `version`, no `touch_row` trigger, and one SELECT-only policy. Those departures from [[Table Conventions]] are the security property: an audit record its own subject can edit or remove is not an audit record. Immutability rests on three independent mechanisms — absent policies, absent grants (`TRUNCATE` especially, which RLS does not govern), and writes confined to the privileged path so a client cannot forge entries.
+
+It is **exportable but not erasable**, a documented [[CLAUDE|CLAUDE.md]] §16 legal exception rather than a gap in the erasure path. A workspace erasure reports `"audit_log": 0`, which discloses the exception instead of hiding it — an omitted store would be indistinguishable from a forgotten one.
+
+### Defects found during validation
+
+- **A partial unique index does not prevent a duplicate live membership.** `uq_workspace_members_active` only constrains rows where `deleted_at IS NULL`, so re-adding a previously-removed member with a plain INSERT leaves two rows for one person — one dead, one live — passing the constraint while corrupting every count and listing. Adding is therefore an explicit revive-then-insert in one transaction. `ON CONFLICT` cannot do it: an inference clause must match the index's predicate, and re-adding conflicts with nothing while the old row is still soft-deleted.
+- **Test teardown could not delete workspaces.** `audit_log.workspace_id` is `RESTRICT`, deliberately — a trail must not be cascaded away with the thing it records — so the fixture has to clear audit rows first. Surfaced as 32 teardown errors that also caused two unrelated tests to fail on leftover state; both passed in isolation, which is what identified the real cause.
+- **A cluster-wide role grant blocked the harness.** The STEP-12 run left `projectone_api` holding `USAGE` on `public` in the `postgres` database, so the migration's `DROP ROLE` failed. Residue on the shared development instance, not a code defect; revoked.
+
+### Validation
+
+Run against a real PostgreSQL — a throwaway database on the development Supabase instance, created and dropped for the run, with the genuine `auth.uid()`. **191 passed, 0 failed, 0 skipped** (up from 160), including the full STEP-09 through STEP-12 suites. `apps/web`: 7 passed. Lint, format and `mypy app` (strict) all clean. Migration `a3c07d5e91f4` was downgraded and re-upgraded to verify the rollback path.
+
+Observed rather than assumed: workspace creation produces both rows and the creator can immediately see the result; a direct client bootstrap is refused by the database; an added member genuinely gains access and a removed one loses it immediately; the last owner gets 409 and the transfer-then-leave path the message recommends actually works; and a client acting as `authenticated` cannot insert, update, delete or truncate the audit log.
 
 ---
 

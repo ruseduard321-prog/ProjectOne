@@ -14,10 +14,21 @@ system not subject to the isolation it enforces.
 
 import uuid
 from contextlib import AbstractContextManager
+from dataclasses import dataclass
 
 import psycopg
 
 from app.core.permissions import WorkspaceRole
+
+
+@dataclass(frozen=True)
+class WorkspaceMember:
+    """One live member of a workspace, with the profile fields a list needs."""
+
+    user_id: uuid.UUID
+    role: WorkspaceRole
+    email: str
+    display_name: str | None
 
 
 class MembershipRepository:
@@ -117,6 +128,83 @@ class MembershipRepository:
             )
 
             return cursor.rowcount > 0
+
+    def add(self, workspace_id: uuid.UUID, user_id: uuid.UUID, role: WorkspaceRole) -> None:
+        """Insert a membership row over the tenant connection.
+
+        Permitted by `workspace_members_insert_same_workspace` because the
+        policy tests the *caller's* membership of the workspace, which an
+        existing member has. This is not the bootstrap case -- see
+        `WorkspaceService` for why the two differ.
+
+        A previously-removed member is **revived** rather than duplicated. Their
+        old row still exists -- removal is a soft delete -- and
+        `uq_workspace_members_active` is a *partial* unique index
+        (`WHERE deleted_at IS NULL`), so a plain INSERT succeeds and leaves two
+        rows for the same person: one dead, one live. That passes the constraint
+        and corrupts every count and listing that follows.
+
+        The revive is therefore an explicit UPDATE of any dead row first. It
+        cannot be `ON CONFLICT`: an inference clause must match the index's
+        predicate as well as its columns, and re-adding conflicts with nothing
+        while the old row is still soft-deleted.
+
+        Both statements run in one transaction so a revive can never half-apply.
+        """
+        with self._connection.transaction(), self._connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE public.workspace_members
+                SET deleted_at = NULL, role = %s
+                WHERE workspace_id = %s AND user_id = %s AND deleted_at IS NOT NULL
+                """,
+                (role.value, workspace_id, user_id),
+            )
+
+            if cursor.rowcount > 0:
+                return
+
+            cursor.execute(
+                "INSERT INTO public.workspace_members (workspace_id, user_id, role) "
+                "VALUES (%s, %s, %s)",
+                (workspace_id, user_id, role.value),
+            )
+
+    def list_members(self, workspace_id: uuid.UUID) -> list[WorkspaceMember]:
+        """Return a workspace's live members, with their profiles.
+
+        **`deleted_at IS NULL` is stated explicitly, and must stay that way.**
+        The SELECT policy stopped filtering it in migration `b8e1d94c50a7` --
+        that is what made removal possible at all -- so a listing that omits the
+        filter shows people who have been removed, indistinguishable from those
+        who have not. Guarded by a test.
+
+        The join to `users` is subject to `users_select_self_or_co_member`,
+        which admits exactly the co-members this query wants, so a member whose
+        profile the caller may not see cannot appear here anyway.
+        """
+        with self._connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT wm.user_id, wm.role, u.email, u.display_name
+                FROM public.workspace_members wm
+                JOIN public.users u ON u.id = wm.user_id
+                WHERE wm.workspace_id = %s
+                  AND wm.deleted_at IS NULL
+                ORDER BY u.email
+                """,
+                (workspace_id,),
+            )
+
+            return [
+                WorkspaceMember(
+                    user_id=row[0],
+                    role=WorkspaceRole(row[1]),
+                    email=row[2],
+                    display_name=row[3],
+                )
+                for row in cursor
+            ]
 
     def set_role(self, workspace_id: uuid.UUID, user_id: uuid.UUID, role: WorkspaceRole) -> bool:
         """Change one member's role, returning whether the row existed."""

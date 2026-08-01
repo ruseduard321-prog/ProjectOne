@@ -24,7 +24,9 @@ import uuid
 from app.core.permissions import WorkspacePermission, WorkspaceRole, may_remove
 from app.core.security import AuthorizationError, LastOwnerError
 from app.repositories.memberships import MembershipRepository
+from app.services.audit_service import AuditAction, AuditService
 from app.services.authorization_service import AuthorizationService
+from app.services.token_service import AuthenticatedUser
 
 
 class MembershipService:
@@ -34,15 +36,17 @@ class MembershipService:
         self,
         memberships: MembershipRepository,
         authorization: AuthorizationService,
+        audit: AuditService,
     ) -> None:
-        """Store the repository and the authorization gate."""
+        """Store the repository, the authorization gate and the audit sink."""
         self._memberships = memberships
         self._authorization = authorization
+        self._audit = audit
 
     def remove_member(
         self,
         workspace_id: uuid.UUID,
-        actor_id: uuid.UUID,
+        actor: AuthenticatedUser,
         target_id: uuid.UUID,
     ) -> None:
         """Remove another member, if the actor outranks them (rules 2 and 4).
@@ -59,13 +63,13 @@ class MembershipService:
                 outrank the target, or the target is not a member.
             LastOwnerError: The removal would leave the workspace ownerless.
         """
-        if actor_id == target_id:
+        if actor.id == target_id:
             raise AuthorizationError(
-                f"User {actor_id} attempted to remove themselves; use leave_workspace"
+                f"User {actor.id} attempted to remove themselves; use leave_workspace"
             )
 
         actor_role = self._authorization.require(
-            workspace_id, actor_id, WorkspacePermission.REMOVE_MEMBER
+            workspace_id, actor.id, WorkspacePermission.REMOVE_MEMBER
         )
 
         target_role = self._memberships.role_in(workspace_id, target_id)
@@ -87,7 +91,15 @@ class MembershipService:
         self._guard_last_owner(workspace_id, target_role)
         self._memberships.soft_delete(workspace_id, target_id)
 
-    def leave_workspace(self, workspace_id: uuid.UUID, user_id: uuid.UUID) -> None:
+        self._audit.record(
+            AuditAction.MEMBER_REMOVED,
+            workspace_id=workspace_id,
+            actor=actor,
+            target_id=target_id,
+            role=target_role.value,
+        )
+
+    def leave_workspace(self, workspace_id: uuid.UUID, actor: AuthenticatedUser) -> None:
         """Leave a workspace (rule 5), unless doing so orphans it (rule 1).
 
         Every role holds `LEAVE_WORKSPACE` -- nobody is kept in a workspace
@@ -100,16 +112,24 @@ class MembershipService:
             LastOwnerError: The caller is the last owner.
         """
         role = self._authorization.require(
-            workspace_id, user_id, WorkspacePermission.LEAVE_WORKSPACE
+            workspace_id, actor.id, WorkspacePermission.LEAVE_WORKSPACE
         )
 
         self._guard_last_owner(workspace_id, role)
-        self._memberships.soft_delete(workspace_id, user_id)
+        self._memberships.soft_delete(workspace_id, actor.id)
+
+        self._audit.record(
+            AuditAction.MEMBER_LEFT,
+            workspace_id=workspace_id,
+            actor=actor,
+            target_id=actor.id,
+            role=role.value,
+        )
 
     def transfer_ownership(
         self,
         workspace_id: uuid.UUID,
-        actor_id: uuid.UUID,
+        actor: AuthenticatedUser,
         successor_id: uuid.UUID,
     ) -> None:
         """Hand ownership to another member (rule 3).
@@ -136,11 +156,11 @@ class MembershipService:
             AuthorizationError: The actor is not an owner, or the successor is
                 not a live member of the workspace.
         """
-        self._authorization.require(workspace_id, actor_id, WorkspacePermission.TRANSFER_OWNERSHIP)
+        self._authorization.require(workspace_id, actor.id, WorkspacePermission.TRANSFER_OWNERSHIP)
 
-        if successor_id == actor_id:
+        if successor_id == actor.id:
             raise AuthorizationError(
-                f"User {actor_id} attempted to transfer ownership to themselves"
+                f"User {actor.id} attempted to transfer ownership to themselves"
             )
 
         if self._memberships.role_in(workspace_id, successor_id) is None:
@@ -150,7 +170,14 @@ class MembershipService:
 
         with self._memberships.transaction():
             self._memberships.set_role(workspace_id, successor_id, WorkspaceRole.OWNER)
-            self._memberships.set_role(workspace_id, actor_id, WorkspaceRole.ADMIN)
+            self._memberships.set_role(workspace_id, actor.id, WorkspaceRole.ADMIN)
+
+        self._audit.record(
+            AuditAction.OWNERSHIP_TRANSFERRED,
+            workspace_id=workspace_id,
+            actor=actor,
+            target_id=successor_id,
+        )
 
     def _guard_last_owner(self, workspace_id: uuid.UUID, role: WorkspaceRole) -> None:
         """Refuse to remove the final owner (rule 1).

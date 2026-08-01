@@ -244,8 +244,19 @@ def admin_connection(migrated_database: str) -> Iterator[psycopg.Connection]:
         yield connection
 
         with connection.cursor() as cursor:
-            # Order matters: workspaces.owner_id is RESTRICT, so users cannot be
-            # removed while a workspace still references them.
+            # Order matters, and every step of it is a RESTRICT foreign key:
+            #
+            # - `audit_log.workspace_id` is RESTRICT, so a workspace cannot be
+            #   hard-deleted while its trail references it. That is deliberate
+            #   in production -- an audit trail must not be silently cascaded
+            #   away with the thing it records (migration `a3c07d5e91f4`) --
+            #   which means test teardown has to clear it explicitly.
+            # - `workspaces.owner_id` is RESTRICT, so users cannot be removed
+            #   while a workspace still references them.
+            #
+            # This is the owner connection, so it bypasses the grants that stop
+            # a request from ever doing this.
+            cursor.execute("DELETE FROM public.audit_log")
             cursor.execute("DELETE FROM public.workspace_members")
             cursor.execute("DELETE FROM public.workspaces")
             cursor.execute("DELETE FROM public.users")

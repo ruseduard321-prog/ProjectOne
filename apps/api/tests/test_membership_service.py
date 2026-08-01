@@ -6,10 +6,11 @@ which is the whole reason that layer exists ([[Authorization Model]]): without
 it, every violation surfaces as a silently-zero-row `UPDATE` or a raw PostgreSQL
 constraint error, and a client can act on neither.
 
-**No endpoints are exercised here, deliberately.** Membership routes belong to
-STEP-13; adding them now would be scope creep ([[CLAUDE|CLAUDE.md]] §29/§35).
-The service is driven directly over a real RLS-subject connection, so the
-policies and the trigger are genuinely in play.
+**No endpoints are exercised here, deliberately.** The service is driven
+directly over a real RLS-subject connection, so the policies and the trigger are
+genuinely in play without a router in between. STEP-13 added the HTTP routes
+over these operations; they are exercised in `test_workspace_endpoints.py`, and
+keeping the two separate means a routing change cannot make a rule test pass.
 
 The distinction under test throughout is **403 versus 409**:
 
@@ -27,12 +28,42 @@ import pytest
 
 from app.core.security import AuthorizationError, LastOwnerError, WorkspaceAccessError
 from app.repositories.memberships import MembershipRepository
+from app.services.audit_service import AuditAction
 from app.services.authorization_service import AuthorizationService
 from app.services.membership_service import MembershipService
+from app.services.token_service import AuthenticatedUser
 from tests.conftest import Identity, seed_identity
 from tests.test_membership_rules import live_role
 
 pytestmark = pytest.mark.usefixtures("migrated_database")
+
+
+class _NullAudit:
+    """An audit sink that records nothing.
+
+    Substituted so these tests exercise the membership rules without depending
+    on the audit table. See the note in `service_for`.
+    """
+
+    def record(
+        self,
+        action: AuditAction,
+        workspace_id: uuid.UUID,
+        actor: AuthenticatedUser,
+        target_id: uuid.UUID | None = None,
+        **detail: object,
+    ) -> None:
+        return None
+
+
+def actor(user_id: uuid.UUID) -> AuthenticatedUser:
+    """Wrap a bare user id as a verified identity.
+
+    The services take the whole identity rather than an id, so the audit record
+    can carry an email snapshot that a caller cannot supply. These tests only
+    care about the id, so the address is a placeholder.
+    """
+    return AuthenticatedUser(id=user_id, email=f"{user_id}@example.test")
 
 
 class Cast:
@@ -96,7 +127,12 @@ def service_for(request_database_url: str) -> Iterator[object]:
 
         repository = MembershipRepository(connection)
 
-        return MembershipService(repository, AuthorizationService(repository))
+        # A no-op audit sink. These tests assert the *membership rules*, and
+        # `AuditService.record` opens its own privileged connection -- letting
+        # it do so here would make every rule test depend on the audit table
+        # and turn a rule failure into an audit failure. The audit trail is
+        # asserted directly in `test_audit_log.py`.
+        return MembershipService(repository, AuthorizationService(repository), _NullAudit())
 
     yield build
 
@@ -111,7 +147,7 @@ def test_an_owner_removing_an_admin_succeeds(
     admin_connection: psycopg.Connection, cast: Cast, service_for
 ) -> None:
     service = service_for(cast.owner.user_id)
-    service.remove_member(cast.id, cast.owner.user_id, cast.admin.user_id)
+    service.remove_member(cast.id, actor(cast.owner.user_id), cast.admin.user_id)
 
     assert live_role(admin_connection, cast.id, cast.admin.user_id) is None
 
@@ -120,7 +156,7 @@ def test_an_admin_removing_a_member_succeeds(
     admin_connection: psycopg.Connection, cast: Cast, service_for
 ) -> None:
     service = service_for(cast.admin.user_id)
-    service.remove_member(cast.id, cast.admin.user_id, cast.member.user_id)
+    service.remove_member(cast.id, actor(cast.admin.user_id), cast.member.user_id)
 
     assert live_role(admin_connection, cast.id, cast.member.user_id) is None
 
@@ -132,7 +168,7 @@ def test_an_admin_removing_an_owner_is_an_authorization_error(
     service = service_for(cast.admin.user_id)
 
     with pytest.raises(AuthorizationError):
-        service.remove_member(cast.id, cast.admin.user_id, cast.owner.user_id)
+        service.remove_member(cast.id, actor(cast.admin.user_id), cast.owner.user_id)
 
     assert live_role(admin_connection, cast.id, cast.owner.user_id) == "owner"
 
@@ -141,7 +177,7 @@ def test_a_member_removing_anyone_is_an_authorization_error(cast: Cast, service_
     service = service_for(cast.member.user_id)
 
     with pytest.raises(AuthorizationError):
-        service.remove_member(cast.id, cast.member.user_id, cast.admin.user_id)
+        service.remove_member(cast.id, actor(cast.member.user_id), cast.admin.user_id)
 
 
 def test_removing_yourself_is_refused_and_points_at_leaving(cast: Cast, service_for) -> None:
@@ -154,7 +190,7 @@ def test_removing_yourself_is_refused_and_points_at_leaving(cast: Cast, service_
     service = service_for(cast.owner.user_id)
 
     with pytest.raises(AuthorizationError):
-        service.remove_member(cast.id, cast.owner.user_id, cast.owner.user_id)
+        service.remove_member(cast.id, actor(cast.owner.user_id), cast.owner.user_id)
 
 
 def test_removing_a_non_member_does_not_reveal_that_they_are_absent(
@@ -168,7 +204,7 @@ def test_removing_a_non_member_does_not_reveal_that_they_are_absent(
     service = service_for(cast.owner.user_id)
 
     with pytest.raises(AuthorizationError):
-        service.remove_member(cast.id, cast.owner.user_id, uuid.uuid4())
+        service.remove_member(cast.id, actor(cast.owner.user_id), uuid.uuid4())
 
 
 # ------------------------------------------------------------------ leaving --
@@ -176,7 +212,7 @@ def test_removing_a_non_member_does_not_reveal_that_they_are_absent(
 
 def test_a_member_may_leave(admin_connection: psycopg.Connection, cast: Cast, service_for) -> None:
     service = service_for(cast.member.user_id)
-    service.leave_workspace(cast.id, cast.member.user_id)
+    service.leave_workspace(cast.id, actor(cast.member.user_id))
 
     assert live_role(admin_connection, cast.id, cast.member.user_id) is None
 
@@ -193,7 +229,7 @@ def test_the_last_owner_leaving_is_a_conflict_not_a_permission_failure(
     service = service_for(cast.owner.user_id)
 
     with pytest.raises(LastOwnerError) as raised:
-        service.leave_workspace(cast.id, cast.owner.user_id)
+        service.leave_workspace(cast.id, actor(cast.owner.user_id))
 
     assert not isinstance(raised.value, AuthorizationError)
     assert "Transfer ownership" in raised.value.public_message
@@ -205,7 +241,7 @@ def test_a_non_member_cannot_leave_a_workspace_they_are_not_in(cast: Cast, servi
     service = service_for(stranger)
 
     with pytest.raises(WorkspaceAccessError):
-        service.leave_workspace(cast.id, stranger)
+        service.leave_workspace(cast.id, actor(stranger))
 
 
 # ---------------------------------------------------------------- transfer --
@@ -216,14 +252,14 @@ def test_an_owner_may_transfer_ownership_and_then_leave(
 ) -> None:
     """Rule 3 end to end, which is the sequence the rule was written to enable."""
     service = service_for(cast.owner.user_id)
-    service.transfer_ownership(cast.id, cast.owner.user_id, cast.admin.user_id)
+    service.transfer_ownership(cast.id, actor(cast.owner.user_id), cast.admin.user_id)
 
     assert live_role(admin_connection, cast.id, cast.admin.user_id) == "owner"
     assert live_role(admin_connection, cast.id, cast.owner.user_id) == "admin"
 
     # The departure that was a 409 a moment ago now succeeds, because a second
     # owner exists. This is what "transfer before leaving" means in practice.
-    service.leave_workspace(cast.id, cast.owner.user_id)
+    service.leave_workspace(cast.id, actor(cast.owner.user_id))
 
     assert live_role(admin_connection, cast.id, cast.owner.user_id) is None
 
@@ -233,7 +269,7 @@ def test_an_admin_may_not_transfer_ownership(cast: Cast, service_for) -> None:
     service = service_for(cast.admin.user_id)
 
     with pytest.raises(AuthorizationError):
-        service.transfer_ownership(cast.id, cast.admin.user_id, cast.member.user_id)
+        service.transfer_ownership(cast.id, actor(cast.admin.user_id), cast.member.user_id)
 
 
 def test_transferring_to_a_non_member_is_refused(cast: Cast, service_for) -> None:
@@ -241,7 +277,7 @@ def test_transferring_to_a_non_member_is_refused(cast: Cast, service_for) -> Non
     service = service_for(cast.owner.user_id)
 
     with pytest.raises(AuthorizationError):
-        service.transfer_ownership(cast.id, cast.owner.user_id, uuid.uuid4())
+        service.transfer_ownership(cast.id, actor(cast.owner.user_id), uuid.uuid4())
 
 
 def test_transferring_to_yourself_is_refused(cast: Cast, service_for) -> None:
@@ -249,7 +285,7 @@ def test_transferring_to_yourself_is_refused(cast: Cast, service_for) -> None:
     service = service_for(cast.owner.user_id)
 
     with pytest.raises(AuthorizationError):
-        service.transfer_ownership(cast.id, cast.owner.user_id, cast.owner.user_id)
+        service.transfer_ownership(cast.id, actor(cast.owner.user_id), cast.owner.user_id)
 
 
 def test_a_transfer_never_leaves_the_workspace_without_an_owner(
@@ -262,7 +298,7 @@ def test_a_transfer_never_leaves_the_workspace_without_an_owner(
     catch an ownerless one at commit.
     """
     service = service_for(cast.owner.user_id)
-    service.transfer_ownership(cast.id, cast.owner.user_id, cast.member.user_id)
+    service.transfer_ownership(cast.id, actor(cast.owner.user_id), cast.member.user_id)
 
     with admin_connection.cursor() as cursor:
         cursor.execute(
@@ -289,11 +325,11 @@ def test_the_service_agrees_with_the_database(
     service = service_for(cast.member.user_id)
 
     with pytest.raises(AuthorizationError):
-        service.remove_member(cast.id, cast.member.user_id, cast.owner.user_id)
+        service.remove_member(cast.id, actor(cast.member.user_id), cast.owner.user_id)
 
     # And the reverse: what the service permits, the database performs.
     owner_service = service_for(cast.owner.user_id)
-    owner_service.remove_member(cast.id, cast.owner.user_id, cast.member.user_id)
+    owner_service.remove_member(cast.id, actor(cast.owner.user_id), cast.member.user_id)
 
     assert live_role(admin_connection, cast.id, cast.member.user_id) is None
 
@@ -308,10 +344,10 @@ def test_a_removed_member_cannot_act_on_their_next_request(
     member whose token is still valid must not keep acting until it expires.
     """
     owner_service = service_for(cast.owner.user_id)
-    owner_service.remove_member(cast.id, cast.owner.user_id, cast.admin.user_id)
+    owner_service.remove_member(cast.id, actor(cast.owner.user_id), cast.admin.user_id)
 
     # A fresh connection, standing in for the removed member's next request.
     removed_service = service_for(cast.admin.user_id)
 
     with pytest.raises(WorkspaceAccessError):
-        removed_service.leave_workspace(cast.id, cast.admin.user_id)
+        removed_service.leave_workspace(cast.id, actor(cast.admin.user_id))

@@ -93,6 +93,6 @@ See [[Chapter 07 - Database Standards]] and [[Authentication and Authorization]]
 ## Navigation
 
 - **Previous:** [[Table - workspaces]]
-- **Next:** —
+- **Next:** [[Table - audit_log]]
 - **Parent:** [[Database MOC]]
-- **Related Notes:** [[Table Conventions]] · [[RLS Policy Pattern]] · [[Table - users]] · [[Table - workspaces]] · [[Database Architecture]]
+- **Related Notes:** [[Table Conventions]] · [[RLS Policy Pattern]] · [[Table - users]] · [[Table - workspaces]] · [[Table - audit_log]] · [[Database Architecture]]

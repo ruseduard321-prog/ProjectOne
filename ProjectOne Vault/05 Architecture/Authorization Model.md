@@ -142,8 +142,9 @@ Erasure of `workspace_members` works as of [[STEP-11a Membership Removal Policy]
 
 - **Cross-workspace and platform-level roles.** There is no "platform admin" and no role that spans workspaces. Cross-tenant access remains default-forbidden and requires an ADR ([[CLAUDE|CLAUDE.md]] §16).
 - **Per-resource permissions.** Roles are scoped to a workspace, not to individual projects or documents. Finer granularity is a change to this model, not an extension of it.
-- **Membership management endpoints.** The *rules* are enforced and the service exists ([[STEP-11a Membership Removal Policy]]); the HTTP routes that expose them belong to [[STEP-13 Auth Users Workspaces Endpoints]], along with the audited path the INSERT policies require for adding members.
-- **Inviting new members.** Adding someone to a workspace still has no client-reachable path — the INSERT policy requires the caller to already be a member of the workspace being written to.
+- ~~**Membership management endpoints.**~~ **Built by [[STEP-13 Auth Users Workspaces Endpoints]]** — see [[API Endpoints]].
+- ~~**Inviting new members.**~~ **Partly built, and the earlier reasoning here was wrong.** This note previously said adding a member had no client-reachable path because "the INSERT policy requires the caller to already be a member of the workspace being written to". That requirement is real, and an *existing member adding someone else* satisfies it — the policy tests the **caller's** membership, which they have. STEP-13 verified this against a live database: the insert succeeds over the ordinary tenant connection. Only the **bootstrap** case (a creator's own first membership row, where there is no prior membership to test) genuinely needs the privileged path.
+  What remains unbuilt is inviting someone with **no ProjectOne account**: `POST /workspaces/{id}/members` takes a `user_id`, so the target must already exist. A real invitation flow — pending state, tokens, delivery — is unscheduled.
 
 ---
 

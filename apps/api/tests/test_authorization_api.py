@@ -160,7 +160,14 @@ def test_an_owner_is_allowed_the_same_action(client: TestClient, roles: Roles) -
     )
 
     assert response.status_code == 200
-    assert response.json()["erased"] == {"workspace_members": 2}
+
+    # `audit_log` reports 0 deliberately, and its presence here is the point:
+    # STEP-13 registered it for export while making it un-erasable, because
+    # audit trails must survive the events they record (CLAUDE.md §16). Listing
+    # it with a zero count discloses that retention exception rather than
+    # hiding it -- an omitted store would be indistinguishable from a forgotten
+    # one. See `AuditLogStore`.
+    assert response.json()["erased"] == {"workspace_members": 2, "audit_log": 0}
 
 
 def test_a_member_cannot_rename_the_workspace_through_the_api(

@@ -16,13 +16,16 @@ If the two disagree, this note describes reality and the other describes intent 
 
 ## Current Tables
 
-As of [[STEP-09 Row Level Security Policies]]:
+As of [[STEP-13 Auth Users Workspaces Endpoints]]:
 
 | Table | Purpose | Tenant-scoped | RLS |
 |---|---|---|---|
 | [[Table - users]] | Application-side profile, keyed to Supabase Auth identity | No | ✅ Enabled + forced |
 | [[Table - workspaces]] | The tenant boundary | Is the boundary | ✅ Enabled + forced |
 | [[Table - workspace_members]] | User ↔ workspace membership with role | Yes | ✅ Enabled + forced |
+| [[Table - audit_log]] | Who changed what, and when — append-only | Yes | ✅ Enabled + forced (SELECT only) |
+
+[[Table - audit_log]] is the one table that deliberately breaks [[Table Conventions]]: no `deleted_at`, no `version`, no `touch_row` trigger, and a single SELECT policy. Those departures are its security property — an audit record its own subject can edit or remove is not an audit record.
 
 `alembic_version` also exists — Alembic's own migration tracking table, not application schema.
 
@@ -64,6 +67,9 @@ Applied in order. History is append-only: a correction is a new migration, never
 | `860a798d204b` | Enable and force RLS on all three tables, add the membership helper and eight policies | [[STEP-09 Row Level Security Policies]] |
 | `c4f21a86b3de` | Narrow table grants to `SELECT/INSERT/UPDATE` for `authenticated`, nothing for `anon`, and correct the schema's default privileges so future tables inherit the same | [[STEP-10 Authentication Backend]] |
 | `d7b95c1f4e08` | Create `projectone_api`, the request-path role that does **not** bypass RLS | [[STEP-10 Authentication Backend]] |
+| `9f4d2c7a1b83` | Make the UPDATE policies role-aware, and add the role-filtered membership helper | [[STEP-11 Authorization and RBAC]] |
+| `b8e1d94c50a7` | Make membership removal possible; move the `deleted_at` filter out of the SELECT policy and add the last-owner trigger | [[STEP-11a Membership Removal Policy]] |
+| `a3c07d5e91f4` | Create the append-only `audit_log` with its SELECT-only policy and grants | [[STEP-13 Auth Users Workspaces Endpoints]] |
 
 Apply with `./scripts/migrate.sh up` (or `.\scripts\migrate.ps1 up`); see `scripts/README.md`.
 
@@ -101,4 +107,4 @@ Apply with `./scripts/migrate.sh up` (or `.\scripts\migrate.ps1 up`); see `scrip
 - **Previous:** [[Authorization Model]]
 - **Next:** [[Table - users]]
 - **Parent:** [[Database MOC]]
-- **Related Notes:** [[Table Conventions]] · [[RLS Policy Pattern]] · [[Table - users]] · [[Table - workspaces]] · [[Table - workspace_members]] · [[Database Architecture]] · [[Chapter 07 - Database Standards]]
+- **Related Notes:** [[Table Conventions]] · [[RLS Policy Pattern]] · [[Table - users]] · [[Table - workspaces]] · [[Table - workspace_members]] · [[Table - audit_log]] · [[Database Architecture]] · [[Chapter 07 - Database Standards]]

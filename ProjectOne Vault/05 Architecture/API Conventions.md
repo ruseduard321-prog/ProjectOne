@@ -136,7 +136,7 @@ The identity counted against is the **peer address, never a header**. `X-Forward
 
 Stated so the next reader does not assume otherwise:
 
-- **Audit logging.** [[API Architecture]] lists it as mandatory. Request logging is not audit logging: this records that a request happened, not who changed what. It needs a durable, queryable store and a retention policy ([[CLAUDE|CLAUDE.md]] §16), and belongs with the endpoints that perform auditable mutations — [[STEP-13 Auth Users Workspaces Endpoints]] onward.
+- ~~**Audit logging.**~~ **Built by [[STEP-13 Auth Users Workspaces Endpoints]]** — see [[Table - audit_log]]. The distinction this section drew still holds and is worth keeping: request logging records that a request happened, audit logging records *who changed what*. They are separate mechanisms with separate retention rules, and the presence of one is not the presence of the other.
 - **Distributed/global rate limiting.** See the limitation above; it needs an ADR.
 - **Idempotency keys.** [[API Architecture]] calls for idempotent operations where appropriate. Nothing built so far creates a resource from a client-supplied request, so there is nothing yet to make idempotent. It belongs with the first `POST` that does.
 - **Pagination and filtering conventions.** `GET /api/v1/workspaces` returns a caller's own workspaces, which is bounded by construction. The first genuinely unbounded collection is the right place to settle this, not an imagined one.
@@ -146,6 +146,6 @@ Stated so the next reader does not assume otherwise:
 ## Navigation
 
 - **Previous:** [[Authorization Model]]
-- **Next:** [[Schema Overview]]
+- **Next:** [[API Endpoints]]
 - **Parent:** [[Architecture MOC]]
 - **Related Notes:** [[API Architecture]] · [[Authentication Implementation]] · [[Authorization Model]] · [[Chapter 06 - FastAPI Architecture]] · [[Security Architecture]] · [[API Endpoint Template]]
