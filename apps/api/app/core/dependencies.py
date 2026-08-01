@@ -11,7 +11,7 @@ service count grows.
 """
 
 import uuid
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from functools import lru_cache
 from typing import Annotated
 
@@ -21,12 +21,16 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt import PyJWKClient
 
 from app.core.config import Settings, get_settings
-from app.core.security import AuthError
+from app.core.permissions import WorkspacePermission, WorkspaceRole
+from app.core.security import AuthError, AuthorizationError
 from app.repositories.database import DatabaseRepository
+from app.repositories.memberships import MembershipRepository
 from app.repositories.session import RequestSessionFactory
 from app.repositories.supabase_auth import SupabaseAuthRepository
 from app.repositories.users import UserRepository
 from app.services.auth_service import AuthService
+from app.services.authorization_service import AuthorizationService
+from app.services.data_ownership_service import REGISTERED_STORES, DataOwnershipService
 from app.services.health_service import HealthService
 from app.services.token_service import AuthenticatedUser, TokenService, build_jwk_client
 
@@ -186,6 +190,90 @@ def get_tenant_connection(
 
 
 TenantConnectionDep = Annotated[psycopg.Connection, Depends(get_tenant_connection)]
+
+
+def get_membership_repository(connection: TenantConnectionDep) -> MembershipRepository:
+    """Construct the membership repository over the request's tenant connection."""
+    return MembershipRepository(connection)
+
+
+MembershipRepositoryDep = Annotated[MembershipRepository, Depends(get_membership_repository)]
+
+
+def get_authorization_service(memberships: MembershipRepositoryDep) -> AuthorizationService:
+    """Construct the authorization service with its dependencies."""
+    return AuthorizationService(memberships)
+
+
+AuthorizationServiceDep = Annotated[AuthorizationService, Depends(get_authorization_service)]
+
+
+def get_data_ownership_service(
+    connection: TenantConnectionDep,
+    authorization: AuthorizationServiceDep,
+) -> DataOwnershipService:
+    """Construct the export/erasure service over the request's tenant connection.
+
+    `REGISTERED_STORES` is passed in rather than imported inside the service, so
+    a test can substitute a store registry without monkey-patching a module
+    global — and so the registry's contents are visible at the wiring layer,
+    where an omission is noticeable.
+    """
+    return DataOwnershipService(connection, authorization, REGISTERED_STORES)
+
+
+DataOwnershipServiceDep = Annotated[DataOwnershipService, Depends(get_data_ownership_service)]
+
+
+def requires(permission: WorkspacePermission) -> Callable[..., WorkspaceRole]:
+    """Build a dependency that admits only callers holding `permission`.
+
+    A factory because a FastAPI dependency cannot take arguments of its own: the
+    permission has to be captured at import time, in the route declaration, which
+    is exactly where it belongs. Requiring a permission then reads as part of the
+    route's signature rather than as an `if` buried in a handler (CLAUDE.md §12):
+
+        @router.patch("/{workspace_id}")
+        def rename(role: Annotated[WorkspaceRole, Depends(requires(UPDATE_WORKSPACE))]) -> ...
+
+    The `workspace_id` path parameter is taken from the URL by name. Every route
+    using this must therefore declare `workspace_id: uuid.UUID` in its path --
+    FastAPI raises at startup if it does not, so a mismatch is a boot failure
+    rather than a route that silently authorizes against nothing.
+
+    The check is never given a workspace id from a request *body*: a body-supplied
+    id is a caller asserting which workspace to authorize against, which is the
+    caller choosing their own permission check.
+
+    Args:
+        permission: The capability a caller must hold to reach the route.
+
+    Returns:
+        A dependency yielding the caller's role, having verified it suffices.
+    """
+
+    def dependency(
+        workspace_id: uuid.UUID,
+        user: CurrentUserDep,
+        authorization: AuthorizationServiceDep,
+    ) -> WorkspaceRole:
+        try:
+            return authorization.require(workspace_id, user.id, permission)
+        except AuthorizationError as error:
+            # 403, never 401. The caller authenticated successfully; re-issuing
+            # a 401 here would tell a correct client its session had failed and
+            # send it into a refresh loop over what is a settled "no".
+            #
+            # `error.public_message` is returned rather than `str(error)`, which
+            # names the caller's actual role and the required permission -- an
+            # outline of the permission model, and a debugging aid, so it belongs
+            # in the log (CLAUDE.md §24).
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=error.public_message,
+            ) from error
+
+    return dependency
 
 
 def user_id_of(user: AuthenticatedUser) -> uuid.UUID:

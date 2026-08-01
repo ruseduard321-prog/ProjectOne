@@ -91,11 +91,35 @@ Written **per command**, never as one `FOR ALL` policy. `FOR ALL` applies a sing
 | `users` | SELECT | Self, or anyone sharing a live workspace |
 | `users` | UPDATE | Self only, and cannot be reassigned to another identity |
 | `workspaces` | SELECT | Live membership required |
-| `workspaces` | UPDATE | Live membership required |
+| `workspaces` | UPDATE | **`owner` or `admin` only** ([[STEP-11 Authorization and RBAC]]) |
 | `workspaces` | INSERT | The row must name the creator as `owner_id` |
 | `workspace_members` | SELECT | Same workspace |
-| `workspace_members` | UPDATE | Same workspace, and cannot be moved to another |
+| `workspace_members` | UPDATE | **`owner`/`admin` on any row; a `member` on their own row only, and never their own `role`** |
 | `workspace_members` | INSERT | Same workspace |
+
+### The role predicate
+
+[[STEP-11 Authorization and RBAC]] made the two UPDATE policies role-aware. Membership alone was never a sufficient test for a write: until then an ordinary `member` could rename the workspace and rewrite anyone's role row exactly like its owner.
+
+Roles are tested through `app_current_user_workspaces_as(text[])`, the role-filtered sibling of the helper above, with the same containment measures for the same reasons:
+
+```sql
+USING (
+    deleted_at IS NULL
+    AND id IN (SELECT public.app_current_user_workspaces_as(ARRAY['owner','admin']))
+)
+```
+
+**Its parameter is safe and STEP-09's parameterless design still holds.** The banned shape is a parameter naming *whose* access to inspect (`workspaces_for(user_id)`), which would let any caller ask what another user can see. This parameter names which *roles* to filter the caller's own memberships by; identity still comes from `auth.uid()` internally. Guarded by `test_role_function_only_ever_answers_about_the_caller`.
+
+The role vocabulary and what each role permits are defined once, in `apps/api/app/core/permissions.py`. **If that matrix and these policies disagree, the policies are correct and the matrix is a bug** — see [[Authorization Model]].
+
+> [!warning] Soft-deleting a `workspace_members` row is currently impossible
+> For every role, including `owner`. `workspace_members_select_same_workspace` filters `deleted_at IS NULL`, so a row being soft-deleted becomes invisible to the very statement writing it and PostgreSQL rejects the `UPDATE` with `new row violates row-level security policy`.
+>
+> Reproduced against a live database during STEP-11 validation in all three directions — a member erasing their own row, a member erasing another's, and an owner erasing a member's — and confirmed by observing the same update succeed once the `deleted_at` filter was lifted.
+>
+> **Consequence:** removing a member and leaving a workspace both have no working database path yet, and `WorkspaceMembersStore.erase` reports 0 rather than raising or bypassing RLS. Fixing it means changing this SELECT policy, which is a Critical multi-tenancy decision of its own ([[CLAUDE|CLAUDE.md]] §21) rather than something an RBAC step folds in. Pinned by `test_self_removal_is_blocked_by_the_step_09_select_policy`, which is expected to fail — and be deleted — when that decision is made.
 
 ### `USING` versus `WITH CHECK`
 

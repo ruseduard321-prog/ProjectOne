@@ -50,6 +50,18 @@ Added by [[STEP-10 Authentication Backend]]:
 - **Two connections exist and the distinction is load-bearing.** `TenantConnectionDep` is RLS-subject and is the default for everything; the privileged connection is for the bootstrap operation only. A new endpoint reaching for the privileged connection because it is convenient silently loses tenant isolation.
 - **Grants are narrow.** `authenticated` holds `SELECT`, `INSERT`, `UPDATE` only. An endpoint needing DELETE is a design error — removal is a soft delete.
 
+Added by [[STEP-11 Authorization and RBAC]]:
+
+> [!danger] Member removal has no working database path, and this step cannot deliver it unaided
+> Soft-deleting a `workspace_members` row is rejected for **every** role, including `owner`. STEP-09's `workspace_members_select_same_workspace` filters `deleted_at IS NULL`, so the row becomes invisible to the statement writing it and PostgreSQL refuses the `UPDATE`. Reproduced against a live database in all three directions during STEP-11 — see [[STEP-11 Authorization and RBAC#Outcome]] and [[RLS Policy Pattern]].
+>
+> Fixing it means changing that SELECT policy: a Critical multi-tenancy change needing an owner decision ([[CLAUDE|CLAUDE.md]] §21). **Surface it before planning "remove a member" or "leave a workspace" — do not work around it here**, and specifically do not reach for the privileged connection to sidestep a policy, which would defeat the isolation this endpoint set exists inside.
+
+- **Authorization is already built; endpoints declare it rather than implement it.** `requires(<permission>)` gates a route, `AuthorizationService` decides, and a single handler maps refusals to 403 ([[Authorization Model]]). A new endpoint writes a permission into its signature — it does not add an `if` to a handler, and it does not invent a second role check.
+- **Every route taking a `workspace_id` must declare it as a path parameter.** `requires(...)` reads it from the URL by name, so a route that accepts a workspace id in the body cannot be authorized by it — deliberately, since a body-supplied id is the caller choosing their own permission check.
+- **`GET /workspaces/{id}/permissions` already exists** and is what a client uses to render an interface matching what the server will allow. It is a convenience, never the enforcement.
+- **Export and erasure endpoints exist structurally** (`GET /workspaces/{id}/export`, `DELETE /workspaces/{id}/data`). Any store this step adds registers in `REGISTERED_STORES` as part of its Definition of Done ([[CLAUDE|CLAUDE.md]] §16), or it is silently excluded from every export and erasure.
+
 ## Tasks
 
 Not yet expanded. [[STEP-12 API Conventions and Middleware]] writes this section, when the surrounding code exists and the tasks can be accurate rather than imagined.

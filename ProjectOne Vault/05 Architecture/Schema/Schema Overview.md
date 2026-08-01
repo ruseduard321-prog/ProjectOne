@@ -98,7 +98,7 @@ Apply with `./scripts/migrate.sh up` (or `.\scripts\migrate.ps1 up`); see `scrip
 
 ## Navigation
 
-- **Previous:** [[RLS Policy Pattern]]
+- **Previous:** [[Authorization Model]]
 - **Next:** [[Table - users]]
 - **Parent:** [[Database MOC]]
 - **Related Notes:** [[Table Conventions]] · [[RLS Policy Pattern]] · [[Table - users]] · [[Table - workspaces]] · [[Table - workspace_members]] · [[Database Architecture]] · [[Chapter 07 - Database Standards]]

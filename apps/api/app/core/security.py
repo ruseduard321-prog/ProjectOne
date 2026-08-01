@@ -46,6 +46,37 @@ class CredentialsRejectedError(AuthError):
     public_message = "Invalid credentials"
 
 
+class AuthorizationError(Exception):
+    """The caller is authenticated but may not perform this action.
+
+    Deliberately **not** an `AuthError` subclass. Every `AuthError` is mapped to
+    401 by the routers, and folding authorization into that hierarchy would make
+    a permission failure indistinguishable from a credential failure -- telling
+    a user their session is broken when it is fine, and prompting a client to
+    throw away a perfectly valid token and re-authenticate in a loop.
+
+    401 means "I do not know who you are." 403 means "I know exactly who you are
+    and the answer is still no." Conflating them is a correctness bug before it
+    is a security one.
+    """
+
+    #: What a client is told. Names neither the required permission nor the
+    #: caller's actual role: a 403 that explains precisely which role would have
+    #: worked is a map of the permission model handed to whoever probes it.
+    public_message = "You do not have permission to perform this action"
+
+
+class WorkspaceAccessError(AuthorizationError):
+    """The caller is not a live member of the workspace they addressed.
+
+    Distinct from a role being insufficient, and it must **not** be distinct in
+    the response. A 404-versus-403 difference here reveals whether a workspace
+    id exists at all, turning any endpoint taking a workspace id into an
+    existence oracle. Both surface identically to the client; only the log
+    knows which happened.
+    """
+
+
 class IdentityProviderError(AuthError):
     """Supabase Auth was unreachable or returned an unexpected response."""
 

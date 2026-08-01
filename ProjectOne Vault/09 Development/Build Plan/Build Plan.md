@@ -43,8 +43,8 @@ Status appears in two places — the step note and the row below — and they mu
 | STEP-08 | [[STEP-08 Users and Workspaces Schema]] | Done | full |
 | STEP-09 | [[STEP-09 Row Level Security Policies]] | Done | full |
 | STEP-10 | [[STEP-10 Authentication Backend]] | Done | full |
-| STEP-11 | [[STEP-11 Authorization and RBAC]] | Not Started | full |
-| STEP-12 | [[STEP-12 API Conventions and Middleware]] | Not Started | outline |
+| STEP-11 | [[STEP-11 Authorization and RBAC]] | Done | full |
+| STEP-12 | [[STEP-12 API Conventions and Middleware]] | Not Started | full |
 | STEP-13 | [[STEP-13 Auth Users Workspaces Endpoints]] | Not Started | outline |
 | STEP-14 | [[STEP-14 Design System Tokens]] | Not Started | outline |
 | STEP-15 | [[STEP-15 App Shell and Routing]] | Not Started | outline |
@@ -115,7 +115,16 @@ The inherited STEP-07 REST 401 turned out to be a request-shape problem, not a b
 
 **MFA and OAuth were deliberately deferred** out of STEP-10, and remain unscheduled — see that step's Outcome for the reasoning.
 
-**STEP-10 carries an owner approval gate** (Critical — authentication, security controls, multi-tenancy). It is `Done` and committed, but STEP-11 does not begin until the owner confirms it — including confirming the CI run, which this environment cannot observe on a private repository.
+**STEP-10 was approved by the project owner on 2026-08-01**, with CI confirmed green, clearing its owner approval gate (Critical — authentication, security controls, multi-tenancy).
+
+**Roles are now enforced, in both layers** (STEP-11). Migration `9f4d2c7a1b83` makes the two UPDATE policies role-aware — a plain `member` could previously rename the workspace and rewrite anyone's role row exactly like its owner — and installs `app_current_user_workspaces_as(text[])`, the role-filtered sibling of STEP-09's helper. Above the database, `requires(<permission>)` gates a route declaratively, `AuthorizationService` makes the decision from a per-request membership lookup, and one exception handler maps refusals to **403** rather than conflating them with 401. The role model, the two-layer split and the invalidation window are [[Authorization Model]]; the structural basis for data export and erasure ships with it. The suite grew from 58 tests to 96.
+
+Three defects were found during validation, each reproduced against a live database: **`migrations/env.py` discarded the test harness's database URL** (so a test run migrated whatever `DATABASE_URL` pointed at — invisible in CI, a live-database hazard on a developer machine), a **branched migration history**, and an **own-row `WITH CHECK` that rejected the very operation it was written for**. All three are fixed.
+
+> [!danger] Removing a member has no working database path
+> Soft-deleting a `workspace_members` row is rejected for **every** role, including `owner`: STEP-09's SELECT policy filters `deleted_at IS NULL`, so the row becomes invisible to the statement writing it. Verified in all three directions. Leaving a workspace and removing a member are both blocked, and **[[STEP-13 Auth Users Workspaces Endpoints]] cannot deliver member removal until a STEP-09 SELECT policy change is decided** — a Critical multi-tenancy call for the owner ([[CLAUDE|CLAUDE.md]] §21). Pinned by a test that is expected to fail when it is fixed. See [[STEP-11 Authorization and RBAC#Outcome]].
+
+**STEP-11 carries an owner approval gate** (Critical — authorization, security controls, multi-tenancy). It is `Done` and committed, but STEP-12 does not begin until the owner confirms it — including confirming the CI run, which this environment cannot observe on a private repository.
 
 The vault, Claude OS and AI operating capabilities are built and validated ([[Environment Setup]], [[AI Index]]).
 

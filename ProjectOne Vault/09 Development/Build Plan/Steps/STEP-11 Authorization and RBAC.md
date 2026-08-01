@@ -1,18 +1,18 @@
 ---
 title: STEP-11 Authorization and RBAC
 category: Development/Build Step
-status: draft
-version: "1.1"
+status: stable
+version: "1.2"
 last_updated: 2026-08-01
 tags: [engineering, workflow, build-step, security,backend]
 step_id: STEP-11
-step_status: Not Started
+step_status: Done
 detail_level: full
 ---
 
 # STEP-11 — Authorization and RBAC
 
-**Status:** Not Started
+**Status:** Done
 **Detail level:** full — expanded by [[STEP-10 Authentication Backend]], per [[Execution Protocol]].
 
 ## Goal
@@ -73,6 +73,44 @@ Added by [[STEP-10 Authentication Backend]]:
 Every action is validated against an explicit, documented permission before execution; the role model is written down rather than implied; role enforcement is tested in both directions; and the structural basis for data export/deletion exists.
 
 **Critical change** ([[CLAUDE|CLAUDE.md]] §21 — authorization, security controls, multi-tenancy): flag for owner review.
+
+## Outcome
+
+**Roles are now enforced in both layers, with the database authoritative.** The full model — matrix, enforcement split, invalidation window, 401/403 rule — is [[Authorization Model]]; it is not restated here.
+
+Migration `9f4d2c7a1b83` replaces the two role-blind UPDATE policies and installs `app_current_user_workspaces_as(text[])`, the role-filtered sibling of STEP-09's helper. Above them, `requires(<permission>)` is a declarative route dependency, `AuthorizationService` makes the decision, and a single exception handler maps it to 403. The suite grew from 58 tests to 96.
+
+### Three defects found during validation, all reproduced against a live database
+
+1. **`migrations/env.py` discarded the test harness's database URL.** It overwrote `sqlalchemy.url` from `DATABASE_URL` unconditionally, so conftest's override — the thing that exists so *"a test run can never migrate the development database by accident"* — did nothing. Every migration a test run applied went to whatever `DATABASE_URL` pointed at. Invisible in CI, where the two happen to be the same throwaway container; on a developer machine it means a test run migrating the development project. Fixed: an explicitly supplied URL now wins.
+
+2. **This step's migration branched the history.** `down_revision` was set to `c4f21a86b3de` when the real head was `d7b95c1f4e08`, producing `MultipleHeads` on every migration attempt. Corrected.
+
+3. **The own-row WITH CHECK rejected the operation it was written for.** The clause re-tested membership, and `app_current_user_workspaces()` filters `deleted_at IS NULL`, so a row being soft-deleted no longer satisfied it. Removed — the `USING` clause and `user_id = auth.uid()` already establish everything it added.
+
+### The finding that outlived the step
+
+> **Soft-deleting a `workspace_members` row is impossible for every role, including `owner`.**
+
+Not an authorization limit. STEP-09's `workspace_members_select_same_workspace` filters `deleted_at IS NULL`, so the row being soft-deleted becomes invisible to the very statement writing it and PostgreSQL rejects the `UPDATE`. Verified in all three directions — a member erasing their own row, a member erasing another's, an owner erasing a member's — and confirmed by observing the same update succeed once that filter was lifted.
+
+**Consequences, none of them worked around:**
+
+- *Leaving a workspace* and *removing a member* have no working database path yet.
+- `WorkspaceMembersStore.erase` returns `0` rather than raising or running over the privileged connection. Bypassing RLS for the erasure path would make it the one component exempt from the isolation it enforces ([[CLAUDE|CLAUDE.md]] §16).
+- `test_self_removal_is_blocked_by_the_step_09_select_policy` pins it as known behaviour. It is *expected to fail* when this is fixed, and that failure is the signal to delete it.
+
+Fixing it means changing a STEP-09 SELECT policy — a Critical multi-tenancy decision of its own ([[CLAUDE|CLAUDE.md]] §21/§29), not something an RBAC step folds in silently. **It needs an owner decision and a step of its own; [[STEP-13 Auth Users Workspaces Endpoints]] cannot deliver member removal without it.**
+
+### Validation
+
+Run against a real PostgreSQL — a throwaway database on the development Supabase instance, created and dropped for the run, with the genuine `auth.uid()` rather than the CI shim. The development database was verified untouched afterwards (still `d7b95c1f4e08`, 8 policies). **96 passed, 0 failed**; lint, format and `mypy app` all clean.
+
+### Deliberately not done
+
+- **Membership management endpoints** — [[STEP-13 Auth Users Workspaces Endpoints]] owns them, and is blocked on the finding above for the removal half.
+- **Hard deletion and the 30-day purge.** Erasure is soft-delete only; a scheduled purge on an audited service path is a later concern, stated rather than implied.
+- **Cross-workspace or platform-level roles.** Default-forbidden, and an ADR if ever needed.
 
 ---
 

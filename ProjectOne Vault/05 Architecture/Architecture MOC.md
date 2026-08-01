@@ -63,6 +63,7 @@ See also: [[AI MOC]]
 Implemented (as opposed to intended model):
 
 - [[Authentication Implementation]]
+- [[Authorization Model]]
 
 See also: [[Backend MOC]]
 

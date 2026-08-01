@@ -91,7 +91,7 @@ No endpoint accepts a user id in its body. Identity always comes from the verifi
 Stated so the next reader does not assume otherwise:
 
 - **MFA and OAuth providers are deferred.** [[Authentication and Authorization]] puts both in scope for the platform. The email/password path plus the RLS connection is already the Critical surface; adding two more identity flows on top of an unreviewed foundation widens the blast radius of a mistake in it. Both belong with [[STEP-16 Sign Up and Sign In UI]] or a step of their own, and the token verification path above is provider-agnostic — an OAuth-issued Supabase token verifies identically.
-- **Roles and permissions.** `workspace_members.role` exists and nothing reads it. [[STEP-11 Authorization and RBAC]] owns that.
+- **Roles and permissions.** ~~`workspace_members.role` exists and nothing reads it.~~ Delivered by [[STEP-11 Authorization and RBAC]] — see [[Authorization Model]].
 - **Workspace creation.** The INSERT policies deliberately cannot bootstrap a workspace from a client ([[RLS Policy Pattern]]), so it needs an audited service path — [[STEP-13 Auth Users Workspaces Endpoints]].
 - **Rate limiting on auth endpoints.** [[STEP-12 API Conventions and Middleware]] owns middleware. Supabase applies its own limits upstream in the meantime.
 
@@ -100,6 +100,6 @@ Stated so the next reader does not assume otherwise:
 ## Navigation
 
 - **Previous:** [[RLS Policy Pattern]]
-- **Next:** [[Schema Overview]]
+- **Next:** [[Authorization Model]]
 - **Parent:** [[Architecture MOC]]
 - **Related Notes:** [[RLS Policy Pattern]] · [[Authentication and Authorization]] · [[Security Architecture]] · [[Table - users]] · [[Chapter 09 - Security Standards]]
