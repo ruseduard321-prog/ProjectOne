@@ -18,6 +18,16 @@ aliases: ["Database Map of Content"]
 
 - [[Chapter 07 - Database Standards]] — naming, migrations, indexing, Row Level Security
 
+## Implemented Schema
+
+What actually exists in the database, as opposed to the intended model above.
+
+- [[Schema Overview]] — current tables, migration history, what is still outstanding
+- [[Table Conventions]] — the standard column set, trigger and naming rules every table follows
+- [[Table - users]] — application-side profile, keyed to Supabase Auth
+- [[Table - workspaces]] — the tenant boundary
+- [[Table - workspace_members]] — user ↔ workspace membership and role
+
 ## Cross-References
 
 - [[Authentication and Authorization]] — row-level security for workspace isolation

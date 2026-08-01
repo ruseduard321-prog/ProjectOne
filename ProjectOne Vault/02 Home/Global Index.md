@@ -68,6 +68,8 @@ Every note in the vault, grouped by folder. This is the exhaustive map — for c
 
 - [[Architecture MOC]]
 
+**Schema:** [[Schema Overview]] · [[Table Conventions]] · [[Table - users]] · [[Table - workspaces]] · [[Table - workspace_members]]
+
 ## 06 AI
 
 - [[AI Index]]

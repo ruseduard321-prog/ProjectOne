@@ -2,8 +2,8 @@
 title: Build Plan
 category: Development
 status: stable
-version: "2.0"
-last_updated: 2026-07-31
+version: "2.1"
+last_updated: 2026-08-01
 tags: [engineering, documentation, workflow]
 aliases: ["Implementation Plan", "Build Roadmap", "Step Index"]
 ---
@@ -40,7 +40,7 @@ Status appears in two places — the step note and the row below — and they mu
 | STEP-05 | [[STEP-05 Environment and Secrets]] | Done | full |
 | STEP-06 | [[STEP-06 Continuous Integration]] | Done | full |
 | STEP-07 | [[STEP-07 Supabase Provisioning]] | Done | full |
-| STEP-08 | [[STEP-08 Users and Workspaces Schema]] | Not Started | full |
+| STEP-08 | [[STEP-08 Users and Workspaces Schema]] | Done | full |
 | STEP-09 | [[STEP-09 Row Level Security Policies]] | Not Started | full |
 | STEP-10 | [[STEP-10 Authentication Backend]] | Not Started | outline |
 | STEP-11 | [[STEP-11 Authorization and RBAC]] | Not Started | outline |
@@ -93,7 +93,13 @@ As of 2026-07-31, the project root is a git repository on branch `main` with the
 
 **A database exists** (STEP-07). A development Supabase project (PostgreSQL 17.6) is connected through the STEP-05 config system, Alembic applies and rolls back migrations via `scripts/migrate.{sh,ps1}`, and `/health` is now a **readiness** check reporting real database connectivity — 503 when it is unreachable. No application tables yet; the first schema is STEP-08.
 
-**STEP-07 carries an owner approval gate** (Critical — database/infrastructure). It is `Done` and committed, but STEP-08 does not begin until the owner confirms it. See [[STEP-07 Supabase Provisioning#Outcome]].
+**STEP-07 was approved by the project owner on 2026-08-01**, clearing its owner approval gate (Critical — database/infrastructure).
+
+**The first application tables exist** (STEP-08): `users`, `workspaces` and `workspace_members`, created by migration `8a6f39b07c12`. They carry the standard column set every later table inherits — `id uuid`, `created_at`, `updated_at`, `deleted_at`, `version` — with `updated_at` and `version` maintained by a database trigger. Constraints enforce integrity at the database layer and were each verified by observing a rejection. Documented in [[Schema Overview]] and [[Table Conventions]].
+
+**No table has Row Level Security yet.** That is [[STEP-09 Row Level Security Policies]], deliberately separated for focused review. The tables hold no data and no application code touches them until it is `Done`.
+
+**STEP-08 carries an owner approval gate** (Critical — database schema). It is `Done` and committed, but STEP-09 does not begin until the owner confirms it. See [[STEP-08 Users and Workspaces Schema#Outcome]].
 
 The vault, Claude OS and AI operating capabilities are built and validated ([[Environment Setup]], [[AI Index]]).
 

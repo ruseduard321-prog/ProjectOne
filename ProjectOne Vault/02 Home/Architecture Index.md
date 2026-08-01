@@ -37,6 +37,9 @@ Every architecture-related document, organized by system layer. See [[Architectu
 
 - [[Database Architecture]]
 - [[Chapter 07 - Database Standards]]
+- [[Schema Overview]] — implemented tables and migration history
+- [[Table Conventions]] — standard columns, trigger, naming rules
+- [[Table - users]] · [[Table - workspaces]] · [[Table - workspace_members]]
 
 ## Platform / Infrastructure
 

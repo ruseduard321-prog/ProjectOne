@@ -2,7 +2,7 @@
 title: STEP-07 Supabase Provisioning
 category: Development/Build Step
 status: draft
-version: "1.3"
+version: "1.4"
 last_updated: 2026-08-01
 tags: [engineering, workflow, build-step, database]
 step_id: STEP-07
@@ -13,10 +13,10 @@ step_status: Done
 
 **Status:** Done
 
-> [!warning] Owner review required before STEP-08
-> This is a **Critical change** ([[CLAUDE|CLAUDE.md]] §21 — database/infrastructure). Its Definition of Done is satisfied and it is committed, but [[Execution Protocol#Owner Approval Gates]] holds the queue: **[[STEP-08 Users and Workspaces Schema]] does not begin until the project owner confirms this step.** Silence is never approval.
+> [!success] Approved by the project owner on 2026-08-01
+> This is a **Critical change** ([[CLAUDE|CLAUDE.md]] §21 — database/infrastructure), so [[Execution Protocol#Owner Approval Gates]] held the queue after it was marked `Done`. **The project owner approved it on 2026-08-01**, clearing the gate; [[STEP-08 Users and Workspaces Schema]] proceeded.
 >
-> What to review: Alembic as the migration tool, `/health` becoming a readiness check that returns 503 when the database is down, CI running against deliberately fake database credentials, and the unresolved Supabase REST 401 noted in [[#Outcome]].
+> Approved as reviewed: Alembic as the migration tool, `/health` becoming a readiness check that returns 503 when the database is down, CI running against deliberately fake database credentials, and the unresolved Supabase REST 401 noted in [[#Outcome]] — the last accepted as a known issue to resolve by [[STEP-10 Authentication Backend]] rather than a blocker.
 
 > [!note] Was `Blocked` on provisioning; resolved 2026-08-01
 > Task 1 — *"provision a Supabase project"* — is an owner action: it creates a resource on an external service and produces credentials Claude must not handle ([[CLAUDE|CLAUDE.md]] §16). The step was `Blocked` before any code was written.
@@ -93,7 +93,7 @@ Used in **plain-SQL mode**: `target_metadata` is `None` and autogenerate is unav
 - **No connection string is in `alembic.ini`.** That file is committed; `env.py` reads `DATABASE_URL` through the same validated `Settings` the application uses, so migrations and the app cannot disagree about which database they target.
 - **CI uses deliberately fake database credentials.** No CI job touches a database — the tests substitute the repository — so wiring a real credential in would grant CI access it has no use for ([[CLAUDE|CLAUDE.md]] §16). A job that genuinely needs a database gets a throwaway one, never the development project.
 - **Ruff exempts `migrations/versions/`** from docstring and naming rules. Alembic generates those from its own template with names it requires verbatim; enforcing house style there means hand-editing every new migration to satisfy a linter.
-- **The Supabase REST API returns 401** with the provided `sb_secret_...` key, while the database connection works perfectly. Nothing in this step or the current codebase uses the REST API — the API talks PostgreSQL directly — so it is not a blocker, but it is unresolved and worth settling before anything depends on `SUPABASE_URL`/`SUPABASE_SECRET_KEY`. Most likely the key needs enabling for the REST role in the dashboard, or a different key type is required.
+- **The Supabase REST API returns 401** with the provided `sb_secret_...` key, while the database connection works perfectly. Nothing in this step or the current codebase uses the REST API — the API talks PostgreSQL directly — so it is not a blocker. Most likely the key needs enabling for the REST role in the dashboard, or a different key type is required. **Deadline: [[STEP-10 Authentication Backend]]**, which is the first step likely to call Supabase Auth's admin API over HTTP and therefore the first real consumer of `SUPABASE_URL`/`SUPABASE_SECRET_KEY`. Recorded there so it cannot slide.
 - **Only a development project exists.** Staging and production get their own projects with their own credentials, never shared ([[Environment and Secrets]]).
 
 ---

@@ -2,8 +2,8 @@
 title: Environment Setup
 category: Development
 status: stable
-version: "1.7"
-last_updated: 2026-07-31
+version: "1.8"
+last_updated: 2026-08-01
 tags: [engineering, documentation, ai, mcp]
 aliases: ["Local Development Setup", "AI Tooling Setup"]
 ---
@@ -26,7 +26,7 @@ For how configuration and secrets are handled across environments — the dev/st
 - **Continuous integration:** GitHub Actions runs `.github/workflows/ci.yml` on every push and pull request as of STEP-06 — a `web` job (lint, type-check, test, build) and an `api` job (lint, format, type-check, test). Both are green. The workflow is the authority on what must pass before a merge; run the same commands locally first. **Confirming a run's result is currently an owner action** — the repository is private and this environment cannot read workflow results (no `gh` CLI, no workflow-run tool in the [[MCP/GitHub|GitHub MCP]]).
 - **Web application:** `apps/web` exists as of STEP-03 — Next.js 16.2.12, React 19.2.4, TypeScript strict, Tailwind v4, ESLint 9. Run it with `npm run dev` from `apps/web` (defaults to port 3000). `npm run lint`, `npm run typecheck` and `npm test` (Vitest 4) are the validation entry points. Note that `next lint` was removed in Next.js 16; lint runs through ESLint directly. Requires `.env.local` — it will not build or start without one ([[Environment and Secrets]]).
 - **API application:** `apps/api` exists as of STEP-04 — FastAPI 0.121.2, Pydantic 2.12.4, Uvicorn 0.38.0, with Ruff 0.14.5, mypy 1.18.2 and pytest 8.4.2 as dev tooling. Dependencies are pinned exactly in `pyproject.toml` and installed into a local virtual environment at `apps/api/.venv/` (git-ignored). Run it with `.venv/Scripts/python -m uvicorn app.main:app --reload` from `apps/api` (port 8000). Validation entry points: `ruff check .`, `ruff format --check .`, `mypy app`, `pytest`. Interactive API docs are at `/docs`, the OpenAPI contract at `/openapi.json`. Requires `.env` — it will not start without one ([[Environment and Secrets]]).
-- **Database:** a development Supabase project (PostgreSQL 17.6) as of STEP-07, reached with `psycopg` 3. Migrations run through Alembic via `./scripts/migrate.sh up` (or `.\scripts\migrate.ps1 up`) — see `scripts/README.md`. `GET /health` reports database connectivity and returns 503 when it is unreachable. Credentials live in `apps/api/.env` and are never committed.
+- **Database:** a development Supabase project (PostgreSQL 17.6) as of STEP-07, reached with `psycopg` 3. Migrations run through Alembic via `./scripts/migrate.sh up` (or `.\scripts\migrate.ps1 up`) — see `scripts/README.md`. `GET /health` reports database connectivity and returns 503 when it is unreachable. Credentials live in `apps/api/.env` and are never committed. **Schema as of STEP-08:** `users`, `workspaces` and `workspace_members` at revision `8a6f39b07c12` — see [[Schema Overview]]. Run `./scripts/migrate.sh up` after pulling to stay current. Row Level Security is **not** enabled yet (STEP-09).
 
 ## AI Operating Capabilities — Status Summary
 
@@ -108,7 +108,7 @@ Two details worth knowing before editing these rules:
 
 ## Known Gaps
 
-- No Supabase or Vercel MCP configuration exists yet — expected, since ProjectOne has no database or deployment target yet.
+- No Supabase or Vercel MCP configuration exists yet. For Vercel this is expected — there is no deployment target. For Supabase a database now exists (STEP-07), but the API reaches it over plain PostgreSQL and migrations run through Alembic, so the MCP is only needed for dashboard-level operations.
 - `@playwright/test` is not installed as a project dependency — the harness's Playwright capability is validated for exploratory/manual use only, not automated CI test coverage. See [[MCP/Playwright|Playwright]] Recommendations.
 - **GitHub workflow results are not readable from this environment.** Commits push successfully and the [[MCP/GitHub|GitHub MCP]] reads repository data (validated against the real repository as of STEP-06), but the MCP exposes no workflow-run tool, `gh` is not installed, and the repository is private so unauthenticated API and browser access return 404. Confirming a CI run is therefore an owner action. Installing `gh` or adding a workflow-run capability would close this.
 - No `08 ADR/` entries exist yet recording these tooling decisions as formally accepted architecture — see [[08 ADR]].

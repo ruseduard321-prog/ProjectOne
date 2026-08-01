@@ -76,6 +76,12 @@ See also: [[Frontend MOC]]
 - [[Database Architecture]]
 - [[Chapter 07 - Database Standards]]
 
+Implemented schema (as opposed to intended model):
+
+- [[Schema Overview]]
+- [[Table Conventions]]
+- [[Table - users]] · [[Table - workspaces]] · [[Table - workspace_members]]
+
 See also: [[Database MOC]]
 
 ## Infrastructure & Delivery
