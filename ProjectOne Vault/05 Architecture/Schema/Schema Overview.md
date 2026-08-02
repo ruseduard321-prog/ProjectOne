@@ -104,7 +104,7 @@ Apply with `./scripts/migrate.sh up` (or `.\scripts\migrate.ps1 up`); see `scrip
 
 ## Navigation
 
-- **Previous:** [[Authorization Model]]
+- **Previous:** [[Web Session Handling]]
 - **Next:** [[Table - users]]
 - **Parent:** [[Database MOC]]
 - **Related Notes:** [[Table Conventions]] · [[RLS Policy Pattern]] · [[Table - users]] · [[Table - workspaces]] · [[Table - workspace_members]] · [[Table - audit_log]] · [[Database Architecture]] · [[Chapter 07 - Database Standards]]

@@ -2,8 +2,8 @@
 title: Build Plan
 category: Development
 status: stable
-version: "2.1"
-last_updated: 2026-08-01
+version: "2.2"
+last_updated: 2026-08-02
 tags: [engineering, documentation, workflow]
 aliases: ["Implementation Plan", "Build Roadmap", "Step Index"]
 ---
@@ -49,8 +49,8 @@ Status appears in two places — the step note and the row below — and they mu
 | STEP-13 | [[STEP-13 Auth Users Workspaces Endpoints]] | Done | full |
 | STEP-14 | [[STEP-14 Design System Tokens]] | Done | full |
 | STEP-15 | [[STEP-15 App Shell and Routing]] | Done | full |
-| STEP-16 | [[STEP-16 Sign Up and Sign In UI]] | Not Started | full |
-| STEP-17 | [[STEP-17 AI Router and Provider Abstraction]] | Not Started | outline |
+| STEP-16 | [[STEP-16 Sign Up and Sign In UI]] | Done | full |
+| STEP-17 | [[STEP-17 AI Router and Provider Abstraction]] | Not Started | full |
 | STEP-18 | [[STEP-18 AI Cost Governance Controls]] | Not Started | outline |
 | STEP-19 | [[STEP-19 Settings and BYOK UI]] | Not Started | outline |
 | STEP-20 | [[STEP-20 Projects Schema and Lifecycle]] | Not Started | outline |
@@ -169,6 +169,18 @@ The lesson worth carrying: **a pairing that is not checked is not passing, it is
 **Building the first skeleton found a missing token.** The loading state was written against `--color-surface-raised` and was invisible in light mode: that token is `#ffffff` against a `#f8fafc` canvas, **1.05**, measured in a browser rather than reasoned about. [[Design System]] §6.5 says the fix for a missing role is to name it, so `--color-skeleton` was added and recorded in §6.2 before use. That is twice in two steps that a surface token reused as a fill *on* that surface produced an invisible result — **a token naming a surface is not automatically safe as a fill on it.**
 
 Authentication is deliberately **not** enforced by the shell. Session handling arrives with [[STEP-16 Sign Up and Sign In UI]]; gating routes before that contract exists would be a guess, and nothing inside the shell holds data yet.
+
+**The stack is now connected end to end** (STEP-16). Sign up → sign in → shell → sign out works against a live backend, with the header identity coming from `GET /auth/me` — which is UI → API → RLS → database in one path. Tokens live in **httpOnly cookies written server-side**, never `localStorage`: a cookie script cannot read is a credential an XSS cannot walk away with, and verifying it meant checking that signed-in browser storage really was empty rather than trusting the design. Because the browser cannot read the token, every API call is server-side — which also sidesteps the API having no CORS middleware at all. The decision, the two-layer gate and the refresh behaviour are [[Web Session Handling]]. The suite grew from 7 tests to 34.
+
+**Three defects were found by running it.** A `"use server"` file may export only async functions, so a constant in the actions module failed the build outright. A `redirect()` from the layout could not send a redirect status — it runs inside STEP-15's `loading.tsx` boundary, so Next.js had already flushed a 200 and could only finish with a meta-refresh; `src/proxy.ts` now returns a real 307 before rendering begins. And most consequentially, **clearing a dead cookie threw and stranded the user forever**: a layout that discovers a spent refresh token may not delete the cookie carrying it, and the attempt aborts the render along with the redirect that was about to fire, leaving an endless loading skeleton. A Route Handler at `/session/expired` now owns that deletion.
+
+The lesson worth carrying: **the place that discovers a credential is dead is not always a place permitted to delete it** — and that failure mode traps the user rather than signing them out.
+
+**Sign-out revokes the refresh token immediately, but an already-issued access token keeps working for up to an hour** — measured, not assumed, because access tokens are stateless JWTs verified locally against JWKS and revocation cannot reach them. That is inherited from STEP-10 rather than introduced here, but [[Authentication Implementation]] implied more than it delivered and now carries the measurement. Anti-enumeration proved stronger than required: registering an address that already exists is indistinguishable from registering a new one.
+
+**One regression in an existing control is recorded rather than resolved.** With every call proxied through Next.js, the API's rate limiter keys on the web server's address, so it no longer limits per user and one user can lock out others — observed directly. It needs a trusted forwarded-client-address scheme before real traffic, and is out of STEP-16's scope.
+
+**STEP-16 carries an owner approval gate** (Critical — authentication, security controls, session/token storage). Beyond confirming the cookie approach, two items need a decision: whether to accept the one-hour post-sign-out access-token window or shorten the token lifetime, and when to fix per-user rate limiting.
 
 The vault, Claude OS and AI operating capabilities are built and validated ([[Environment Setup]], [[AI Index]]).
 

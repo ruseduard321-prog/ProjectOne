@@ -84,6 +84,16 @@ Paths are shown with the `/api/v1` prefix STEP-12 introduced. They were unversio
 
 Sign-out deliberately calls Supabase rather than discarding the token client-side. A local discard leaves the token valid until it expires, so a "signed out" user still holds working credentials — which is not what signing out means.
 
+> [!warning] What sign-out revokes, and what it does not
+> Measured during [[STEP-16 Sign Up and Sign In UI]] validation against the live project, because the sentence above is easy to read as more than it claims.
+>
+> - **The refresh token is revoked immediately.** Exchanging it after sign-out returns 401. The session really is terminated upstream, so no *new* access token can be minted.
+> - **An access token already issued keeps working until it expires** — up to **one hour** on this project. `GET /auth/me` returned 200 for a token captured before sign-out. This is not a defect in sign-out: access tokens are stateless JWTs verified locally against JWKS (see [[#Token Verification]]), so honouring one requires no call to Supabase and revocation cannot reach it.
+>
+> The practical exposure is bounded and specific: an attacker who *already captured* an access token keeps it for the remainder of its hour, and signing out does not shorten that. It does stop them holding the session indefinitely, which is what the refresh token would have given them.
+>
+> Closing the gap entirely would require checking a revocation list on every request — a stateful check on the hot path, which is precisely the cost the stateless design was chosen to avoid. It is recorded here as a known, measured property rather than resolved silently; shortening the access token lifetime is the cheap lever if the window is judged too wide.
+
 No endpoint accepts a user id in its body. Identity always comes from the verified token; a `user_id` field on a sign-in request is an impersonation endpoint with extra steps.
 
 ## Errors Are Typed

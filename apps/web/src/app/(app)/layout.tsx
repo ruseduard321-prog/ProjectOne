@@ -1,6 +1,8 @@
 import Link from "next/link";
 
 import { SidebarNav } from "@/components/shell/SidebarNav";
+import { UserMenu } from "@/components/shell/UserMenu";
+import { requireProfile } from "@/lib/auth";
 
 /**
  * The authenticated application shell.
@@ -13,16 +15,23 @@ import { SidebarNav } from "@/components/shell/SidebarNav";
  * which needs the pathname to mark the active route — everything else here
  * renders on the server and ships no JavaScript.
  *
- * Authentication is deliberately NOT enforced here. Session handling arrives
- * with [[STEP-16 Sign Up and Sign In UI]]; gating routes before it exists would
- * be a guess at a contract that has not been built. There is nothing to protect
- * yet — every screen inside is a placeholder.
+ * **This layout is the authentication gate** (STEP-16). `requireProfile` resolves
+ * the session on the server and redirects to sign-in when there is none, so an
+ * unauthenticated request never receives the shell's markup at all — a
+ * client-side redirect would have sent the page first and navigated away after
+ * ([[Chapter 05 - NextJS Architecture]] §5.10).
+ *
+ * Placing it here rather than in each page is what makes it hold for screens
+ * that do not exist yet: a feature step adding a route inside this group
+ * inherits the gate rather than having to remember it.
  */
-export default function AppLayout({
+export default async function AppLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const profile = await requireProfile();
+
   return (
     <div className="flex min-h-screen flex-col">
       {/*
@@ -41,6 +50,10 @@ export default function AppLayout({
         <Link href="/dashboard" className="text-base font-semibold text-text">
           ProjectOne
         </Link>
+
+        <div className="ml-auto">
+          <UserMenu email={profile.email} />
+        </div>
       </header>
 
       <div className="flex flex-1 flex-col md:flex-row">

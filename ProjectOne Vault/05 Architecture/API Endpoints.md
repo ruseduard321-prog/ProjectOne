@@ -110,6 +110,6 @@ Recorded so the next reader does not assume otherwise:
 ## Navigation
 
 - **Previous:** [[API Conventions]]
-- **Next:** [[Schema Overview]]
+- **Next:** [[Web Session Handling]]
 - **Parent:** [[Architecture MOC]]
 - **Related Notes:** [[API Conventions]] · [[API Endpoint Template]] · [[Authentication Implementation]] · [[Authorization Model]] · [[API Architecture]] · [[Table - audit_log]]

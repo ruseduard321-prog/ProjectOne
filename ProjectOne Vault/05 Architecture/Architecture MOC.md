@@ -76,6 +76,10 @@ See also: [[Backend MOC]]
 - [[Chapter 04 - React Standards]]
 - [[Chapter 05 - NextJS Architecture]]
 
+Implemented (as opposed to intended model):
+
+- [[Web Session Handling]]
+
 See also: [[Frontend MOC]]
 
 ## Database
