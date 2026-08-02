@@ -86,7 +86,7 @@ Settled and versioned in [[API Endpoints]] — read it rather than inferring sha
 
 A user can sign up, sign in, reach the application shell, and sign out with the session revoked upstream; unauthenticated access to shell routes is refused server-side; token storage is implemented with its reasoning recorded; every form defines its loading and error states from the API's own error envelope; and the vertical slice is demonstrated against a live backend rather than a mock.
 
-**This is a Critical change** ([[CLAUDE|CLAUDE.md]] §21 — authentication, security controls, and a session/token storage decision). It carries an **owner approval gate**: [[STEP-17 AI Router and Provider Abstraction]] does not begin until the owner confirms this step, including the token storage approach.
+**This is a Critical change** ([[CLAUDE|CLAUDE.md]] §21 — authentication, security controls, and a session/token storage decision). It carries an **owner approval gate**, **cleared by the project owner on 2026-08-03** — the httpOnly cookie approach, server-side session handling, the Next.js proxy and the absence of `localStorage` were each confirmed. The same decision inserted [[STEP-16a Developer Session Inspector]] and [[STEP-12a Trusted Proxy and Per-User Rate Limiting]], so the step that follows this one is STEP-16a rather than [[STEP-17 AI Router and Provider Abstraction]].
 
 ## Outcome
 
@@ -155,5 +155,5 @@ Beyond confirming the token storage approach, two items need a decision rather t
 ## Navigation
 
 - **Previous:** [[STEP-15 App Shell and Routing]]
-- **Next:** [[STEP-17 AI Router and Provider Abstraction]]
+- **Next:** [[STEP-16a Developer Session Inspector]]
 - **Parent:** [[Build Plan]]

@@ -25,7 +25,9 @@ Routing and abstraction only. Cost governance is STEP-18 and is a hard gate — 
 
 ## Prerequisites
 
-- [[STEP-16 Sign Up and Sign In UI]] — `Done`
+- [[STEP-16 Sign Up and Sign In UI]] — `Done`, owner-approved 2026-08-03
+- [[STEP-16a Developer Session Inspector]] — inserted 2026-08-03
+- [[STEP-12a Trusted Proxy and Per-User Rate Limiting]] — inserted 2026-08-03
 
 ## Required Documentation
 
@@ -82,6 +84,6 @@ A provider-agnostic AI Router exists with at least two working providers behind 
 
 ## Navigation
 
-- **Previous:** [[STEP-16 Sign Up and Sign In UI]]
+- **Previous:** [[STEP-12a Trusted Proxy and Per-User Rate Limiting]]
 - **Next:** [[STEP-18 AI Cost Governance Controls]]
 - **Parent:** [[Build Plan]]

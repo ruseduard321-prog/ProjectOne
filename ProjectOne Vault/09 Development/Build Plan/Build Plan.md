@@ -10,7 +10,9 @@ aliases: ["Implementation Plan", "Build Roadmap", "Step Index"]
 
 # ProjectOne Build Plan
 
-The ordered execution index taking ProjectOne from an empty repository to first public release. **26 sequential steps**, each sized for a single Claude Code session.
+The ordered execution index taking ProjectOne from an empty repository to first public release. **29 sequential steps** (26 planned, plus three inserted by owner decision: STEP-11a, STEP-16a, STEP-12a), each sized for a single Claude Code session.
+
+**Steps execute in table order, not in numeric order.** A step numbered `Na` is placed where it belongs in the *dependency* sequence, while its number records which step's contract it amends. STEP-12a amends STEP-12's middleware contract but runs after STEP-16a, because the regression it fixes was only introduced by STEP-16.
 
 This note is an **index, not a plan** — it holds only ID, title and status. Step detail lives in one note per step under `Steps/`, so a session reads this index plus exactly one step file, and beyond that only what [[Execution Protocol#Context Discipline]] permits.
 
@@ -50,6 +52,8 @@ Status appears in two places — the step note and the row below — and they mu
 | STEP-14 | [[STEP-14 Design System Tokens]] | Done | full |
 | STEP-15 | [[STEP-15 App Shell and Routing]] | Done | full |
 | STEP-16 | [[STEP-16 Sign Up and Sign In UI]] | Done | full |
+| STEP-16a | [[STEP-16a Developer Session Inspector]] | Not Started | full |
+| STEP-12a | [[STEP-12a Trusted Proxy and Per-User Rate Limiting]] | Not Started | full |
 | STEP-17 | [[STEP-17 AI Router and Provider Abstraction]] | Not Started | full |
 | STEP-18 | [[STEP-18 AI Cost Governance Controls]] | Not Started | outline |
 | STEP-19 | [[STEP-19 Settings and BYOK UI]] | Not Started | outline |
@@ -180,7 +184,16 @@ The lesson worth carrying: **the place that discovers a credential is dead is no
 
 **One regression in an existing control is recorded rather than resolved.** With every call proxied through Next.js, the API's rate limiter keys on the web server's address, so it no longer limits per user and one user can lock out others — observed directly. It needs a trusted forwarded-client-address scheme before real traffic, and is out of STEP-16's scope.
 
-**STEP-16 carries an owner approval gate** (Critical — authentication, security controls, session/token storage). Beyond confirming the cookie approach, two items need a decision: whether to accept the one-hour post-sign-out access-token window or shorten the token lifetime, and when to fix per-user rate limiting.
+**STEP-16 was approved by the project owner on 2026-08-03**, clearing its owner approval gate (Critical — authentication, security controls, session/token storage). The httpOnly cookie approach, server-side session handling, the Next.js proxy and the absence of `localStorage` were each confirmed.
+
+**Two steps were inserted by owner decision on 2026-08-03**, both specified before any code was written and neither yet implemented:
+
+- **[[STEP-16a Developer Session Inspector]]** — a development-only `/dev/session` page reporting authentication state, token expiries, proxy headers, rate limit identity and backend health. STEP-16's own security posture is what makes it necessary: cookies the browser cannot read are also cookies the developer cannot inspect. **The feature's entire risk is its exclusion**, so it requires two independent mechanisms — absence from the production build *and* a runtime 404 — each proven by observation rather than configuration review.
+- **[[STEP-12a Trusted Proxy and Per-User Rate Limiting]]** — resolves the regression above. Authenticated requests key on the verified `user_id`; public requests key on a client address resolved **only** from allowlisted proxies, parsed right-to-left, failing closed. It is numbered `12a` because it amends [[STEP-12 API Conventions and Middleware]]'s contract, but it executes after STEP-16a. It carries **two gates**: an `Accepted` ADR on the trust boundary *before* implementation, and owner approval *after*.
+
+The owner's remaining STEP-16 decision — whether to accept the one-hour post-sign-out access-token window or shorten the token lifetime — is **still open** and unscheduled.
+
+**Explicitly not addressed by STEP-12a: the limiter remains in-process and per-worker.** That approximation was stated deliberately in STEP-12 and a shared store is a new infrastructure dependency requiring its own ADR ([[CLAUDE|CLAUDE.md]] §10, §28). STEP-12a fixes *what is counted*, not *where counts live* — per-user keys make the approximation more visible, since N workers permit N times the per-user allowance.
 
 The vault, Claude OS and AI operating capabilities are built and validated ([[Environment Setup]], [[AI Index]]).
 
