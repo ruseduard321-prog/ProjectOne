@@ -59,6 +59,7 @@ from app.core.security import (
     AuthorizationError,
     IdentityProviderError,
     LastOwnerError,
+    RateLimitExceededError,
 )
 
 logger = get_logger(__name__)
@@ -157,6 +158,32 @@ def _last_owner_conflict(_request: Request, exception: Exception) -> JSONRespons
     return error_response(status.HTTP_409_CONFLICT, message)
 
 
+def _rate_limit_exceeded(_request: Request, exception: Exception) -> JSONResponse:
+    """Translate a per-user rate limit refusal into a 429.
+
+    **429, not 401 and not 403.** The credentials are valid and the permissions
+    sufficient; only the request rate is not. A 401 would send a correct client
+    into a token-refresh loop over a condition refreshing cannot fix, and a 403
+    would tell them to change a role that is already right.
+
+    The response is deliberately identical in shape to the one
+    `RateLimitMiddleware` returns -- same status, same message, same
+    `Retry-After`. The middleware answers directly because it runs outside the
+    handler chain by definition; this one goes through the table because it can.
+    A caller must not be able to tell the two apart: a difference would reveal
+    whether the endpoint considered them authenticated, which is information a
+    refusal must not carry.
+    """
+    retry_after = getattr(exception, "retry_after_seconds", 60)
+    message = getattr(exception, "public_message", RateLimitExceededError.public_message)
+
+    return error_response(
+        status.HTTP_429_TOO_MANY_REQUESTS,
+        message,
+        headers={"Retry-After": str(retry_after)},
+    )
+
+
 def _http_exception(_request: Request, exception: Exception) -> JSONResponse:
     """Render a raised `HTTPException` into the standard envelope.
 
@@ -231,6 +258,7 @@ EXCEPTION_HANDLERS: tuple[tuple[type[Exception] | int, Any], ...] = (
     (AuthError, _authentication_failed),
     (AuthorizationError, _authorization_denied),
     (LastOwnerError, _last_owner_conflict),
+    (RateLimitExceededError, _rate_limit_exceeded),
     (RequestValidationError, _validation_failed),
     (HTTPException, _http_exception),
     (Exception, _unhandled),

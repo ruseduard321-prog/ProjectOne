@@ -52,8 +52,8 @@ Status appears in two places — the step note and the row below — and they mu
 | STEP-14 | [[STEP-14 Design System Tokens]] | Done | full |
 | STEP-15 | [[STEP-15 App Shell and Routing]] | Done | full |
 | STEP-16 | [[STEP-16 Sign Up and Sign In UI]] | Done | full |
+| STEP-12a | [[STEP-12a Trusted Proxy and Per-User Rate Limiting]] | Done | full |
 | STEP-16a | [[STEP-16a Developer Session Inspector]] | Not Started | full |
-| STEP-12a | [[STEP-12a Trusted Proxy and Per-User Rate Limiting]] | Not Started | full |
 | STEP-17 | [[STEP-17 AI Router and Provider Abstraction]] | Not Started | full |
 | STEP-18 | [[STEP-18 AI Cost Governance Controls]] | Not Started | outline |
 | STEP-19 | [[STEP-19 Settings and BYOK UI]] | Not Started | outline |
@@ -191,7 +191,25 @@ The lesson worth carrying: **the place that discovers a credential is dead is no
 - **[[STEP-16a Developer Session Inspector]]** — a development-only `/dev/session` page reporting authentication state, token expiries, proxy headers, rate limit identity and backend health. STEP-16's own security posture is what makes it necessary: cookies the browser cannot read are also cookies the developer cannot inspect. **The feature's entire risk is its exclusion**, so it requires two independent mechanisms — absence from the production build *and* a runtime 404 — each proven by observation rather than configuration review.
 - **[[STEP-12a Trusted Proxy and Per-User Rate Limiting]]** — resolves the regression above. Authenticated requests key on the verified `user_id`; public requests key on a client address resolved **only** from allowlisted proxies, parsed right-to-left, failing closed. It is numbered `12a` because it amends [[STEP-12 API Conventions and Middleware]]'s contract, but it executes after STEP-16a. It carries **two gates**: an `Accepted` ADR on the trust boundary *before* implementation, and owner approval *after*.
 
-The owner's remaining STEP-16 decision — whether to accept the one-hour post-sign-out access-token window or shorten the token lifetime — is **still open** and unscheduled.
+**Both inserted steps were approved by the project owner on 2026-08-03**, who also set the execution order: **STEP-12a first, then STEP-16a, then STEP-17.** The security fix precedes the development aid because the regression is live; one consequence is that STEP-16a's rate limit identity panel will report the per-user scheme rather than documenting the broken one.
+
+**The owner's remaining STEP-16 decision is now closed.** The one-hour post-sign-out access-token window is **accepted for Foundation** and the token lifetime is unchanged. Revisiting it would mean shortening the access-token lifetime, which trades a shorter revocation window against more refresh traffic — a decision available later, not a defect left open.
+
+**Rate limiting now counts the right identity** (STEP-12a). [[ADR-002 Trusted Proxy and Client Address Resolution]] was `Accepted` on 2026-08-03 and implemented the same day. Authenticated requests key on `user:<user_id>` from the **validated** auth context — never a header, body field or unverified claim; public requests key on `ip:<client_address>`, resolved **only** from an allowlisted peer, walking `X-Forwarded-For` **right to left** discarding trusted hops. Never the leftmost entry: honest proxies append and a client may send the header itself, so the leftmost value is attacker-chosen, and taking it is the classic vulnerability here. Failure is **closed** — a malformed header or absent allowlist falls back to the peer address, never to no limit.
+
+**Two mechanisms, and the reason is structural rather than stylistic.** ASGI middleware runs before FastAPI resolves dependencies, so the middleware limiter cannot know who is calling; public paths stay there, authenticated paths moved to `limit_by_user`, a route-level dependency. The two refusals are byte-identical in shape so a caller cannot tell which limiter refused them — a difference would reveal whether the endpoint considered them authenticated.
+
+**The evidence is the negative controls, not the passing suite.** Removing the trust gate failed exactly the 4 spoofing tests; replacing the per-user key with a shared bucket failed exactly the 2 independent-bucket tests; removing a route's limit failed the wiring test. Each was restored and re-verified. `apps/api` grew from 74 tests to 113, `apps/web` from 34 to 45.
+
+**One defect was found by writing the Outcome, not by running anything.** The first draft recorded that `limit_by_user` was applied to no production route — every test passing against a limiter that limited nothing. That does not satisfy a Definition of Done saying *"authenticated requests are limited per verified `user_id`"*. `POST /workspaces` (10/min) and `GET /{id}/export` (5/min) now carry limits on their own merits, and a test asserts the wiring through the route table.
+
+**The limiter remains in-process and per-worker** — deliberately unchanged. This step fixed *what is counted*, not *where counts live*; a shared store is new infrastructure needing its own ADR ([[CLAUDE|CLAUDE.md]] §10, §28). Per-user keys make the approximation more visible: N workers permit N× each user's allowance. ADR-002 §Future Evolution documents the migration path and the two backend-unavailable operating modes — **Availability First** (fall back to the in-process limiter) and **Security First** (fail closed). **Foundation adopts Availability First**, on the reasoning that a cache outage taking down authentication for everyone is a larger blast radius than the risk it manages; the production decision is left open for the ADR that introduces the store, and a mixed posture is a legitimate outcome.
+
+**A deployment obligation now binds every environment** ([[Infrastructure]]): every proxy in front of the API must be in `PROJECTONE_TRUSTED_PROXIES`, and every trusted proxy must strip or overwrite inbound `X-Forwarded-For` rather than appending. The API warns at startup when the allowlist is empty; it cannot warn when the allowlist is merely wrong.
+
+**STEP-12a carries an owner approval gate** (Critical — security controls, public API contract, infrastructure configuration). Per the owner's instruction on 2026-08-03, intermediate approvals are deferred: one consolidated review follows STEP-17.
+
+**[[DOC-01 Align ADR Template with CLAUDE.md]] was raised** on 2026-08-03: [[ADR Template]]'s status vocabulary diverges from [[CLAUDE|CLAUDE.md]] §7, missing `Review` and — more consequentially — `Rejected`, the state that keeps a rejected decision on record. It is a documentation task rather than a Build Plan step, and lives in `09 Development/` accordingly.
 
 **Explicitly not addressed by STEP-12a: the limiter remains in-process and per-worker.** That approximation was stated deliberately in STEP-12 and a shared store is a new infrastructure dependency requiring its own ADR ([[CLAUDE|CLAUDE.md]] §10, §28). STEP-12a fixes *what is counted*, not *where counts live* — per-user keys make the approximation more visible, since N workers permit N times the per-user allowance.
 

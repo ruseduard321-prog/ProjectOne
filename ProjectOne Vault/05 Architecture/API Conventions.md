@@ -2,15 +2,15 @@
 title: API Conventions
 category: Architecture
 status: stable
-version: "1.0"
-last_updated: 2026-08-01
+version: "1.1"
+last_updated: 2026-08-03
 tags: [backend, api, standards, security, observability]
 aliases: ["API Contract", "Error Envelope", "API Middleware"]
 ---
 
 # API Conventions
 
-**What every ProjectOne endpoint inherits without asking for it**: a versioned path, one response envelope, one error contract, a correlation id, and — on the routes that need it — a rate limit. Established by [[STEP-12 API Conventions and Middleware]] and binding from that point on.
+**What every ProjectOne endpoint inherits without asking for it**: a versioned path, one response envelope, one error contract, a correlation id, and — on the routes that need it — a rate limit. Established by [[STEP-12 API Conventions and Middleware]] and binding from that point on; the rate limiting identity and trust boundary were revised by [[STEP-12a Trusted Proxy and Per-User Rate Limiting]].
 
 [[API Architecture]] states the *principles* (REST-first, versioned, standardized responses, comprehensive error handling). This note records the *decisions* that implement them, so the next endpoint does not re-decide any of it. Where the two differ in detail, this note describes what exists and [[API Architecture]] describes what was intended.
 
@@ -113,14 +113,48 @@ Applied to the endpoints reachable **without** a credential, which are the ones 
 | `POST /api/v1/auth/sign-up` | 5 | 60s | Account spam |
 | `POST /api/v1/auth/refresh` | 30 | 60s | Refresh-token guessing |
 
-Counted per client address **per path**, so exhausting sign-in does not also lock a caller out of sign-up — they protect different things, and a shared counter would make one attack a denial of service against the other endpoint. A refusal is a 429 in the standard envelope with `Retry-After`. `/health` is never limited: an unreachable health check reports an outage the check itself caused.
+And, since [[STEP-12a Trusted Proxy and Per-User Rate Limiting]], to the authenticated routes where the caller's own volume is the risk:
 
-The identity counted against is the **peer address, never a header**. `X-Forwarded-For` is caller-supplied and trivially spoofed, so counting against it would hand the attacker the reset button for their own allowance.
+| Endpoint | Limit | Window | Scope | Protects against |
+|---|---|---|---|---|
+| `POST /api/v1/workspaces` | 10 | 60s | `workspace-create` | Unbounded creation — nothing else caps it, and each one bootstraps two rows through the privileged service path |
+| `GET /api/v1/workspaces/{id}/export` | 5 | 60s | `workspace-export` | The most expensive read the API serves, and the shape a stolen token would reach for |
 
-**Two limitations, stated rather than hidden:**
+Scopes, not paths: routes sharing a scope share an allowance, so "20 AI calls a minute across every AI route" is expressible without one bucket per endpoint.
 
-- **In-process and per-worker.** N workers permit up to N times the configured limit. Exact global limits need shared state (Redis), which is new infrastructure and therefore an ADR ([[CLAUDE|CLAUDE.md]] §10, §28) — not something to introduce inside a conventions step. An approximate limit still stops the attacks above from reaching Supabase unthrottled, and Supabase applies its own limits upstream regardless.
-- **Not a cost control.** Authenticated routes are unlimited here. Per-workspace quotas answer a different question and belong with the AI work that needs them ([[CLAUDE|CLAUDE.md]] §15a), not bolted onto an IP-keyed limiter.
+Counted **per path**, so exhausting sign-in does not also lock a caller out of sign-up — they protect different things, and a shared counter would make one attack a denial of service against the other endpoint. A refusal is a 429 in the standard envelope with `Retry-After`. `/health` is never limited: an unreachable health check reports an outage the check itself caused.
+
+### Identity: what a limit is counted against
+
+Revised by [[STEP-12a Trusted Proxy and Per-User Rate Limiting]], implementing [[ADR-002 Trusted Proxy and Client Address Resolution]]. Two namespaced key classes:
+
+| Request | Key | Source |
+|---|---|---|
+| Authenticated | `user:<user_id>` | The **validated** auth context — the same ES256/JWKS verification the rest of the request uses |
+| Unauthenticated | `ip:<client_address>` | Resolved from trusted proxies only, below |
+
+**The `user_id` is never read from a header, a body field, or an unverified claim.** A caller who can influence their own key is not being limited.
+
+**Two mechanisms, and the reason is structural.** ASGI middleware runs *before* FastAPI resolves dependencies, so the middleware limiter cannot know who is calling. Public paths are therefore limited in middleware (refusing before any work happens, which is the point of limiting an uncredentialed endpoint); authenticated paths are limited by `limit_by_user`, a route-level dependency that runs after authentication. The two refusals are deliberately **identical in shape** — same status, message, `Retry-After` and envelope — so a caller cannot tell which limiter refused them, since that difference would reveal whether the endpoint considered them authenticated.
+
+### The trust boundary
+
+**`X-Forwarded-For` is honoured only from a peer in the configured allowlist** (`PROJECTONE_TRUSTED_PROXIES`, CIDR-aware). Otherwise it is ignored and the peer address is used. The peer address is the only value in a request an attacker cannot forge without controlling the network path, so every trust decision anchors to it.
+
+The chain is walked **right to left**, discarding entries that are themselves trusted proxies; the first untrusted address is the client. **Never the leftmost entry** — honest proxies append rather than replace and a client may send the header itself, so the leftmost value is attacker-chosen. Taking it is the classic vulnerability here, and it fails silently.
+
+**Failure is closed.** A malformed header, an unparseable chain or an absent allowlist falls back to the peer address — a weaker limit, never no limit. No configuration value disables limiting. An empty allowlist warns at startup, because behind a proxy it silently restores the platform-wide-bucket defect.
+
+An optional single-hop platform header (`PROJECTONE_CLIENT_ADDRESS_HEADER`, e.g. Cloudflare's `CF-Connecting-IP`) is preferred when configured, under the same trust gate — such a header is trustworthy only *because* the platform overwrites it.
+
+> [!warning] Deployment requirement
+> Any reverse proxy in front of the API must be in the allowlist **and must strip or overwrite an inbound `X-Forwarded-For` from the internet rather than appending to it.** A trusted proxy that blindly appends splices attacker-supplied entries into a chain the API is about to trust. Recorded in [[Infrastructure]].
+
+**One limitation, stated rather than hidden:**
+
+- **In-process and per-worker.** N workers permit up to N times each configured allowance — for per-user keys as much as address keys. Exact global limits need shared state (Redis/Valkey), which is new infrastructure and therefore its own ADR ([[CLAUDE|CLAUDE.md]] §10, §28). STEP-12a fixed *what is counted*, not *where counts live*; the migration path and the **Availability First** posture Foundation adopts are [[ADR-002 Trusted Proxy and Client Address Resolution]] §Future Evolution. Supabase applies its own limits upstream regardless.
+
+**Still not a cost control.** Per-workspace AI spend quotas answer a different question ([[CLAUDE|CLAUDE.md]] §15a) and belong to [[STEP-18 AI Cost Governance Controls]]. `limit_by_user` is the mechanism they can build on, not a substitute for them.
 
 ## Where It Lives
 
@@ -129,7 +163,9 @@ The identity counted against is the **peer address, never a header**. `X-Forward
 | `app/core/api.py` | Version prefix, request-id header name, the correlation-id context variable |
 | `app/core/errors.py` | The envelope, every exception handler, the handler table |
 | `app/core/logging.py` | The logging pipeline, the redaction rule |
-| `app/core/middleware.py` | Correlation id, request logging, rate limiting |
+| `app/core/middleware.py` | Correlation id, request logging, public-path rate limiting |
+| `app/core/client_address.py` | Trusted-proxy resolution — pure, framework-free, exhaustively tested |
+| `app/core/user_rate_limit.py` | Per-user rate limiting (`limit_by_user`) for authenticated routes |
 | `app/main.py` | Registers the above; defines no mapping itself |
 
 ## What This Step Did Not Build
@@ -137,7 +173,7 @@ The identity counted against is the **peer address, never a header**. `X-Forward
 Stated so the next reader does not assume otherwise:
 
 - ~~**Audit logging.**~~ **Built by [[STEP-13 Auth Users Workspaces Endpoints]]** — see [[Table - audit_log]]. The distinction this section drew still holds and is worth keeping: request logging records that a request happened, audit logging records *who changed what*. They are separate mechanisms with separate retention rules, and the presence of one is not the presence of the other.
-- **Distributed/global rate limiting.** See the limitation above; it needs an ADR.
+- **Distributed/global rate limiting.** See the limitation above; it needs an ADR. **Per-user identity was fixed by [[STEP-12a Trusted Proxy and Per-User Rate Limiting]]** — the remaining gap is the shared store, not the key.
 - **Idempotency keys.** [[API Architecture]] calls for idempotent operations where appropriate. Nothing built so far creates a resource from a client-supplied request, so there is nothing yet to make idempotent. It belongs with the first `POST` that does.
 - **Pagination and filtering conventions.** `GET /api/v1/workspaces` returns a caller's own workspaces, which is bounded by construction. The first genuinely unbounded collection is the right place to settle this, not an imagined one.
 

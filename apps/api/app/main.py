@@ -26,10 +26,10 @@ from app.routers import auth, health, workspaces
 #: sign-in is the credential-stuffing target, sign-up the account-spam one, and
 #: refresh takes a long-lived token worth guessing at.
 #:
-#: Authenticated routes are not limited here. They already require a verified
-#: token, and a per-workspace quota is a different mechanism answering a
-#: different question (cost governance, CLAUDE.md §15a) -- it belongs with the
-#: AI work that needs it, not bolted onto an IP-keyed limiter.
+#: Authenticated routes are **not** limited here, and cannot be: this
+#: middleware runs before FastAPI resolves dependencies, so no verified
+#: identity exists yet. They are limited per user by `limit_by_user`, applied
+#: at the route (ADR-002 §2).
 #:
 #: The numbers are deliberately generous enough that a human never meets them
 #: and an automated attempt does. A legitimate user signs in a handful of times
@@ -71,7 +71,14 @@ def create_app() -> FastAPI:
     # middleware is added *last* to run *first*. That ordering matters: the
     # rate limiter logs its refusals, and a refusal logged without a
     # correlation id is the one log line a user cannot quote back.
-    app.add_middleware(RateLimitMiddleware, rules=_RATE_LIMITS)
+    app.add_middleware(
+        RateLimitMiddleware,
+        rules=_RATE_LIMITS,
+        # Resolved from configuration at startup, so a malformed allowlist stops
+        # the process rather than silently narrowing what is trusted (ADR-002).
+        trusted_proxies=settings.trusted_proxy_networks,
+        client_address_header=settings.client_address_header,
+    )
     app.add_middleware(RequestContextMiddleware)
 
     # `/health` is mounted unversioned, deliberately -- see `API_PREFIX`. It is

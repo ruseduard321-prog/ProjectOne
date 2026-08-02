@@ -47,6 +47,7 @@ One page, read-only, in `apps/web`. **No new API endpoints**, and no mutation of
 ## Prerequisites
 
 - [[STEP-16 Sign Up and Sign In UI]] — `Done`, owner-approved 2026-08-03
+- [[STEP-12a Trusted Proxy and Per-User Rate Limiting]] — runs first by owner decision on 2026-08-03, so Task 5's rate limit identity panel reports the per-user scheme rather than the regression it replaced
 
 ## Required Documentation
 
@@ -75,9 +76,9 @@ One page, read-only, in `apps/web`. **No new API endpoints**, and no mutation of
 
 3. **Report connectivity** by calling the existing `GET /health`, which STEP-07 already made a real readiness check reporting database connectivity. Render API reachability and the Supabase/database status it returns. **Do not add a diagnostics endpoint** to `apps/api` if `/health` already answers this — a new endpoint is new production surface added for a development page.
 
-4. **Report the proxy headers the API actually received.** This is the diagnostic that makes the page worth building, and it is what [[STEP-12a Trusted Proxy and Per-User Rate Limiting]] will need during its own validation. It requires an API-side echo, which is **new surface and therefore gated**: implement it only if STEP-12a has not already provided it, and if implemented here it carries the same dual exclusion as the page — the endpoint must not exist in a production build. If that cannot be done cleanly, **render the headers Next.js itself received and state plainly that the API-side view is unavailable**, rather than presenting the proxy's own view as the API's.
+4. **Report the proxy headers the API actually received**, and the client address it resolved from them. This is the diagnostic that makes the page worth building: [[STEP-12a Trusted Proxy and Per-User Rate Limiting]] makes address resolution depend on configuration that is easy to get wrong and silent when wrong, and this panel is where a misconfigured allowlist becomes visible. It requires an API-side echo, which is **new surface and therefore gated**: if implemented, it carries the same dual exclusion as the page — the endpoint must not exist in a production build. If that cannot be done cleanly, **render the headers Next.js itself received and state plainly that the API-side view is unavailable**, rather than presenting the proxy's own view as the API's.
 
-5. **Report the rate limit identity** — which key the API would count this request against (`user:<id>` or `ip:<addr>`). Before STEP-12a this is always the proxy IP, and the page should say so explicitly, because that *is* the bug being tracked.
+5. **Report the rate limit identity** — which key the API would count this request against (`user:<id>` or `ip:<addr>`). [[STEP-12a Trusted Proxy and Per-User Rate Limiting]] runs first, so this reports the real per-user scheme; it must show the actual resolved key, not a client-side reconstruction of what the key *should* be, since a reconstruction that drifts from the API's own logic is worse than no panel at all.
 
 6. **Enforce the dual exclusion** described above: build-time absence plus runtime 404.
 
@@ -113,6 +114,6 @@ A `/dev/session` page reports authentication status, user identity, token expiri
 
 ## Navigation
 
-- **Previous:** [[STEP-16 Sign Up and Sign In UI]]
-- **Next:** [[STEP-12a Trusted Proxy and Per-User Rate Limiting]]
+- **Previous:** [[STEP-12a Trusted Proxy and Per-User Rate Limiting]]
+- **Next:** [[STEP-17 AI Router and Provider Abstraction]]
 - **Parent:** [[Build Plan]]

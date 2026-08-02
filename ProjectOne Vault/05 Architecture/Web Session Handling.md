@@ -2,8 +2,8 @@
 title: Web Session Handling
 category: Architecture
 status: stable
-version: "1.0"
-last_updated: 2026-08-02
+version: "1.1"
+last_updated: 2026-08-03
 tags: [frontend, security, authentication, standards]
 aliases: ["Session Handling", "Token Storage", "Web Auth"]
 ---
@@ -90,7 +90,8 @@ Stated so the next reader does not assume otherwise:
 
 - **Password reset, email confirmation handling, OAuth/social sign-in, and workspace creation UI** are all out of scope for [[STEP-16 Sign Up and Sign In UI]] and remain unscheduled.
 - **This project has email confirmation enabled.** Sign-up therefore returns `email_confirmation_required` with no session, and the UI renders a "check your email" state. The confirmation link itself lands nowhere in this application yet.
-- **The API's rate limiter now sees one IP.** With every call proxied through Next.js, the limiter keys on the web server's address rather than the end user's, so per-user limiting is no longer what it measures. Recorded here rather than left to be discovered — it needs a forwarded-client-address scheme before this reaches real traffic.
+- ~~**The API's rate limiter now sees one IP.**~~ **Fixed by [[STEP-12a Trusted Proxy and Per-User Rate Limiting]].** Authenticated requests now key on the verified `user_id`; public ones key on the browser's address, which this app forwards on the sign-in, sign-up and refresh calls. `src/lib/client-address.ts` reads it from the platform's own headers and **sets** the forwarding header rather than appending — this process is the first trusted hop, so anything a browser sent under that name is discarded rather than passed into a chain the API is about to trust. The API honours it only because this server is in its allowlist; see [[ADR-002 Trusted Proxy and Client Address Resolution]] and the deployment requirement in [[Infrastructure]].
+- **No address is forwarded on authenticated calls**, deliberately. Those are limited by verified `user_id`, so an address would be collected for nothing ([[CLAUDE|CLAUDE.md]] §16 data minimization).
 
 ---
 

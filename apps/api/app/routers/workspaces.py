@@ -38,6 +38,7 @@ from app.core.permissions import (
     WorkspaceRole,
     permissions_for,
 )
+from app.core.user_rate_limit import limit_by_user
 from app.repositories.audit import AuditRepository
 from app.repositories.memberships import MembershipRepository
 from app.schemas.workspace import (
@@ -87,6 +88,14 @@ def list_workspaces(connection: TenantConnectionDep) -> list[WorkspaceResponse]:
     response_model=WorkspaceResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create a workspace",
+    # Per user, not per address: this route requires a verified token, so the
+    # identity is known and is the honest thing to count against (ADR-002 §1).
+    #
+    # Generous enough that a person never meets it and a script does. Nothing
+    # else bounds workspace creation -- any authenticated caller may create
+    # them without limit, and each one bootstraps two rows through the
+    # privileged service path.
+    dependencies=[Depends(limit_by_user("workspace-create", limit=10, window_seconds=60))],
 )
 def create_workspace(
     request: WorkspaceCreateRequest,
@@ -360,6 +369,14 @@ def rename_workspace(
     "/{workspace_id}/export",
     response_model=WorkspaceExportResponse,
     summary="Export everything a workspace holds",
+    # The most expensive read the API serves -- every record in every
+    # registered store, in one response. It is also the shape a credential
+    # thief would reach for, so a low ceiling bounds both the cost and how fast
+    # a stolen token drains a workspace.
+    #
+    # Tight on purpose: exporting is something a person does occasionally, not
+    # repeatedly. A legitimate caller never meets five in a minute.
+    dependencies=[Depends(limit_by_user("workspace-export", limit=5, window_seconds=60))],
 )
 def export_workspace(
     workspace_id: uuid.UUID,

@@ -100,4 +100,55 @@ describe("apiRequest", () => {
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(init.cache).toBe("no-store");
   });
+
+  it("forwards the client address when one is supplied", async () => {
+    // Public endpoints can only be limited by network address, and behind this
+    // proxy the API would otherwise see one address for the whole platform
+    // (ADR-002).
+    respondWith(200, {});
+    const fetchMock = globalThis.fetch as unknown as ReturnType<typeof vi.fn>;
+
+    await apiRequest({
+      path: "/auth/sign-in",
+      method: "POST",
+      body: {},
+      clientAddress: "203.0.113.5",
+    });
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect((init.headers as Record<string, string>)["X-Forwarded-For"]).toBe("203.0.113.5");
+  });
+
+  it("omits the forwarding header when no address is known", async () => {
+    // Undefined is a normal outcome — nothing sits in front of this process, so
+    // the API sees the real peer. Sending a placeholder would be worse.
+    respondWith(200, {});
+    const fetchMock = globalThis.fetch as unknown as ReturnType<typeof vi.fn>;
+
+    await apiRequest({ path: "/auth/sign-in", method: "POST", body: {} });
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect((init.headers as Record<string, string>)["X-Forwarded-For"]).toBeUndefined();
+  });
+
+  it("sets the forwarding header rather than appending to it", async () => {
+    // This process is the first trusted hop. Appending would splice whatever a
+    // browser sent into a chain the API is about to trust — the exact failure
+    // the API's allowlist exists to prevent.
+    respondWith(200, {});
+    const fetchMock = globalThis.fetch as unknown as ReturnType<typeof vi.fn>;
+
+    await apiRequest({
+      path: "/auth/sign-in",
+      method: "POST",
+      body: {},
+      clientAddress: "203.0.113.5",
+    });
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const forwarded = (init.headers as Record<string, string>)["X-Forwarded-For"];
+
+    expect(forwarded).toBe("203.0.113.5");
+    expect(forwarded).not.toContain(",");
+  });
 });

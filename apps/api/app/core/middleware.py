@@ -17,6 +17,11 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.core.api import REQUEST_ID_HEADER, request_id_var
+from app.core.client_address import (
+    FORWARDED_FOR_HEADER,
+    TrustedProxies,
+    resolve_client_address,
+)
 from app.core.logging import get_logger, log_context
 
 logger = get_logger(__name__)
@@ -192,6 +197,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self,
         app: Callable[..., Awaitable[None]],
         rules: dict[str, RateLimitRule],
+        trusted_proxies: TrustedProxies = (),
+        client_address_header: str = "",
     ) -> None:
         """Install the middleware with a path-keyed rule table.
 
@@ -201,9 +208,16 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 not limited — limiting everything by default would throttle
                 `/health`, and an unreachable health check reports an outage
                 that the check itself caused.
+            trusted_proxies: Networks permitted to set forwarding headers.
+                Empty means no header is ever honoured, and limiting falls back
+                to the peer address (ADR-002 §3).
+            client_address_header: Optional single-hop platform header to prefer
+                over `X-Forwarded-For`, honoured only from a trusted peer.
         """
         super().__init__(app)
         self._rules = rules
+        self._trusted_proxies = trusted_proxies
+        self._client_address_header = client_address_header.lower()
         # Keyed by (client, path) so exhausting the sign-in allowance does not
         # also lock the caller out of sign-up: they are separate protections of
         # separate things.
@@ -212,16 +226,32 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     def _client_key(self, request: Request) -> str:
         """Return the identity a limit is counted against.
 
-        The peer address, never a header. `X-Forwarded-For` is caller-supplied
-        and trivially spoofed, so counting against it would let an attacker
-        reset their own allowance by changing one header — a rate limiter that
-        the attacker controls. When ProjectOne runs behind a proxy that
-        terminates client connections, the correct fix is to configure the
-        trusted-proxy handling at that layer, not to trust the header here.
+        Namespaced `ip:` so an address can never collide with the `user:` keys
+        the authenticated limiter uses (ADR-002 §1) — the two share no storage
+        today, but a key that is ambiguous about what it identifies is a defect
+        waiting for the first refactor that does share it.
+
+        The address itself is resolved by `app.core.client_address`, which
+        honours a forwarding header only from a peer in the configured
+        allowlist. That module holds the reasoning; the short version is that
+        the peer address is the only thing here an attacker cannot forge, so
+        every trust decision anchors to it.
         """
         client = request.client
+        platform_value = (
+            request.headers.get(self._client_address_header)
+            if self._client_address_header
+            else None
+        )
 
-        return client.host if client is not None else "unknown"
+        address = resolve_client_address(
+            peer=client.host if client is not None else None,
+            forwarded_for=request.headers.get(FORWARDED_FOR_HEADER),
+            trusted=self._trusted_proxies,
+            platform_header=platform_value,
+        )
+
+        return f"ip:{address}"
 
     def _is_allowed(self, key: tuple[str, str], rule: RateLimitRule, now: float) -> bool:
         """Record a hit and report whether it was within the allowance."""
@@ -261,10 +291,16 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             # either broken or probing, and both are worth seeing. The path is
             # logged; the body — which holds the credentials being tried — is
             # not.
+            # The identity *class*, never the address itself. Which bucket
+            # filled up is the diagnostic; a client IP in a log line is personal
+            # data under Privacy and Data Protection, and this line is emitted
+            # on exactly the traffic most likely to be someone probing — the
+            # highest-volume, least-consenting source there is.
             logger.warning(
                 log_context(
                     event="rate_limit_exceeded",
                     path=request.url.path,
+                    identity="ip",
                     limit=rule.limit,
                     window_seconds=rule.window_seconds,
                 )

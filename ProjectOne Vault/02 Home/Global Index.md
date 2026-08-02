@@ -96,16 +96,18 @@ Every note in the vault, grouped by folder. This is the exhaustive map — for c
 ## 08 ADR
 
 - [[ADR-001 Technology Stack]] — `Accepted`
+- [[ADR-002 Trusted Proxy and Client Address Resolution]] — `Accepted`
 
 ## 09 Development
 
 - [[Development MOC]]
 - [[Environment Setup]]
 - [[Environment and Secrets]]
+- [[DOC-01 Align ADR Template with CLAUDE.md]] — documentation task, not a Build Plan step
 
 **Build Plan:** [[Build Plan]] (step index) · [[Execution Protocol]] (execution rules)
 
-**Steps:** 26 step notes in `09 Development/Build Plan/Steps/`, STEP-01 → STEP-26. Not listed individually here — [[Build Plan]] is their index, and a session reads only the one step it is implementing.
+**Steps:** step notes in `09 Development/Build Plan/Steps/` — the 26 planned steps plus those inserted by owner decision (STEP-11a, STEP-12a, STEP-16a). Not listed individually here: [[Build Plan]] is their index, and a session reads only the one step it is implementing. Note that steps execute in **table order, not numeric order** — a `Na` step is placed where its dependencies put it, while its number records which step's contract it amends.
 
 ## 10 Research
 

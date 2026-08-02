@@ -24,6 +24,7 @@ import { redirect } from "next/navigation";
 
 import { ApiError, ApiUnreachableError, signIn, signOut, signUp } from "@/lib/api";
 import { resolveAccessToken } from "@/lib/auth";
+import { readClientAddress } from "@/lib/client-address";
 import { hasErrors, validateSignIn, validateSignUp } from "@/lib/credentials";
 import type { FormState } from "@/lib/form-state";
 import { POST_SIGN_IN_PATH, SIGN_IN_PATH } from "@/lib/routes";
@@ -86,7 +87,7 @@ export async function signUpAction(_previous: FormState, data: FormData): Promis
   let result;
 
   try {
-    result = await signUp(email, password);
+    result = await signUp(email, password, await readClientAddress());
   } catch (error) {
     return toFormState(error);
   }
@@ -122,7 +123,7 @@ export async function signInAction(_previous: FormState, data: FormData): Promis
   let session;
 
   try {
-    session = await signIn(email, password);
+    session = await signIn(email, password, await readClientAddress());
   } catch (error) {
     return toFormState(error);
   }

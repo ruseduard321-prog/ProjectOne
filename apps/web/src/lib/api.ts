@@ -85,6 +85,15 @@ interface ApiRequest {
   readonly body?: unknown;
   /** Access token to present as a bearer credential, when the route needs one. */
   readonly accessToken?: string;
+  /**
+   * The browser's address, forwarded so the API can rate limit public
+   * endpoints per client rather than per proxy.
+   *
+   * Omitted for authenticated calls: those are limited by verified `user_id`
+   * (ADR-002 §1), so an address would be collected for nothing — and the least
+   * data that achieves the goal is the right amount (CLAUDE.md §16).
+   */
+  readonly clientAddress?: string;
 }
 
 /**
@@ -99,6 +108,7 @@ export async function apiRequest<T>({
   method,
   body,
   accessToken,
+  clientAddress,
 }: ApiRequest): Promise<T> {
   const headers: Record<string, string> = { Accept: "application/json" };
 
@@ -108,6 +118,14 @@ export async function apiRequest<T>({
 
   if (accessToken !== undefined) {
     headers.Authorization = `Bearer ${accessToken}`;
+  }
+
+  // Set, never appended to. This process is the first trusted hop, so whatever
+  // a browser may have sent under this name is discarded rather than carried
+  // forward — appending would splice an attacker-chosen value into a chain the
+  // API is about to trust (ADR-002 §5).
+  if (clientAddress !== undefined) {
+    headers["X-Forwarded-For"] = clientAddress;
   }
 
   let response: Response;
@@ -165,19 +183,29 @@ export interface ApiProfile {
   readonly display_name: string | null;
 }
 
-export function signUp(email: string, password: string): Promise<ApiSignUpResult> {
+export function signUp(
+  email: string,
+  password: string,
+  clientAddress?: string,
+): Promise<ApiSignUpResult> {
   return apiRequest<ApiSignUpResult>({
     path: "/auth/sign-up",
     method: "POST",
     body: { email, password },
+    clientAddress,
   });
 }
 
-export function signIn(email: string, password: string): Promise<ApiSession> {
+export function signIn(
+  email: string,
+  password: string,
+  clientAddress?: string,
+): Promise<ApiSession> {
   return apiRequest<ApiSession>({
     path: "/auth/sign-in",
     method: "POST",
     body: { email, password },
+    clientAddress,
   });
 }
 
@@ -189,11 +217,15 @@ export function signOut(accessToken: string): Promise<{ message: string }> {
   });
 }
 
-export function refreshSession(refreshToken: string): Promise<ApiSession> {
+export function refreshSession(
+  refreshToken: string,
+  clientAddress?: string,
+): Promise<ApiSession> {
   return apiRequest<ApiSession>({
     path: "/auth/refresh",
     method: "POST",
     body: { refresh_token: refreshToken },
+    clientAddress,
   });
 }
 

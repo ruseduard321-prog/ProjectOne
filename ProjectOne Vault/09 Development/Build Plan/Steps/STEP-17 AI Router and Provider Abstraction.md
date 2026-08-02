@@ -26,8 +26,8 @@ Routing and abstraction only. Cost governance is STEP-18 and is a hard gate — 
 ## Prerequisites
 
 - [[STEP-16 Sign Up and Sign In UI]] — `Done`, owner-approved 2026-08-03
+- [[STEP-12a Trusted Proxy and Per-User Rate Limiting]] — inserted 2026-08-03, runs first
 - [[STEP-16a Developer Session Inspector]] — inserted 2026-08-03
-- [[STEP-12a Trusted Proxy and Per-User Rate Limiting]] — inserted 2026-08-03
 
 ## Required Documentation
 

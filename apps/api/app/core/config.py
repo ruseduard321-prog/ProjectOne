@@ -13,9 +13,12 @@ in a request handler.
 import sys
 from enum import StrEnum
 from functools import lru_cache
+from ipaddress import IPv4Network, IPv6Network
 
 from pydantic import Field, SecretStr, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from app.core.client_address import parse_trusted_proxies
 
 
 class Environment(StrEnum):
@@ -101,6 +104,45 @@ class Settings(BaseSettings):
     # open indefinitely.
     supabase_timeout_seconds: int = 10
 
+    # Peers permitted to set forwarding headers, as CIDR ranges or bare
+    # addresses (ADR-002 §3). Comma-separated; parsed by
+    # `trusted_proxy_networks` below.
+    #
+    # **Defaults to empty, and empty means trust nothing.** A default that
+    # trusted loopback would be wrong in the one deployment shape that matters:
+    # a container behind a sidecar sees the sidecar on a private address, not on
+    # 127.0.0.1, while a misconfigured production API exposed directly to the
+    # internet would start honouring forged headers the moment someone ran it
+    # behind any local process. Empty degrades to peer-address limiting, which
+    # is weaker but never forgeable (CLAUDE.md §16).
+    trusted_proxies: str = ""
+
+    # Optional single-hop header a platform overwrites on every request --
+    # Cloudflare's `CF-Connecting-IP` is the canonical one. Honoured only when
+    # the peer is already trusted, because such a header is trustworthy solely
+    # because the platform rewrites it, which holds only if the request actually
+    # came from that platform.
+    #
+    # Empty means "use X-Forwarded-For only". Not defaulted to a vendor's header
+    # name: a default naming a CDN the deployment does not use would silently
+    # honour a header any client could send once a proxy is trusted.
+    client_address_header: str = ""
+
+    @property
+    def trusted_proxy_networks(self) -> tuple[IPv4Network | IPv6Network, ...]:
+        """Return the parsed trusted-proxy allowlist.
+
+        Parsed on access rather than stored as a field so `Settings` keeps a
+        flat, environment-shaped surface. `get_settings()` is cached, so the
+        parse happens once per process in practice.
+
+        Raises:
+            ValueError: if any entry is malformed. Fatal by design -- silently
+                dropping a bad entry narrows the allowlist without a signal,
+                which restores the very defect ADR-002 exists to close.
+        """
+        return parse_trusted_proxies(self.trusted_proxies.split(","))
+
     @property
     def supabase_auth_url(self) -> str:
         """Return the base URL of the Supabase Auth (GoTrue) API."""
@@ -137,7 +179,7 @@ def get_settings() -> Settings:
         # populates required fields from the environment at runtime, which the
         # type checker cannot see. Narrowly ignored here rather than given a
         # default, because a default is what this design is avoiding.
-        return Settings()  # type: ignore[call-arg]
+        settings = Settings()  # type: ignore[call-arg]
     except ValidationError as error:
         details = "\n".join(
             f"  - {Settings.model_config['env_prefix']}{str(item['loc'][0]).upper()}: {item['msg']}"
@@ -148,3 +190,37 @@ def get_settings() -> Settings:
             f"{details}\n"
             "See apps/api/.env.example for the required variables."
         )
+
+    # Forced at startup rather than left to the first request that reads it.
+    # A malformed allowlist is a security misconfiguration, and discovering it
+    # on a request would mean the process ran for some time honouring a
+    # narrower allowlist than intended -- silently falling back to
+    # proxy-address limiting, which is the defect ADR-002 closes.
+    #
+    # The result is bound and reported below rather than discarded: an empty
+    # allowlist behind a proxy is the defect itself, and it is invisible unless
+    # something says so at boot (CLAUDE.md §26).
+    try:
+        trusted = settings.trusted_proxy_networks
+    except ValueError as error:
+        sys.exit(
+            f"ProjectOne API cannot start: {Settings.model_config['env_prefix']}TRUSTED_PROXIES "
+            f"is invalid.\n  - {error}\n"
+            "See apps/api/.env.example for the expected format."
+        )
+
+    if not trusted:
+        # Not fatal: running with nothing in front of the API is a legitimate
+        # deployment, and limiting correctly falls back to the peer address.
+        # But behind a proxy it means every user shares one bucket, which is
+        # precisely the regression this configuration exists to fix -- so it is
+        # said out loud rather than left for someone to infer from a support
+        # ticket.
+        print(  # noqa: T201 - before logging is configured; must reach the console
+            f"WARNING: {Settings.model_config['env_prefix']}TRUSTED_PROXIES is empty. "
+            "Forwarded client addresses will be ignored and public endpoints will be "
+            "rate limited by peer address. Correct when running behind a proxy.",
+            file=sys.stderr,
+        )
+
+    return settings

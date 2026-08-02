@@ -12,6 +12,7 @@
 import { redirect } from "next/navigation";
 
 import { ApiError, type ApiProfile, readProfile, refreshSession } from "@/lib/api";
+import { readClientAddress } from "@/lib/client-address";
 import { SESSION_EXPIRED_PATH, SIGN_IN_PATH } from "@/lib/routes";
 import { clearSession, readAccessToken, readRefreshToken, writeSession } from "@/lib/session";
 
@@ -40,7 +41,7 @@ export async function resolveAccessToken(): Promise<string | undefined> {
   }
 
   try {
-    const session = await refreshSession(refreshToken);
+    const session = await refreshSession(refreshToken, await readClientAddress());
 
     await writeSession(
       { accessToken: session.access_token, refreshToken: session.refresh_token },

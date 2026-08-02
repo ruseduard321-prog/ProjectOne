@@ -106,3 +106,34 @@ class IdentityProviderError(AuthError):
     """Supabase Auth was unreachable or returned an unexpected response."""
 
     public_message = "The identity provider is unavailable"
+
+
+class RateLimitExceededError(Exception):
+    """The caller has spent their allowance for a route.
+
+    Deliberately **not** an `AuthError` and not an `AuthorizationError`. The
+    caller's credentials are valid and their permissions sufficient; only their
+    request rate is not. Mapping it to 401 would send a correct client into a
+    token-refresh loop over a condition refreshing cannot fix, and 403 would
+    tell them to change a role that is already correct.
+
+    Raised by the per-user limiter, which runs as a dependency because ASGI
+    middleware executes before any identity is verified (ADR-002 §2). The
+    middleware limiter answers its own 429 directly, since it runs outside the
+    handler chain by definition -- the two responses are deliberately identical
+    in shape so a caller cannot tell which limiter refused them.
+    """
+
+    #: Identical to the middleware limiter's message. A difference between the
+    #: two would reveal whether the endpoint treated the caller as
+    #: authenticated, which is information a refusal must not carry.
+    public_message = "Too many requests. Try again shortly."
+
+    def __init__(self, retry_after_seconds: int) -> None:
+        """Record how long the caller should wait.
+
+        Args:
+            retry_after_seconds: Window width, surfaced as `Retry-After`.
+        """
+        super().__init__(self.public_message)
+        self.retry_after_seconds = retry_after_seconds

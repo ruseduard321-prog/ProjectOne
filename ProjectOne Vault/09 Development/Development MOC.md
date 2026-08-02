@@ -2,8 +2,8 @@
 title: Development MOC
 category: MOC
 status: stable
-version: "1.2"
-last_updated: 2026-07-31
+version: "1.3"
+last_updated: 2026-08-03
 tags: [moc, engineering, documentation]
 aliases: ["Development Map of Content"]
 ---
@@ -27,8 +27,14 @@ Practices, standards and process documentation for day-to-day engineering work.
 
 ## Build Execution
 
-- [[Build Plan]] — the 26-step index taking ProjectOne from empty repository to first public release
+- [[Build Plan]] — the step index taking ProjectOne from empty repository to first public release (26 planned, plus inserted steps)
 - [[Execution Protocol]] — the rules Claude follows on *"Implement the next step."*
+
+## Documentation Tasks
+
+Standalone documentation corrections that are not Build Plan steps — no code, no release dependency, and no slot in the build sequence.
+
+- [[DOC-01 Align ADR Template with CLAUDE.md]] — the ADR template's status vocabulary diverges from [[CLAUDE|CLAUDE.md]] §7 (missing `Review` and `Rejected`)
 
 ## Environment & Tooling
 
