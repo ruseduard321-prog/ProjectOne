@@ -15,12 +15,20 @@ export default function HomePage() {
       <p className="text-sm text-text-muted">
         An AI Operating System for content businesses.
       </p>
-      <Link
-        href="/health"
-        className="text-sm text-accent underline underline-offset-4"
-      >
-        Health
-      </Link>
+      <div className="flex items-center gap-4">
+        <Link
+          href="/dashboard"
+          className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-contrast transition-colors hover:bg-accent-hover"
+        >
+          Open ProjectOne
+        </Link>
+        <Link
+          href="/health"
+          className="text-sm text-accent underline underline-offset-4"
+        >
+          Health
+        </Link>
+      </div>
     </main>
   );
 }

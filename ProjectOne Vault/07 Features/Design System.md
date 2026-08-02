@@ -2,7 +2,7 @@
 title: Design System
 category: Design
 status: stable
-version: "1.2"
+version: "1.3"
 last_updated: 2026-08-02
 tags: [design, documentation, feature]
 aliases: ["Design System & Visual Language", "Visual Language"]
@@ -190,6 +190,7 @@ Indigo as the v1 accent: distinctive enough to be recognisable (§14), restraine
 | `--color-warning` | `warning-600` | `warning-500` | Caution |
 | `--color-danger` | `danger-600` | `danger-400` | Errors, destructive actions |
 | `--color-danger-contrast` | `#ffffff` | `neutral-950` | Text **on** a danger surface |
+| `--color-skeleton` | `neutral-200` | `neutral-700` | Loading placeholder fill (§10) |
 | `--color-focus-ring` | `accent-500` | `accent-400` | Focus indicator (§9) |
 
 **Accent and semantic colors shift one step lighter in dark mode.** A hue tuned for contrast against white is too dark against near-black; reusing it produces the muddy, low-contrast dark mode that looks like an afterthought because it is one.
@@ -197,6 +198,8 @@ Indigo as the v1 accent: distinctive enough to be recognisable (§14), restraine
 **`*-contrast` tokens exist so no component ever guesses what text color survives on a colored background.** That guess is where contrast failures come from, and it is a solved problem if the pairing is named once.
 
 Note that `--color-danger-contrast` is **not** white in both themes. White on the lighter dark-mode red fails the 4.5 bar outright; near-black reaches 7.29:1. A `*-contrast` token that is "always white" is an assumption, not a pairing — which is precisely why it is a token rather than a convention.
+
+**`--color-skeleton` is not `--color-surface-raised`, and the difference is why it exists.** Added during STEP-15, when the first loading skeleton was built against `surface-raised` and turned out to be invisible: in light mode that token is `#ffffff` against a `#f8fafc` canvas, a ratio of **1.05**. A skeleton is informational — it says "content is coming" — so it must be *distinguishable*, even though it is not operable and so not subject to the 3:1 non-text bar (§6.3). Reusing a surface token for a fill that needs to be seen against that same surface is the mistake this token prevents.
 
 **Two border tokens, deliberately.** They have genuinely different requirements and collapsing them fails one of the two:
 

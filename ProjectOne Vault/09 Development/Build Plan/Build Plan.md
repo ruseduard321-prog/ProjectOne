@@ -48,8 +48,8 @@ Status appears in two places — the step note and the row below — and they mu
 | STEP-12 | [[STEP-12 API Conventions and Middleware]] | Done | full |
 | STEP-13 | [[STEP-13 Auth Users Workspaces Endpoints]] | Done | full |
 | STEP-14 | [[STEP-14 Design System Tokens]] | Done | full |
-| STEP-15 | [[STEP-15 App Shell and Routing]] | Not Started | full |
-| STEP-16 | [[STEP-16 Sign Up and Sign In UI]] | Not Started | outline |
+| STEP-15 | [[STEP-15 App Shell and Routing]] | Done | full |
+| STEP-16 | [[STEP-16 Sign Up and Sign In UI]] | Not Started | full |
 | STEP-17 | [[STEP-17 AI Router and Provider Abstraction]] | Not Started | outline |
 | STEP-18 | [[STEP-18 AI Cost Governance Controls]] | Not Started | outline |
 | STEP-19 | [[STEP-19 Settings and BYOK UI]] | Not Started | outline |
@@ -161,6 +161,14 @@ Two gaps are recorded rather than forgotten: **audit retention is unbounded** (n
 **The contrast check found a defect in the specification, not the implementation.** Two dark-mode pairings failed AA — `--color-text-muted` on `--color-surface-raised` (4.04) and `--color-accent` on `--color-surface` (4.00) — because §6.3's original verification covered `--color-background` and `--color-surface` but never `--color-surface-raised`, a genuinely different surface. Extending the check to all three surfaces exposed a third failure the original set could not have caught (`--color-danger` at 3.89). The owner directed a minimal refinement: four dark-mode values moved one step within existing ramps, two primitives were added (`neutral-800`, `danger-400`), **no hue changed and no new semantic token was needed**. Verification now enumerates every foreground against every surface — 58 pairings, both themes, all passing — because a hand-picked list is what produced the gap. [[Design System]] is updated to v1.2.
 
 The lesson worth carrying: **a pairing that is not checked is not passing, it is unknown.** The failures were latent in an approved specification and would have shipped into every dropdown and dialog had the token layer not been built before any screen consumed it — which is precisely why this step is sequenced ahead of STEP-15.
+
+**The application shell exists and every screen now has somewhere to live** (STEP-15). `app/(app)/layout.tsx` is a route group, so it wraps every application screen without adding a segment to any URL; `/dashboard`, `/projects`, `/chat` and `/settings` are real routes with placeholder content that later steps fill rather than restructure. Nav destinations are exactly the sections with a scheduled build step — Analytics, Billing and Video Generation are specified in the Project Bible but have no step, and a nav item pointing at a route that does not exist is a dead end rather than a roadmap.
+
+**The root `error.tsx` owed since [[STEP-03 Web App Skeleton]] is finally built**, because this is the first step where client code is legitimate — Next.js requires an error boundary to be a Client Component, which is precisely why STEP-03 could not deliver it. It renders an actionable message and never the stack trace or raw error message ([[CLAUDE|CLAUDE.md]] §24), surfacing Next.js's `digest` so a user report ties back to a server log. Client boundaries total two — the error boundary and the sidebar, which needs `usePathname` — and everything still prerenders static.
+
+**Building the first skeleton found a missing token.** The loading state was written against `--color-surface-raised` and was invisible in light mode: that token is `#ffffff` against a `#f8fafc` canvas, **1.05**, measured in a browser rather than reasoned about. [[Design System]] §6.5 says the fix for a missing role is to name it, so `--color-skeleton` was added and recorded in §6.2 before use. That is twice in two steps that a surface token reused as a fill *on* that surface produced an invisible result — **a token naming a surface is not automatically safe as a fill on it.**
+
+Authentication is deliberately **not** enforced by the shell. Session handling arrives with [[STEP-16 Sign Up and Sign In UI]]; gating routes before that contract exists would be a guess, and nothing inside the shell holds data yet.
 
 The vault, Claude OS and AI operating capabilities are built and validated ([[Environment Setup]], [[AI Index]]).
 

@@ -6,13 +6,13 @@ version: "1.1"
 last_updated: 2026-08-02
 tags: [engineering, workflow, build-step, frontend]
 step_id: STEP-15
-step_status: Not Started
+step_status: Done
 detail_level: full
 ---
 
 # STEP-15 — App Shell and Routing
 
-**Status:** Not Started
+**Status:** Done
 **Detail level:** full — expanded by [[STEP-14 Design System Tokens]], per [[Execution Protocol]].
 
 ## Goal
@@ -75,6 +75,86 @@ Added by [[STEP-14 Design System Tokens]]:
 The authenticated shell renders with navigation, routing structure and the loading/empty/error states every later feature screen inherits; the root error boundary owed since STEP-03 exists and is demonstrated to catch a real error; every surface is built from semantic tokens with no theme-aware component and no hardcoded style; and both themes render correctly with contrast verified for any new pairing.
 
 **Not a Critical change** ([[CLAUDE|CLAUDE.md]] §21) as scoped above: it touches no schema, auth, API contract, infrastructure or tenant boundary. **If this step ends up gating routes on authentication, that scope is Critical** and requires an owner approval gate — surface it rather than absorbing it.
+
+## Outcome — Done (2026-08-02)
+
+All five tasks implemented, all validation observed.
+
+### What was built
+
+`app/(app)/layout.tsx` is the shell — a **route group**, so it wraps every
+application screen without adding a segment to any URL. Header, sidebar and page
+area; a Server Component. Four route segments live inside it (`/dashboard`,
+`/projects`, `/chat`, `/settings`), each a placeholder that later feature steps
+fill in rather than restructure.
+
+**Nav destinations are the ones with a scheduled build step.** Analytics,
+Billing and Video Generation are specified in the Project Bible but have no step
+in the [[Build Plan]], and a nav item pointing at a route that does not exist is
+a dead end rather than a roadmap. Structure lives in `lib/navigation.ts` as
+data, so the sidebar and the active-route logic read one list instead of two.
+
+The root `error.tsx` owed since [[STEP-03 Web App Skeleton]] now exists. It shows
+an actionable message and a reset affordance and **never renders the error
+message or stack trace** — an unexpected failure's message is written for an
+engineer and can carry internal detail ([[CLAUDE|CLAUDE.md]] §24). Next.js's
+`digest` is surfaced as a reference so a user report ties to a server log.
+
+### Client boundaries
+
+**Two, both justified.** `error.tsx` must be a Client Component — Next.js
+requires it, which is exactly why STEP-03 could not deliver it. `SidebarNav`
+needs `usePathname` to mark the active route, and is deliberately the smallest
+possible boundary: the layout, header, page content and empty states all stay on
+the server. Everything still prerenders static.
+
+### A missing token, found by building the first skeleton
+
+The loading skeleton was written against `--color-surface-raised` and turned out
+to be **invisible in light mode** — that token is `#ffffff` against a `#f8fafc`
+canvas, a ratio of **1.05**, measured in the browser rather than reasoned about.
+
+Per [[Design System]] §6.5 the fix is to name the missing role, not reach for a
+primitive, so `--color-skeleton` was added (`neutral-200` light, `neutral-700`
+dark) and recorded in §6.2 before use. A skeleton is *informational* — it is not
+operable, so the 3:1 non-text bar does not apply — but it must be
+distinguishable, which at 1.05 it was not. Now 1.18 light / 1.95 dark.
+
+This is the second time in two steps that a surface reused for a foreground fill
+produced an invisible result. The pattern is worth naming: **a token that names
+a surface is not automatically safe as a fill *on* that surface.**
+
+### Validation observed
+
+- **Error boundary demonstrated**, not inferred — a temporary route threw
+  deliberately; the fallback rendered with its recovery button, and the response
+  leaked neither the stack trace nor the raw message. Route removed before
+  commit.
+- **All 7 routes return 200** and prerender static; the route group adds no URL
+  segment.
+- **Exactly one nav item is active** on each route, marked with `aria-current`
+  rather than color alone — color is invisible to assistive technology.
+- **Both themes verified by computed style**, every value resolving to its token
+  (`#818cf8` accent, `#1e293b` raised, `#94a3b8` muted, `#334155` border).
+  **Markup length identical at 12653 in both themes** — the theme change touches
+  no component markup.
+- **Shell contrast pairings verified**, including the tightest one this step
+  introduces: active nav label is `accent` on `surface-raised`, **4.90** in dark.
+  The full 58-pairing token check still passes after adding `--color-skeleton`.
+- **Keyboard order correct**: skip link first, then brand, then all four nav
+  items; no negative `tabindex`. The skip link targets a real `#main-content`.
+- `use client` appears only in `error.tsx` and `SidebarNav.tsx`.
+- 14 tests pass (7 new, covering `isActiveRoute` — including the
+  `/projects-archive` prefix case a plain `startsWith` would get wrong). Lint,
+  type-check and build pass.
+
+### Deliberately not built
+
+**Authentication is not enforced here.** Session handling arrives with
+[[STEP-16 Sign Up and Sign In UI]]; gating routes before that contract exists
+would be a guess. Nothing inside the shell is protected because nothing inside
+it holds data yet — every screen is a placeholder. This keeps the step
+non-Critical, as its Definition of Done anticipated.
 
 ---
 
