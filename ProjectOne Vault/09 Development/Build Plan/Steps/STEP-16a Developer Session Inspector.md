@@ -6,13 +6,13 @@ version: "1.0"
 last_updated: 2026-08-03
 tags: [engineering, workflow, build-step, frontend, security, development]
 step_id: STEP-16a
-step_status: Not Started
+step_status: Done
 detail_level: full
 ---
 
 # STEP-16a — Developer Session Inspector
 
-**Status:** Not Started
+**Status:** Done
 **Detail level:** full — inserted after [[STEP-16 Sign Up and Sign In UI]] by owner request on 2026-08-03.
 
 ## Why This Step Exists
@@ -109,6 +109,64 @@ A `/dev/session` page reports authentication status, user identity, token expiri
 
 > [!warning] The exclusion is the feature
 > If the dual exclusion cannot be proven by observation, this step is `Blocked` — not shipped with a note to verify later. A diagnostics page that might answer in production is a worse outcome than no diagnostics page at all.
+
+## Outcome
+
+**Completed 2026-08-03.** `/dev/session` reports the running session's actual condition in development, and is **absent from a production build entirely** — not merely refused.
+
+### The defect that shaped the implementation
+
+The first implementation put `notFound()` at the top of the page component, which is the obvious way to write this. Testing it against a real production build returned **`HTTP 200` with the not-found body inside it**.
+
+The cause is the root `loading.tsx` Suspense boundary: Next.js has already flushed a 200 by the time a page body runs, so `notFound()` can change what renders but not the status code. **This is the same failure STEP-16 documented for `redirect()`, one level up** — a render that has begun streaming can no longer choose its status. It would not have been found by review, only by requesting the route against a production build.
+
+The fix moves enforcement to `src/proxy.ts`, which runs before rendering begins and can return a real 404. That mirrors what STEP-16 did for the redirect, and is now the second instance of the same lesson: **anything that must control an HTTP status belongs before the render, not inside it.**
+
+### Two genuinely independent mechanisms
+
+The step required build-time absence *and* runtime refusal. An intermediate state satisfied only the second — the route still appeared as `ƒ /dev/session` in the build output — which was recorded as a gap and then closed rather than accepted:
+
+1. **Build-time.** Development-only routes are named `page.dev.tsx`, and `next.config.ts` adds `dev.tsx` to `pageExtensions` **only** when the build is not production. A production build does not recognise the file as a route at all: never compiled, absent from the route manifest, unreachable by any means. Verified by inspecting the build output and grepping the manifests.
+2. **Runtime.** `src/proxy.ts` refuses the whole `/dev/*` namespace with a **404** (never 403 — a 403 confirms the route exists). Verified by serving a production build and observing `HTTP 404` with a zero-byte body, while `/sign-in` still answered 200.
+
+They fail independently: one depends on `NODE_ENV` at build time, the other at run time. `notFoundInProduction()` remains in the page as a third, weaker line — it cannot set a status, but it stops the work happening if a page is somehow reached another way.
+
+A test asserts the config's duplicated expression agrees with `devRoutesEnabled()` across all five environment combinations, because drift in the permissive direction would leave the page in a production bundle.
+
+### The secret-leak check, done by grep
+
+The page renders derived facts only. Proven by planting cookies carrying marked values (`SIGNATURE-SECRET-MUST-NOT-LEAK-XYZ`, `REFRESH-SECRET-QQQ`), fetching the rendered HTML, and grepping for each — **all clean**, including every individual JWT segment, since a partial leak is still a leak. The same fetch confirms the derived facts *are* present (`SESSION-ID-ABC`, `Present (httpOnly…`, the expiry countdown), so the scan is not passing against an error page.
+
+`Set-Cookie` headers on a visit: **none**. The page never mutates session state, including never deleting a dead cookie it discovers — the STEP-16 trap that stranded users forever.
+
+### Decisions made during implementation
+
+- **No API endpoint was added.** `/health` already reports real database connectivity (STEP-07), so the step's preference for reuse held. New production surface for a development page is a bad trade, and the API-side header echo was left unbuilt for the same reason — the page renders Next.js's own view and says plainly that it is not the API's.
+- **`/dev/*` is matched by the proxy but not session-gated.** The inspector must render signed out: "why am I signed out" is one of the questions it exists to answer, and a redirect to sign-in would hide exactly the state worth inspecting.
+- **The JWT is decoded, never verified.** The API owns signature verification against JWKS; duplicating it here would create a second place for the two answers to drift apart. This is a view of what the browser holds, not an authentication decision — `GET /auth/me` is what actually proves the session works, and the page calls it.
+- **`isDevOnlyPath` matches a prefix**, so a future inspector page inherits the exclusion rather than needing to remember it. Tested against `/developer-settings` and `/devices`, which must **not** match.
+- **`export const dynamic` must be a static literal.** An imported constant failed the build outright — discovered, not assumed.
+
+### Validation
+
+| Check | Result |
+|---|---|
+| Production build: route absent | **Confirmed** — no `/dev/session` in build output or manifests |
+| Production runtime: `/dev/session` | **HTTP 404**, zero-byte body |
+| Production runtime: `/dev/anything` | **HTTP 404** — the whole namespace |
+| Production runtime: `/sign-in` (control) | HTTP 200 |
+| Development: `/dev/session` | HTTP 200, renders signed in, signed out and expired |
+| Secret leak scan | **Clean** — grepped, not reviewed |
+| Cookie mutation | **None** — no `Set-Cookie` on any visit |
+| `apps/web` tests | **74 passed** — up from 45 |
+| `apps/web` eslint / tsc / build | Clean |
+
+Negative control: removing the proxy's production refusal failed exactly the 2 exclusion tests, and they passed again on restore.
+
+### Known limitations
+
+- **The API-side proxy header view is not built.** The page shows what *Next.js* received and states that the API's own view may differ. Adding the echo means new API surface carrying its own exclusion; it was judged not worth the risk for a development aid. If STEP-12a's allowlist is ever misconfigured, this page narrows the search but does not settle it.
+- **`readProfile` is called with the access token but the session is not refreshed** if it has expired. Deliberate: the page observes, and a diagnostics page that silently repaired the thing being diagnosed would be lying about the state it reports.
 
 ---
 

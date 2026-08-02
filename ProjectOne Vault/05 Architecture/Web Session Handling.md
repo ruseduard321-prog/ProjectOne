@@ -93,6 +93,16 @@ Stated so the next reader does not assume otherwise:
 - ~~**The API's rate limiter now sees one IP.**~~ **Fixed by [[STEP-12a Trusted Proxy and Per-User Rate Limiting]].** Authenticated requests now key on the verified `user_id`; public ones key on the browser's address, which this app forwards on the sign-in, sign-up and refresh calls. `src/lib/client-address.ts` reads it from the platform's own headers and **sets** the forwarding header rather than appending — this process is the first trusted hop, so anything a browser sent under that name is discarded rather than passed into a chain the API is about to trust. The API honours it only because this server is in its allowlist; see [[ADR-002 Trusted Proxy and Client Address Resolution]] and the deployment requirement in [[Infrastructure]].
 - **No address is forwarded on authenticated calls**, deliberately. Those are limited by verified `user_id`, so an address would be collected for nothing ([[CLAUDE|CLAUDE.md]] §16 data minimization).
 
+## Inspecting a Session in Development
+
+The security posture above has a cost worth naming: **a session the browser cannot read is also one the developer cannot inspect.** DevTools shows opaque cookies, and every API call happens server-side where no network tab observes it.
+
+[[STEP-16a Developer Session Inspector]] answers that with `/dev/session` — authentication status, token expiries, session id, cookie presence, proxy headers, rate limit identity and API/database health. It shows **no** token, cookie or key value, not even truncated, and it mutates nothing (it will not even clear a dead cookie it discovers).
+
+**It cannot exist in production.** Two independent mechanisms enforce that: the route file is named `page.dev.tsx` and `next.config.ts` only registers that extension in a non-production build, so it is never compiled; and `src/proxy.ts` refuses the whole `/dev/*` namespace with a 404. Details and the reasoning are in that step's Outcome.
+
+One finding there generalizes to this note: **`notFound()` inside a page cannot set a 404 status**, because the root `loading.tsx` boundary has already flushed a 200 — the same constraint that forced the STEP-16 redirect into `src/proxy.ts`. Anything that must control an HTTP status belongs before the render, not inside it.
+
 ---
 
 ## Navigation

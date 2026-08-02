@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server";
 
+import { devRoutesEnabled, isDevOnlyPath } from "@/lib/dev-only";
 import { SIGN_IN_PATH } from "@/lib/routes";
 import { ACCESS_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE } from "@/lib/session-cookies";
 
@@ -41,6 +42,34 @@ import { ACCESS_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE } from "@/lib/session-cookies
  * cookie the user controls.
  */
 export function proxy(request: NextRequest): NextResponse {
+  /*
+   * Development-only routes are refused here, before rendering begins.
+   *
+   * This is the *enforcing* half of the `/dev/session` exclusion, and it lives
+   * here for a reason discovered by testing rather than assumed: a
+   * `notFound()` call inside the page cannot set a 404 status, because the
+   * root `loading.tsx` Suspense boundary has already flushed a 200 by the time
+   * the page body runs. Observed directly — `GET /dev/session` against a
+   * production build returned `HTTP 200` with the not-found body inside it.
+   *
+   * That is the same failure STEP-16 hit with `redirect()`, one level up: a
+   * render that has already started streaming can no longer choose its status
+   * code. The proxy runs before any of that.
+   *
+   * 404 rather than 403: a 403 confirms the route exists.
+   */
+  if (isDevOnlyPath(request.nextUrl.pathname)) {
+    if (!devRoutesEnabled()) {
+      return new NextResponse(null, { status: 404 }) as NextResponse;
+    }
+
+    // Served without the session check below, deliberately. The inspector must
+    // render for a signed-out visitor — "why am I signed out" is one of the
+    // questions it exists to answer, and a gate that redirected to sign-in
+    // would hide exactly the state worth inspecting.
+    return NextResponse.next();
+  }
+
   const hasSession =
     request.cookies.has(ACCESS_TOKEN_COOKIE) || request.cookies.has(REFRESH_TOKEN_COOKIE);
 
@@ -81,5 +110,15 @@ export function proxy(request: NextRequest): NextResponse {
  * costs the correct status code rather than the protection itself.
  */
 export const config = {
-  matcher: ["/dashboard/:path*", "/projects/:path*", "/chat/:path*", "/settings/:path*"],
+  matcher: [
+    "/dashboard/:path*",
+    "/projects/:path*",
+    "/chat/:path*",
+    "/settings/:path*",
+    // Not an application route and deliberately *not* session-gated — the
+    // inspector must render signed out, since "why am I signed out" is one of
+    // the questions it exists to answer. It is matched here only so the
+    // production refusal above can run before rendering.
+    "/dev/:path*",
+  ],
 };

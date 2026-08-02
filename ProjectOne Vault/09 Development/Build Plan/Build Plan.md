@@ -53,7 +53,7 @@ Status appears in two places — the step note and the row below — and they mu
 | STEP-15 | [[STEP-15 App Shell and Routing]] | Done | full |
 | STEP-16 | [[STEP-16 Sign Up and Sign In UI]] | Done | full |
 | STEP-12a | [[STEP-12a Trusted Proxy and Per-User Rate Limiting]] | Done | full |
-| STEP-16a | [[STEP-16a Developer Session Inspector]] | Not Started | full |
+| STEP-16a | [[STEP-16a Developer Session Inspector]] | Done | full |
 | STEP-17 | [[STEP-17 AI Router and Provider Abstraction]] | Not Started | full |
 | STEP-18 | [[STEP-18 AI Cost Governance Controls]] | Not Started | outline |
 | STEP-19 | [[STEP-19 Settings and BYOK UI]] | Not Started | outline |
@@ -208,6 +208,14 @@ The lesson worth carrying: **the place that discovers a credential is dead is no
 **A deployment obligation now binds every environment** ([[Infrastructure]]): every proxy in front of the API must be in `PROJECTONE_TRUSTED_PROXIES`, and every trusted proxy must strip or overwrite inbound `X-Forwarded-For` rather than appending. The API warns at startup when the allowlist is empty; it cannot warn when the allowlist is merely wrong.
 
 **STEP-12a carries an owner approval gate** (Critical — security controls, public API contract, infrastructure configuration). Per the owner's instruction on 2026-08-03, intermediate approvals are deferred: one consolidated review follows STEP-17.
+
+**The running session is inspectable in development, and unreachable in production** (STEP-16a). `/dev/session` reports authentication status, token expiries, session id, cookie presence, proxy headers, rate limit identity and API/database health — showing **no** token, cookie or key value, not even truncated, and mutating nothing. `/health` was reused rather than adding a diagnostics endpoint: new production surface for a development page is a bad trade.
+
+**The step's central defect was found by running it, not reviewing it.** `notFound()` at the top of the page returned **`HTTP 200` with the not-found body inside it** — the root `loading.tsx` Suspense boundary has already flushed a 200 by the time a page body runs, so the page can change what renders but not the status. **This is STEP-16's `redirect()` failure one level up**, and the fix is the same: enforcement moved to `src/proxy.ts`, which runs before rendering. The lesson has now appeared twice — **anything that must control an HTTP status belongs before the render, not inside it.**
+
+**Both exclusion mechanisms are real and independent.** An intermediate state satisfied only the runtime check, with the route still appearing as `ƒ /dev/session` in the build output; that gap was closed rather than accepted. Development-only routes are now named `page.dev.tsx`, and `next.config.ts` registers that extension **only** in a non-production build — so a production build never compiles the file at all, confirmed absent from the build output and manifests. The proxy independently 404s the whole `/dev/*` namespace (never 403, which would confirm the route exists). One depends on `NODE_ENV` at build time, the other at run time, and a test asserts the two decisions agree across every environment combination.
+
+**The no-secrets guarantee was proven by grep, not by review.** Cookies carrying marked values were planted, the rendered HTML fetched, and every value — including each individual JWT segment, since a partial leak is still a leak — confirmed absent, while the derived facts were confirmed present so the scan was not passing against an error page. No `Set-Cookie` on any visit. `apps/web` grew from 45 tests to 74.
 
 **[[DOC-01 Align ADR Template with CLAUDE.md]] was raised** on 2026-08-03: [[ADR Template]]'s status vocabulary diverges from [[CLAUDE|CLAUDE.md]] §7, missing `Review` and — more consequentially — `Rejected`, the state that keeps a rejected decision on record. It is a documentation task rather than a Build Plan step, and lives in `09 Development/` accordingly.
 
