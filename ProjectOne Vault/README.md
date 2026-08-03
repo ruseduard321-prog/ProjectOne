@@ -2,8 +2,8 @@
 title: README
 category: Meta
 status: stable
-version: "1.2"
-last_updated: 2026-07-31
+version: "1.3"
+last_updated: 2026-08-03
 tags: [documentation]
 ---
 
@@ -27,7 +27,7 @@ This vault is the organized, cross-linked Obsidian knowledge base for ProjectOne
 | `09 Development` | Engineering process notes: bugs, sprints, releases |
 | `10 Research` | Research notes, user research, meeting notes |
 | `11 Decisions` | Standalone product/architecture decisions outside the ADR log |
-| `12 Assets` | Archived source PDFs (`12 Assets/PDF/`) and any future binary assets |
+| `12 Assets` | Archived source PDFs (`12 Assets/PDF/`) and image assets (`12 Assets/Images/`) extracted from them for embedding in notes |
 | `13 Templates` | Reusable note templates for every recurring content type, including AI-specific ones (e.g. Skill Template) |
 | `99 Archive` | Historical/superseded documents — currently [[Technical Documentation Master]]. Fixed at `99` regardless of how many numbered folders precede it, so it always reads as "the attic." |
 
@@ -59,14 +59,17 @@ Every note carries YAML frontmatter:
 ---
 title:          # display title
 category:       # e.g. Project Bible/Foundations, Engineering Handbook, MOC, Index, Archive
-status:         # draft | stable | archived | proposed | open | planned
+status:         # draft | stable | reference | archived | proposed | open | planned
 version:        # matches the source document version (0.1 or 1.0)
 last_updated:   # ISO date
 tags:           # from the vault's controlled tag list, see below
 aliases:        # alternate names, including the original numbered filename
 source_pdf:     # wiki-link to the archived original PDF (content notes only)
+authority:      # optional — omit unless the note is deliberately non-binding
 ---
 ```
+
+**`status: reference` and `authority: informational`** mark a note that is deliberately **not** a specification — a document worth keeping and consulting that nonetheless governs nothing and that no implementation is checked against. It exists because "draft" implies a document on its way to becoming binding, and "stable" implies it already is; a permanently informational note is neither. [[Design Backlog and UI Vision]] is the first such note. Any note carrying it must state, in its own body, what it does and does not override — a non-binding document with an unstated rank eventually gets treated as binding.
 
 ## How MOCs Work
 

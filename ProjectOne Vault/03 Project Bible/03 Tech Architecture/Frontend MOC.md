@@ -2,8 +2,8 @@
 title: Frontend MOC
 category: MOC
 status: stable
-version: "1.0"
-last_updated: 2026-07-30
+version: "1.1"
+last_updated: 2026-08-03
 tags: [moc, frontend, documentation]
 aliases: ["Frontend Map of Content"]
 ---
@@ -23,6 +23,7 @@ aliases: ["Frontend Map of Content"]
 ## Design
 
 - [[Design System]] — visual identity, layout, typography, color, motion
+- [[Design Backlog and UI Vision]] — long-term UI direction, informational only; build against the Design System, not this
 
 ## Feature Surfaces
 

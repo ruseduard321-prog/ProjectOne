@@ -2,8 +2,8 @@
 title: Category Index
 category: Index
 status: stable
-version: "1.3"
-last_updated: 2026-07-31
+version: "1.4"
+last_updated: 2026-08-03
 tags: [index, documentation]
 ---
 
@@ -37,7 +37,7 @@ Notes grouped by `category` frontmatter value.
 
 ## frontend
 
-[[Frontend Architecture]] · [[Design System]] · [[Chapter 03 - TypeScript Standards]] · [[Chapter 04 - React Standards]] · [[Chapter 05 - NextJS Architecture]]
+[[Frontend Architecture]] · [[Design System]] · [[Design Backlog and UI Vision]] · [[Chapter 03 - TypeScript Standards]] · [[Chapter 04 - React Standards]] · [[Chapter 05 - NextJS Architecture]]
 
 ## database
 
@@ -53,7 +53,7 @@ Notes grouped by `category` frontmatter value.
 
 ## design
 
-[[Design System]]
+[[Design System]] · [[Design Backlog and UI Vision]] *(informational)*
 
 ## feature
 

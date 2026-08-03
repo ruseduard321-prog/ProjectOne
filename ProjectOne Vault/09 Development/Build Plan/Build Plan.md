@@ -2,8 +2,8 @@
 title: Build Plan
 category: Development
 status: stable
-version: "2.2"
-last_updated: 2026-08-02
+version: "2.3"
+last_updated: 2026-08-03
 tags: [engineering, documentation, workflow]
 aliases: ["Implementation Plan", "Build Roadmap", "Step Index"]
 ---
@@ -69,6 +69,8 @@ Status appears in two places — the step note and the row below — and they mu
 
 These 26 steps deliver the **first public release** — the Foundation loop (sign up → workspace → project → AI chat → dashboard) hardened, billed for, and shipped. Everything the [[Roadmap]] places in Phase 2 (Video Generation, Analytics, advanced agents, publishing) and Phase 3 (teams, enterprise, marketplace) is **out of scope for this plan** and gets its own step sequence once STEP-26 is Done.
 
+A **UI Polish phase** is likewise out of scope for these steps and follows STEP-26, per [[Design Backlog and UI Vision]]. It is a stated intention, not a scheduled sequence — no steps exist for it yet.
+
 One consequence is worth stating plainly rather than discovering at STEP-25: **[[Billing]] is not in these 26 steps.** A public release that charges money needs it; a free/invite-only public beta does not. STEP-25 resolves which of those this release is, and inserts billing steps if required — see that step's note.
 
 ## Source Documents
@@ -81,6 +83,7 @@ This plan is derived from, and must stay consistent with, the vault. If this pla
 - [[Backend Architecture]] · [[Database Architecture]] · [[API Architecture]] · [[Frontend Architecture]] · [[Infrastructure]] — tech architecture
 - [[Security Architecture]] · [[Authentication and Authorization]] · [[Privacy and Data Protection]] · [[Compliance and Governance]] — security & trust
 - [[Design System]] — the UI standard every screen follows
+- [[Design Backlog and UI Vision]] — long-term UI direction. **Reference only**, and unlike every other document listed here it is *not* a source this plan must stay consistent with: it binds nothing during Foundation.
 - Engineering Handbook Chapters 1–11 — binding build standards
 - [[CLAUDE|CLAUDE.md]] — operating rules governing every step
 
@@ -239,9 +242,13 @@ The three migrations were applied and the result verified: revision at head, `au
 
 **One exposure is recorded rather than glossed:** an owner can currently zero their own `spent_usd`, because PostgreSQL policies are per-row and the UPDATE policy must exist for configuration. The immutable ledger — not that counter — is what a billing reconciliation reads, and the test documents the exposure honestly instead of asserting a protection that does not exist. Closing it is a column-level grant belonging to STEP-19.
 
-**STEP-18 carries an owner approval gate** (Critical — AI architecture, database schema, security controls, multi-tenancy). STEP-19 does not begin until the owner confirms.
+**STEP-18 was approved by the project owner on 2026-08-03**, clearing its owner approval gate (Critical — AI architecture, database schema, security controls, multi-tenancy). STEP-19 may begin.
 
 **A cross-tenant key leak was caught during implementation, in the router's own first draft.** `AIRouter` held the request-scoped key resolver as instance state while being constructed once and shared across requests — so two concurrent requests would race and the loser would resolve **another workspace's** credential. Same class of defect as the pooled-connection claim leak STEP-10 reproduced, and now prevented structurally: the resolver is a parameter, so there is no attribute to race on.
+
+**A long-term UI vision now exists, and it changes nothing in this plan** (2026-08-03). The project owner supplied [[Design Backlog and UI Vision]] — a premium-AI-OS design direction plus a Dashboard concept mockup. It is filed as **informational only** by explicit owner instruction: **not a step, not a roadmap change, not an architecture change, and overriding no engineering document.** No step was added, renumbered or rescheduled, and the [[Roadmap]] is untouched.
+
+Its operating effect on STEP-19 through STEP-26 is deliberately narrow: **reference only, and do not redesign a shipped page because of it.** Screens continue to be built against [[Design System]], which wins wherever the two differ. UI improvements noticed along the way are *collected* in that note's UI Polish Backlog rather than acted on. After [[STEP-26 First Public Release]] it becomes the primary reference for a dedicated **UI Polish phase** upgrading every screen in one pass — which is the point of deferring it: polishing screens while the surfaces beneath them are still being built means polishing twice, and consistency is only achievable across a complete set of screens.
 
 **[[DOC-01 Align ADR Template with CLAUDE.md]] was raised** on 2026-08-03: [[ADR Template]]'s status vocabulary diverges from [[CLAUDE|CLAUDE.md]] §7, missing `Review` and — more consequentially — `Rejected`, the state that keeps a rejected decision on record. It is a documentation task rather than a Build Plan step, and lives in `09 Development/` accordingly.
 

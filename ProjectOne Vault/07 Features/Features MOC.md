@@ -2,8 +2,8 @@
 title: Features MOC
 category: MOC
 status: stable
-version: "1.0"
-last_updated: 2026-07-30
+version: "1.1"
+last_updated: 2026-08-03
 tags: [moc, feature, documentation]
 aliases: ["Features Map of Content"]
 ---
@@ -26,6 +26,7 @@ Every user-facing functional area of ProjectOne, as defined by the Product Bible
 ## Design
 
 - [[Design System]] — visual language governing every feature's UI
+- [[Design Backlog and UI Vision]] — long-term UI direction. Informational only; governs nothing and schedules nothing.
 
 ## Feature Lifecycle Reference
 

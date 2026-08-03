@@ -73,7 +73,7 @@ Recorded during expansion, while the context was loaded. **Read [[AI Router Impl
 
 Every §15a control exists, is enforced before spend rather than after, and has been observed tripping under test: per-workspace and per-workflow budget ceilings, a spend circuit breaker distinct from the availability breaker, runaway/recursion caps, execution limits, near-real-time usage tracking with anomaly alerting, and a deploy-free emergency shutdown. Spend records are RLS-protected tenant data. A tripped control degrades gracefully and says so.
 
-**This is a Critical change** ([[CLAUDE|CLAUDE.md]] §21 — AI architecture, database schema, security controls, multi-tenancy) and carries an **owner approval gate**.
+**This is a Critical change** ([[CLAUDE|CLAUDE.md]] §21 — AI architecture, database schema, security controls, multi-tenancy) and carries an **owner approval gate**. **Approved by the project owner on 2026-08-03** — the gate is cleared and [[STEP-19 Settings and BYOK UI]] may begin.
 
 **On completion, the STEP-17 gate opens**: AI call paths may reach production, subject to the usual review.
 

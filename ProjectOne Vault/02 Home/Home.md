@@ -2,8 +2,8 @@
 title: Home
 category: MOC
 status: stable
-version: "1.1"
-last_updated: 2026-07-31
+version: "1.2"
+last_updated: 2026-08-03
 tags: [moc, documentation]
 aliases: ["Vault Home", "Start Here"]
 ---
@@ -90,7 +90,7 @@ Security Architecture, Privacy & Data Protection, Authentication & Authorization
 
 ## Design
 
-Design System & Visual Language — the single source of truth for UI decisions.
+Design System & Visual Language — the single source of truth for UI decisions. Alongside it, [[Design Backlog and UI Vision]] records where the interface is eventually going: **informational only**, deferred to a UI Polish phase after [[STEP-26 First Public Release]], and overriding nothing.
 → [[Design MOC]]
 
 ## Roadmap

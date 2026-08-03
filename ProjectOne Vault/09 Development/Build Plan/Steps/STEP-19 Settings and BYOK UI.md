@@ -38,6 +38,8 @@ Billing, Notifications and Integrations sections are deferred to the steps that 
 - [[AI Cost Governance]] — what a budget screen may and may not expose
 - [[AI Router Implementation]] — the BYOK model and where plaintext exists
 
+**Reference only, not required reading:** [[Design Backlog and UI Vision]]. It is informational, binds nothing, and **must not** change what this step builds — screens are built against [[Design System]]. If implementing this step surfaces a concrete UI improvement traceable to that vision, record it in [[Design Backlog and UI Vision#UI Polish Backlog]] and carry on; acting on it during Foundation is out of scope ([[CLAUDE|CLAUDE.md]] §29, §35).
+
 ## Inherited from STEP-18
 
 Recorded during expansion, while the context was loaded. These are the load-bearing facts, not a substitute for reading the notes.

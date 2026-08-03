@@ -2,8 +2,8 @@
 title: Design System
 category: Design
 status: stable
-version: "1.3"
-last_updated: 2026-08-02
+version: "1.4"
+last_updated: 2026-08-03
 tags: [design, documentation, feature]
 aliases: ["Design System & Visual Language", "Visual Language"]
 source_pdf: "[[12 Assets/PDF/ProjectOne_Design_System_Visual_Language_v1.0.pdf|ProjectOne_Design_System_Visual_Language_v1.0.pdf]]"
@@ -344,6 +344,8 @@ Avoid:
 
 ProjectOne should develop a recognizable visual identity. A screenshot should be identifiable as ProjectOne even without the logo because of its consistency and design language.
 
+[[Design Backlog and UI Vision]] elaborates what that identity should eventually look like — screen composition, the premium-OS feel, the Dashboard concept. It is **informational only and subordinate to this document**: where the two disagree, this one wins, and the difference is a UI Polish candidate rather than a defect. It is deliberately deferred until after [[STEP-26 First Public Release]] and must not trigger redesign of a shipped screen during Foundation.
+
 ## Conclusion
 
 The Design System is the single source of truth for every interface decision. New components and screens must extend the existing language rather than reinvent it.
@@ -355,4 +357,4 @@ The Design System is the single source of truth for every interface decision. Ne
 - **Previous:** —
 - **Next:** —
 - **Parent:** [[Design MOC]]
-- **Related Notes:** [[Frontend Architecture]] · [[React Standards]] · [[Dashboard]] · [[STEP-14 Design System Tokens]] · [[Chapter 04 - React Standards]] · [[Chapter 05 - NextJS Architecture]]
+- **Related Notes:** [[Frontend Architecture]] · [[React Standards]] · [[Dashboard]] · [[Design Backlog and UI Vision]] · [[STEP-14 Design System Tokens]] · [[Chapter 04 - React Standards]] · [[Chapter 05 - NextJS Architecture]]

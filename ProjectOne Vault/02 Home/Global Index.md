@@ -2,8 +2,8 @@
 title: Global Index
 category: Index
 status: stable
-version: "1.3"
-last_updated: 2026-07-31
+version: "1.4"
+last_updated: 2026-08-03
 tags: [index, documentation]
 ---
 
@@ -97,7 +97,8 @@ Every note in the vault, grouped by folder. This is the exhaustive map — for c
 
 - [[Features MOC]]
 - [[Design MOC]]
-- [[Design System]]
+- [[Design System]] — the authoritative UI standard
+- [[Design Backlog and UI Vision]] — long-term UI vision, **informational only**: not a Build Plan step, changes no architecture, overrides no engineering document
 
 ## 08 ADR
 
@@ -126,7 +127,8 @@ Every note in the vault, grouped by folder. This is the exhaustive map — for c
 
 ## 12 Assets
 
-- [[12 Assets/PDF|PDF]] — 46 archived source PDFs
+- [[12 Assets/PDF|PDF]] — 47 archived source PDFs
+- `12 Assets/Images/` — image assets extracted from source documents. Currently the Dashboard concept mockup embedded in [[Design Backlog and UI Vision]].
 
 ## 13 Templates
 

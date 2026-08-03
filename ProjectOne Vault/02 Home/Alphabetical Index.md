@@ -2,8 +2,8 @@
 title: Alphabetical Index
 category: Index
 status: stable
-version: "1.2"
-last_updated: 2026-07-31
+version: "1.3"
+last_updated: 2026-08-03
 tags: [index, documentation]
 ---
 
@@ -37,6 +37,7 @@ All content notes (MOCs and templates excluded), A–Z.
 - [[Dashboard]]
 - [[Database Architecture]]
 - [[Deployment Strategy]]
+- [[Design Backlog and UI Vision]] *(informational — long-term UI vision, governs nothing)*
 - [[Design System]]
 - [[Documentation Discovery]]
 - [[Environment and Secrets]]

@@ -3,7 +3,7 @@ title: Dashboard
 category: Project Bible/Features
 status: draft
 version: "0.1"
-last_updated: 2026-07-30
+last_updated: 2026-08-03
 tags: [project-bible, feature, frontend, documentation]
 aliases: ["11 Dashboard"]
 source_pdf: "[[12 Assets/PDF/ProjectOne_11_Dashboard_v0.1.pdf|ProjectOne_11_Dashboard_v0.1.pdf]]"
@@ -35,7 +35,7 @@ See also: [[AI Chat]]
 
 Clean, fast, customizable, minimal clicks, no unnecessary information and clear visual hierarchy.
 
-See also: [[Design System]]
+See also: [[Design System]] — the binding UI standard. [[Design Backlog and UI Vision]] holds a long-term Dashboard concept and mockup; it is **informational only** and does not change the components or objectives specified above.
 
 ## Success Criteria
 
@@ -48,4 +48,4 @@ A returning user can understand what needs attention and start meaningful work i
 - **Previous:** [[Product Bible]]
 - **Next:** [[Projects]]
 - **Parent:** [[Project Bible MOC]]
-- **Related Notes:** [[Projects]] · [[Analytics]] · [[AI Chat]] · [[Design System]]
+- **Related Notes:** [[Projects]] · [[Analytics]] · [[AI Chat]] · [[Design System]] · [[Design Backlog and UI Vision]]

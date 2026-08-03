@@ -32,6 +32,8 @@ Notifications, cost summary and AI recommendations are stubbed until the domains
 - [[Dashboard]]
 - [[Design System]]
 
+**Reference only, not required reading:** [[Design Backlog and UI Vision]] holds a Dashboard concept mockup and a target component list (AI Provider Status Bar, KPI cards, spend overview, activity timeline, active queue, system health, usage by model, command palette). It is **informational and binds nothing** — this step delivers the [[Dashboard]] specification against [[Design System]], at the scope in this note's own Scope section, and is not measured against that mockup. Several elements it depicts have no build step at all. Improvements noticed here are collected in [[Design Backlog and UI Vision#UI Polish Backlog]], not built.
+
 ## Tasks
 
 Not yet expanded. [[STEP-23 AI Chat End to End]] writes this section, when the surrounding code exists and the tasks can be accurate rather than imagined.
