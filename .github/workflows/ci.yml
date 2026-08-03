@@ -117,6 +117,26 @@ jobs:
     # the request-path role build their own URL from the `authenticator` role
     # that `conftest.py` provisions, because the password must match one this
     # workflow does not own.
+    #
+    # PROJECTONE_BYOK_ENCRYPTION_KEY became required in STEP-17, and the value
+    # below is deliberately the SAME constant as `tests.conftest.TEST_BYOK_KEY`,
+    # not a second one that happens to be valid. Two independently-valid keys
+    # would both work, which is exactly why they would drift; pinning them
+    # together means CI validates the value the suite actually exercises.
+    # `test_ci_configuration.py` asserts they stay equal.
+    #
+    # It is NOT a secret and must never become one. Base64 of the ASCII string
+    # `test-byok-key-32-bytes-long-xxxx` — valid AES-256 by length, and readable
+    # at a glance as a fixture, so nobody mistakes this line for a leaked key or
+    # copies it into a deployment. CI encrypts nothing that outlives the run:
+    # the database is a per-run throwaway container, and the tests that genuinely
+    # exercise encryption generate their own random keys.
+    #
+    # Production is unaffected. `byok_encryption_key` still has no default in
+    # `app/core/config.py`, so a real deployment that omits it still refuses to
+    # start (CLAUDE.md §16, §28a). This supplies the variable to one ephemeral
+    # environment rather than weakening the requirement for every environment,
+    # which a default would have done.
     env:
       PROJECTONE_ENVIRONMENT: development
       SUPABASE_URL: https://ci-placeholder.supabase.co
@@ -124,6 +144,7 @@ jobs:
       DATABASE_URL: postgresql://postgres:ci-throwaway@127.0.0.1:5432/projectone_test
       REQUEST_DATABASE_URL: postgresql://postgres:ci-throwaway@127.0.0.1:5432/projectone_test
       PROJECTONE_TEST_DATABASE_URL: postgresql://postgres:ci-throwaway@127.0.0.1:5432/projectone_test
+      PROJECTONE_BYOK_ENCRYPTION_KEY: dGVzdC1ieW9rLWtleS0zMi1ieXRlcy1sb25nLXh4eHg=
 
     steps:
       - uses: actions/checkout@v4

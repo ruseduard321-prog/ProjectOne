@@ -2,8 +2,8 @@
 title: Environment and Secrets
 category: Development
 status: stable
-version: "1.2"
-last_updated: 2026-07-31
+version: "1.3"
+last_updated: 2026-08-03
 tags: [engineering, security, configuration, documentation]
 aliases: ["Environment Configuration", "Secrets Policy", "Feature Flags"]
 ---
@@ -119,6 +119,14 @@ When the first flag is needed, it is implemented as configuration through the mo
 6. If it is a secret, confirm it is injected by the secrets manager and appears in no log.
 
 Step 5 sequencing matters: a required variable that reaches production before its value does takes the service down at startup.
+
+### Step 4 is enforced, not remembered
+
+`PROJECTONE_BYOK_ENCRYPTION_KEY` became required in [[STEP-17 AI Router and Provider Abstraction]] and step 4 was missed. Nothing caught it: `Settings` reads `apps/api/.env` automatically, every developer machine has one, and the entire local suite passed. CI has no `.env`, so the API could not start there — and the failure surfaced a step later, on a push, rather than in the change that caused it.
+
+The procedure was already correct. What was missing is that it depended on someone remembering it, so `apps/api/tests/test_ci_configuration.py` now **derives** the required-variable list from `Settings` itself and asserts the workflow supplies every one. A new required setting fails that test locally, naming the variable and the file to fix.
+
+**The tempting wrong fix is a default in the config module.** For an encryption key that means one hardcoded key shared by every deployment, which is not encryption ([[CLAUDE|CLAUDE.md]] §16) — a test asserts the field stays required, so the shortcut fails too. CI gets a value; it does not get a lower bar.
 
 ---
 
