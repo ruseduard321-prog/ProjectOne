@@ -2,8 +2,8 @@
 title: Table Conventions
 category: Architecture/Schema
 status: stable
-version: "1.0"
-last_updated: 2026-08-01
+version: "1.1"
+last_updated: 2026-08-03
 tags: [database, architecture, standards]
 aliases: ["Column Conventions", "Standard Columns"]
 ---
@@ -107,6 +107,18 @@ The choice is deliberate per relationship, never copied by habit:
 | `CASCADE` | The dependent row is meaningless without its parent | `workspace_members.workspace_id` — a membership in a deleted workspace means nothing |
 
 `RESTRICT` is the safer default when in doubt: it converts a data-loss accident into an error message.
+
+### A `RESTRICT` foreign key to `workspaces` is also a test-teardown obligation
+
+The protection has a cost that must be paid in the same change, and forgetting it breaks CI in a way that points at the wrong place.
+
+The shared fixture in `apps/api/tests/conftest.py` seeds a workspace for most database-backed tests and deletes it during teardown. Because every dependant listed above is `RESTRICT`, PostgreSQL refuses that delete while any dependent row survives — so **every new table taking a foreign key to `workspaces` must be added to `_WORKSPACE_DEPENDANTS` in the same change that creates it.**
+
+This has already been missed twice. [[STEP-17 AI Router and Provider Abstraction]] added `provider_credentials` and [[STEP-18 AI Cost Governance Controls]] added three more tables, none registered; CI failed with `ForeignKeyViolation: fk_ai_spend_records_workspace_id_workspaces`. The failure surfaces **in teardown**, so it appears in whichever database test happened to run last rather than in anything related to the new table — which is a slow way to find a one-line omission.
+
+`tests/test_teardown_completeness.py` now closes it: it queries the catalog for every table referencing `workspaces` and asserts the teardown list matches exactly, in both directions. A new unregistered table fails *there*, naming the table and the fix, instead of failing somewhere unrelated. A second test asserts those foreign keys are still `RESTRICT`, so the production guarantee cannot be quietly downgraded to `CASCADE` to make the error go away.
+
+One detail worth carrying: `ai_shutdown_switches.workspace_id` is **nullable** — a platform-wide kill switch belongs to no workspace. Teardown therefore deletes from these tables unqualified rather than filtering by `workspace_id`, which would leave platform-wide rows behind to leak into the next test.
 
 ## Enumerated Values
 

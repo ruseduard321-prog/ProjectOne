@@ -125,6 +125,25 @@ ALTER ROLE {_REQUEST_ROLE_NAME} WITH LOGIN PASSWORD '{_REQUEST_ROLE_PASSWORD}';
 # field.
 TEST_BYOK_KEY = "dGVzdC1ieW9rLWtleS0zMi1ieXRlcy1sb25nLXh4eHg="  # noqa: S105 - fake test key
 
+# Every table holding a foreign key to `public.workspaces`, in the order
+# teardown must delete them: dependants first, then `workspaces`, then `users`.
+#
+# All of them are `ON DELETE RESTRICT` by design -- see `admin_connection`.
+# Kept as one named list rather than inline statements so that adding a table
+# is a one-line edit next to the reason it exists, and so a test can assert the
+# list against the database's own catalog instead of trusting it.
+#
+# Order within the list is unconstrained: none of these reference each other,
+# only `workspaces`. It is alphabetical for readability, not for correctness.
+_WORKSPACE_DEPENDANTS = (
+    "ai_budgets",
+    "ai_shutdown_switches",
+    "ai_spend_records",
+    "audit_log",
+    "provider_credentials",
+    "workspace_members",
+)
+
 TEST_DATABASE_URL_VAR = "PROJECTONE_TEST_DATABASE_URL"
 
 # Set in CI. Turns "no database configured" from a skip into a failure.
@@ -254,20 +273,39 @@ def admin_connection(migrated_database: str) -> Iterator[psycopg.Connection]:
         yield connection
 
         with connection.cursor() as cursor:
-            # Order matters, and every step of it is a RESTRICT foreign key:
+            # Order matters, and every step of it is a RESTRICT foreign key.
             #
-            # - `audit_log.workspace_id` is RESTRICT, so a workspace cannot be
-            #   hard-deleted while its trail references it. That is deliberate
-            #   in production -- an audit trail must not be silently cascaded
-            #   away with the thing it records (migration `a3c07d5e91f4`) --
-            #   which means test teardown has to clear it explicitly.
-            # - `workspaces.owner_id` is RESTRICT, so users cannot be removed
-            #   while a workspace still references them.
+            # `workspaces` cannot be deleted while anything still references it,
+            # and every dependant below is deliberately RESTRICT rather than
+            # CASCADE: spend history, budgets, kill switches, provider keys and
+            # the audit trail must not be silently cascaded away with the
+            # workspace they describe. That production guarantee is exactly why
+            # teardown has to clear them explicitly.
+            #
+            # `workspaces.owner_id` is likewise RESTRICT, so `users` goes last.
+            # `workspace_members` is CASCADE on both sides, but is cleared here
+            # anyway so the delete order reads as the dependency order rather
+            # than relying on a cascade to cover part of it.
+            #
+            # **This list is not optional maintenance.** Any new table taking a
+            # foreign key to `workspaces` must be added here in the same change
+            # that creates it, or every database test that seeds a workspace
+            # starts failing teardown with a ForeignKeyViolation naming the new
+            # constraint. `test_teardown_covers_workspace_dependants` asserts
+            # this list is complete by querying the live FK graph, so the
+            # omission fails as a clear assertion rather than as a confusing
+            # violation in an unrelated test.
+            #
+            # Note `ai_shutdown_switches.workspace_id` is NULLABLE -- a
+            # platform-wide switch has no workspace. The unqualified DELETE is
+            # therefore load-bearing: a workspace-scoped one would leave
+            # platform-wide rows behind to leak into the next test.
             #
             # This is the owner connection, so it bypasses the grants that stop
             # a request from ever doing this.
-            cursor.execute("DELETE FROM public.audit_log")
-            cursor.execute("DELETE FROM public.workspace_members")
+            for table in _WORKSPACE_DEPENDANTS:
+                cursor.execute(f"DELETE FROM public.{table}")
+
             cursor.execute("DELETE FROM public.workspaces")
             cursor.execute("DELETE FROM public.users")
 
