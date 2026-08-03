@@ -2,7 +2,7 @@
 title: AI Router Implementation
 category: Architecture
 status: stable
-version: "1.0"
+version: "1.1"
 last_updated: 2026-08-03
 tags: [ai, backend, architecture, security, standards]
 aliases: ["AI Router", "Provider Abstraction", "BYOK"]
@@ -14,8 +14,10 @@ aliases: ["AI Router", "Provider Abstraction", "BYOK"]
 
 [[AI Providers]] specifies *what* this layer must do — BYOK, selection, health monitoring, retries, fallbacks, provider replacement. This note records *how* it is built and which decisions are now settled.
 
-> [!warning] No user-facing path reaches a provider yet
-> [[STEP-18 AI Cost Governance Controls]] is a **hard gate**. This step deliberately builds the machinery that *makes calls* before the machinery that *bounds spend*, which is only safe because nothing user-facing calls it. Putting a real provider call in front of a user before STEP-18 is `Done` is a plan problem to raise, not a risk to absorb.
+> [!note] The spend gate is now closed behind this layer
+> This step deliberately built the machinery that *makes calls* before the machinery that *bounds spend*. [[STEP-18 AI Cost Governance Controls]] is now `Done`, so that inversion is resolved: every call reaching this router has already passed a shutdown check, a spend breaker check and an atomic budget reservation — see [[AI Cost Governance]].
+>
+> **`AIRouter` must never be reached except through `AIService`.** It is not exposed as a route-level dependency, and `test_no_route_can_reach_the_router_without_the_ai_service` asserts that rather than trusting the convention. A second path here is a path that spends money with no ceiling.
 
 ## The Layering
 
@@ -110,7 +112,7 @@ Cost is last deliberately: a cheap provider that cannot do the job, is down, or 
 
 **Six upstream calls, absolute, per `complete()`.** They multiply rather than overlap. Both are constructor parameters so a deployment can lower them, both are refused below 1 at construction, and there is no "retry until success" branch anywhere to find.
 
-**This is not the spend ceiling.** Budget limits, spend tracking and anomaly detection are [[STEP-18 AI Cost Governance Controls]]'. What lives here bounds *runaway execution*; what lives there bounds *money*. Conflating them would put budget enforcement in a class whose failure mode is "try the next provider" — far too soft for a budget.
+**This is not the spend ceiling.** Budget limits, spend tracking and anomaly detection live in [[AI Cost Governance]]. What lives here bounds *runaway execution* within one `complete()`; what lives there bounds *money*, and adds `ExecutionBudget` to bound a whole multi-call **run**. Conflating them would put budget enforcement in a class whose failure mode is "try the next provider" — far too soft for a budget.
 
 **A fallback is disclosed on the response.** `CompletionResponse.served_after_fallback` plus `provider` and `model` mean a caller can always attribute an answer honestly. A silent fallback is exactly the "confident-sounding output" [[CLAUDE|CLAUDE.md]] §15 forbids.
 

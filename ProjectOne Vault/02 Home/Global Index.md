@@ -73,8 +73,9 @@ Every note in the vault, grouped by folder. This is the exhaustive map — for c
 - [[API Endpoints]]
 - [[Web Session Handling]]
 - [[AI Router Implementation]]
+- [[AI Cost Governance]]
 
-**Schema:** [[Schema Overview]] · [[Table Conventions]] · [[RLS Policy Pattern]] · [[Table - users]] · [[Table - workspaces]] · [[Table - workspace_members]] · [[Table - audit_log]] · [[Table - provider_credentials]]
+**Schema:** [[Schema Overview]] · [[Table Conventions]] · [[RLS Policy Pattern]] · [[Table - users]] · [[Table - workspaces]] · [[Table - workspace_members]] · [[Table - audit_log]] · [[Table - provider_credentials]] · [[Table - ai_spend_records]] · [[Table - ai_budgets]] · [[Table - ai_shutdown_switches]]
 
 ## 06 AI
 

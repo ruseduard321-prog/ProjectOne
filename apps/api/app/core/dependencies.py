@@ -29,6 +29,7 @@ from app.ai.router import AIRouter
 from app.core.config import Settings, get_settings
 from app.core.permissions import WorkspacePermission, WorkspaceRole
 from app.core.security import InvalidTokenError
+from app.repositories.ai_spend import AISpendRepository
 from app.repositories.audit import AuditRepository
 from app.repositories.database import DatabaseRepository
 from app.repositories.memberships import MembershipRepository
@@ -37,6 +38,7 @@ from app.repositories.session import RequestSessionFactory
 from app.repositories.supabase_auth import SupabaseAuthRepository
 from app.repositories.users import UserRepository
 from app.services.ai_service import AIService
+from app.services.ai_spend_service import AISpendService
 from app.services.audit_service import AuditService
 from app.services.auth_service import AuthService
 from app.services.authorization_service import AuthorizationService
@@ -431,12 +433,44 @@ ProviderCredentialServiceDep = Annotated[
 ]
 
 
+def get_ai_spend_repository(settings: SettingsDep) -> AISpendRepository:
+    """Construct the spend repository.
+
+    Takes `Settings` rather than a connection, unlike most repositories: its
+    enforcement methods run over the **privileged** connection deliberately, so
+    a ceiling is found whether or not the caller could see the row (see the
+    repository's module docstring). It opens its own connections rather than
+    joining the request's tenant transaction.
+    """
+    return AISpendRepository(settings)
+
+
+AISpendRepositoryDep = Annotated[AISpendRepository, Depends(get_ai_spend_repository)]
+
+
+def get_ai_spend_service(repository: AISpendRepositoryDep) -> AISpendService:
+    """Construct the spend governance service."""
+    return AISpendService(repository)
+
+
+AISpendServiceDep = Annotated[AISpendService, Depends(get_ai_spend_service)]
+
+
 def get_ai_service(
     router: AIRouterDep,
     credentials: ProviderCredentialServiceDep,
+    spend: AISpendServiceDep,
 ) -> AIService:
-    """Construct the AI service with its dependencies."""
-    return AIService(router, credentials)
+    """Construct the AI service with its dependencies.
+
+    `AIRouter` is deliberately reachable *only* through this service. Exposing
+    it as its own route-level dependency would create a second path to a
+    provider -- one that spends money without passing a single CLAUDE.md §15a
+    control, and one that would look perfectly ordinary at the call site.
+    `test_no_ai_call_path_bypasses_governance` asserts this rather than trusting
+    it.
+    """
+    return AIService(router, credentials, spend)
 
 
 AIServiceDep = Annotated[AIService, Depends(get_ai_service)]

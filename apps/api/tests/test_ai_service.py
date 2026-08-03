@@ -1,8 +1,9 @@
-"""The seam joining a workspace's credentials to the router.
+"""The seam joining a workspace's credentials, its spend ceilings and the router.
 
 Small, because the service is. The assertions worth making here are about
 *tenant scoping* -- that the key resolver handed to the router can only ever
-resolve keys for the workspace the request was made for.
+resolve keys for the workspace the request was made for -- and, since STEP-18,
+that no path through it reaches a provider without passing the spend controls.
 """
 
 from __future__ import annotations
@@ -18,7 +19,9 @@ from app.ai.health import ProviderHealthTracker
 from app.ai.provider import CompletionRequest, Message, Role
 from app.ai.router import AIRouter
 from app.services.ai_service import AIService
+from app.services.ai_spend_service import AISpendService
 from app.services.provider_credential_service import ProviderCredentialService
+from tests.fakes import FakeSpendRepository
 from tests.test_ai_router import FakeProvider
 from tests.test_byok_credentials import FakeRepository
 
@@ -34,15 +37,21 @@ def a_request() -> CompletionRequest:
 def build(
     providers: tuple[FakeProvider, ...],
 ) -> tuple[AIService, ProviderCredentialService]:
-    """Wire a service over fake providers and an in-memory credential store.
+    """Wire a service over fake providers, an in-memory store and open budgets.
 
     The credential service is returned alongside the AI service so tests seed
     keys through its public API rather than reaching into a private attribute.
+
+    The spend repository starts with **no configured budgets**, which means
+    unmetered rather than blocked -- these tests are about credential scoping,
+    and a ceiling would make every one of them fail for an unrelated reason.
+    Budget enforcement has its own suite (`test_ai_cost_governance.py`).
     """
     credentials = ProviderCredentialService(FakeRepository(), CredentialCipher(os.urandom(32)))
     router = AIRouter(providers, ProviderHealthTracker())
+    spend = AISpendService(FakeSpendRepository())
 
-    return AIService(router, credentials), credentials
+    return AIService(router, credentials, spend), credentials
 
 
 def test_a_workspace_with_no_keys_gets_an_honest_error() -> None:

@@ -67,6 +67,7 @@ Implemented (as opposed to intended model):
 - [[API Conventions]]
 - [[API Endpoints]]
 - [[AI Router Implementation]]
+- [[AI Cost Governance]]
 
 See also: [[Backend MOC]]
 
@@ -93,7 +94,7 @@ Implemented schema (as opposed to intended model):
 - [[Schema Overview]]
 - [[Table Conventions]]
 - [[RLS Policy Pattern]]
-- [[Table - users]] · [[Table - workspaces]] · [[Table - workspace_members]] · [[Table - audit_log]] · [[Table - provider_credentials]]
+- [[Table - users]] · [[Table - workspaces]] · [[Table - workspace_members]] · [[Table - audit_log]] · [[Table - provider_credentials]] · [[Table - ai_spend_records]] · [[Table - ai_budgets]] · [[Table - ai_shutdown_switches]]
 
 See also: [[Database MOC]]
 

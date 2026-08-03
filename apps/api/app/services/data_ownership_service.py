@@ -228,6 +228,125 @@ class AuditLogStore:
         return 0
 
 
+class ProviderCredentialStore:
+    """A workspace's BYOK provider keys: erasable, and exported without key material.
+
+    Registered by [[STEP-18 AI Cost Governance Controls]], closing a gap left by
+    STEP-17: the table was created without being registered here, so a workspace
+    erasure silently left encrypted provider keys behind. That is a CLAUDE.md §16
+    obligation rather than a nicety -- a key authorizing spend on the customer's
+    own upstream account is precisely what a departing customer needs removed.
+
+    **The export carries no key, not even the ciphertext.** `last_four` and the
+    provider name are what a user needs to know which keys they had configured;
+    the encrypted value would be a credential sitting in a file the user is
+    invited to download and email to themselves. `CredentialSummary` makes the
+    same choice structurally, and this query makes it by omission.
+    """
+
+    name = "provider_credentials"
+
+    def export(
+        self, connection: psycopg.Connection, workspace_id: uuid.UUID
+    ) -> list[ExportedRecord]:
+        """Return which providers a workspace had configured, never the keys."""
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT provider, last_four, created_at FROM public.provider_credentials "
+                "WHERE workspace_id = %s AND deleted_at IS NULL ORDER BY provider",
+                (workspace_id,),
+            )
+
+            return [
+                {"provider": row[0], "last_four": row[1], "created_at": row[2].isoformat()}
+                for row in cursor
+            ]
+
+    def erase(self, connection: psycopg.Connection, workspace_id: uuid.UUID) -> int:
+        """Soft-delete every stored provider key for a workspace.
+
+        An `UPDATE`, never a `DELETE` -- the table has no DELETE policy and
+        `authenticated` holds no DELETE grant, both deliberately
+        ([[RLS Policy Pattern]]).
+
+        Requires `owner` or `admin`, which the UPDATE policy enforces. The caller
+        reaching here already holds `DELETE_WORKSPACE`, so that is satisfied.
+        """
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE public.provider_credentials SET deleted_at = now() "
+                "WHERE workspace_id = %s AND deleted_at IS NULL",
+                (workspace_id,),
+            )
+
+            return cursor.rowcount
+
+
+class AISpendRecordStore:
+    """A workspace's AI spend ledger: exportable, deliberately **not** erasable.
+
+    The second documented retention exception after `AuditLogStore`, and it rests
+    on the same reasoning applied to a different obligation. A spend record is a
+    **financial record**: it substantiates what a customer was charged, and it is
+    the evidence behind any billing dispute, refund or chargeback. Letting the
+    party who incurred the spend also erase the record of it is the same defect
+    as letting an actor erase their own audit trail.
+
+    It also carries no personal data beyond the workspace it belongs to and an
+    optional `actor_id` -- token counts and dollar amounts, not content. Prompts
+    and completions are never stored here, which is why retaining it is
+    proportionate rather than an erasure loophole.
+
+    Like the audit log, the exception is made **visible** rather than silent: an
+    erasure result reports `"ai_spend_records": 0`, which a reader can question,
+    instead of the store being quietly absent from the registry.
+    """
+
+    name = "ai_spend_records"
+
+    def export(
+        self, connection: psycopg.Connection, workspace_id: uuid.UUID
+    ) -> list[ExportedRecord]:
+        """Return the workspace's spend history.
+
+        Subject to `ai_spend_records_select_same_workspace` like every other
+        read, so an export cannot reach another tenant's ledger by being handed
+        the wrong workspace id.
+        """
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT created_at, provider, model, workflow_type, "
+                "prompt_tokens, completion_tokens, cost_usd "
+                "FROM public.ai_spend_records "
+                "WHERE workspace_id = %s AND deleted_at IS NULL ORDER BY created_at",
+                (workspace_id,),
+            )
+
+            return [
+                {
+                    "created_at": row[0].isoformat(),
+                    "provider": row[1],
+                    "model": row[2],
+                    "workflow_type": row[3],
+                    "prompt_tokens": row[4],
+                    "completion_tokens": row[5],
+                    "cost_usd": str(row[6]),
+                }
+                for row in cursor
+            ]
+
+    def erase(self, _connection: psycopg.Connection, _workspace_id: uuid.UUID) -> int:
+        """Erase nothing, and report that plainly.
+
+        See the class docstring: a documented retention exception for financial
+        records, not a gap. It could not erase even if it wanted to -- the table
+        has no UPDATE policy and `authenticated` holds no UPDATE grant
+        (migration `b2e6f0a71c94`), so the ledger is append-only from every
+        client path.
+        """
+        return 0
+
+
 class DataOwnershipService:
     """Exports and erases everything a workspace owns."""
 
@@ -303,4 +422,9 @@ class DataOwnershipService:
 # the exception is visible: a store absent from the registry is invisible, while
 # one reporting `"audit_log": 0` in every erasure result is a disclosed
 # retention exception a reader can question.
-REGISTERED_STORES: tuple[ExportableStore, ...] = (WorkspaceMembersStore(), AuditLogStore())
+REGISTERED_STORES: tuple[ExportableStore, ...] = (
+    WorkspaceMembersStore(),
+    AuditLogStore(),
+    ProviderCredentialStore(),
+    AISpendRecordStore(),
+)

@@ -2,17 +2,17 @@
 title: STEP-18 AI Cost Governance Controls
 category: Development/Build Step
 status: draft
-version: "1.1"
+version: "2.0"
 last_updated: 2026-08-03
 tags: [engineering, workflow, build-step, ai,backend,security]
 step_id: STEP-18
-step_status: Not Started
+step_status: Done
 detail_level: full
 ---
 
 # STEP-18 — AI Cost Governance Controls
 
-**Status:** Not Started
+**Status:** Done
 **Detail level:** full — expanded by [[STEP-17 AI Router and Provider Abstraction]], per [[Execution Protocol]].
 
 ## Goal
@@ -23,8 +23,8 @@ Every [[CLAUDE|CLAUDE.md]] §15a control, built into the router rather than bolt
 
 §15a treats these as equivalent to a security requirement — skipping ahead is explicitly forbidden. Controls must be demonstrably **tripping under test**, not merely configured.
 
-> [!warning] This step is the gate, and the gate is currently closed
-> [[STEP-17 AI Router and Provider Abstraction]] built the machinery that *makes* AI calls before the machinery that *bounds spend*. That inversion is only safe because STEP-17 shipped **no HTTP routes** — nothing user-facing can reach a provider. **No AI call path may reach production until this step is `Done`.** If any scheduled work would put a real provider call in front of a user first, that is a plan problem to raise, not a risk to absorb.
+> [!success] The gate is now open
+> [[STEP-17 AI Router and Provider Abstraction]] built the machinery that *makes* AI calls before the machinery that *bounds spend*. That inversion was only safe because STEP-17 shipped **no HTTP routes**. With this step `Done`, AI call paths may reach production, subject to the usual review — [[STEP-19 Settings and BYOK UI]] adds the first ones.
 
 ## Prerequisites
 
@@ -76,6 +76,44 @@ Every §15a control exists, is enforced before spend rather than after, and has 
 **This is a Critical change** ([[CLAUDE|CLAUDE.md]] §21 — AI architecture, database schema, security controls, multi-tenancy) and carries an **owner approval gate**.
 
 **On completion, the STEP-17 gate opens**: AI call paths may reach production, subject to the usual review.
+
+---
+
+## Outcome
+
+Completed 2026-08-03. Architecture and reasoning: [[AI Cost Governance]]. Schema: [[Table - ai_spend_records]] · [[Table - ai_budgets]] · [[Table - ai_shutdown_switches]].
+
+### The central decision
+
+**A ceiling checked after the call is an invoice**, and the cost of a call is unknowable until after it returns. Resolved with **reserve → call → settle**: a pessimistic worst case is reserved atomically before the call and adjusted to the real figure afterwards.
+
+Three shapes were considered. Aggregating the ledger per check (`SELECT sum(cost)`) is correct but scans an unbounded table on every call *and* races. An in-process counter was refused outright by STEP-17's inherited note — N workers each permitting the full budget is N× the ceiling, which for money is a defect rather than an approximation. The chosen shape is a budget row with a **compare-and-increment in one statement**, so PostgreSQL's row lock settles concurrency rather than application logic that would have to be right on every path.
+
+### What was found by running it, not by reviewing it
+
+- **Six database connections per governed AI call**, against a Supabase session pooler limited to 15 — two concurrent calls would exhaust the pool and the third would fail to connect, turning a cost control into an availability failure. Observed as `EMAXCONNSESSION` during the concurrency test. `AISpendRepository.session()` collapses it to **one**, measured (6 → 1) rather than reasoned about, and guarded by a test.
+- **A governance refusal would have surfaced as HTTP 500.** No handler was registered, so a deliberate, correct control would have reached the client as a server crash. Now 402 for a budget or execution limit, 503 + `Retry-After` for a shutdown or breaker.
+- **`provider_credentials` was never registered for export or erasure** — a gap inherited from STEP-17, meaning a workspace erasure silently left encrypted provider keys behind ([[CLAUDE|CLAUDE.md]] §16). Fixed alongside registering this step's own spend store, since adding one while leaving the sibling broken would knowingly ship a §16 violation.
+- **Two test defects of my own**, both worth recording because the lesson generalises: an anomaly test asserted a return value that conflated *detection* with *tripping* (a workspace with no budget row has no breaker to trip), and a baseline-window test asserted a total under a threshold when the real property is that the spike is **absent from the baseline window** — the first version was testing the fixture's size.
+
+### The evidence
+
+**The negative controls, not the passing suite.** Each control's absence is reproduced and the breach observed: enforcement-after-the-call still spends, a read-then-write check admits two calls that together breach the ceiling, an unsettled reservation stays charged, an uncapped chain runs 50 calls, a mis-scoped switch stops nothing, a zero rate makes an unknown model free.
+
+**Against a live database, 34 checks passed**, including the two properties a fake structurally cannot demonstrate:
+
+- **Atomicity:** twenty concurrent threads reserving $1 against a $10 ceiling — exactly ten granted, running total landing on `10.000000` precisely.
+- **Isolation:** another tenant's spend invisible, forging a record refused, rewriting refused, deleting refused, the platform switch invisible and uncreatable — with RLS disabled mid-test to observe the breach and restored afterwards.
+
+All probe rows removed and the database confirmed back to its prior contents by query. Migration verified reversible (`downgrade` then `upgrade`).
+
+### Deliberate limitations
+
+- **An owner can currently zero their own `spent_usd`.** PostgreSQL policies are per-row, not per-column, and the UPDATE policy must exist for configuration. The mitigation is that the immutable ledger — not this counter — is what a billing reconciliation reads. `test_a_tenant_cannot_clear_its_own_running_total` documents the exposure honestly rather than asserting a protection that does not exist. Closing it is a column-level grant belonging to [[STEP-19 Settings and BYOK UI]].
+- **No budget is configured by default**, so a new workspace is unmetered. Refusing every call on a platform that has not asked anyone to set a limit is the wrong default; whether it stays that way is a launch decision ([[STEP-25 Launch Readiness Criteria]]).
+- **Anomaly detection runs inline** after each recorded call, adding two queries to the settle path. Near-real-time as §15a requires; a background evaluation is the natural evolution once a scheduler exists.
+- **Alerting is an `ERROR` log line**, not a pager. Routing it is infrastructure ([[Infrastructure]]), not application code.
+- **`test_ai_spend_isolation.py` (30 tests) is skipped by design** without `PROJECTONE_TEST_DATABASE_URL` — it creates and destroys rows, so it belongs in CI against a throwaway container, never the development project. Its coverage was obtained here by the live behavioural proof above.
 
 ---
 

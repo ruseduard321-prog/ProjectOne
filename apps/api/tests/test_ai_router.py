@@ -42,6 +42,8 @@ class FakeProvider(AIProvider):
         cost: float = 0.001,
         fail_with: Exception | None = None,
         capabilities: frozenset[Capability] | None = None,
+        usage: TokenUsage | None = None,
+        model: str = "fake-model",
     ) -> None:
         self._name = name
         self._cost = cost
@@ -49,6 +51,11 @@ class FakeProvider(AIProvider):
         self._capabilities = (
             capabilities if capabilities is not None else frozenset({Capability.CHAT_COMPLETION})
         )
+        # Added by STEP-18: the spend tests need to dictate reported usage and
+        # the model name, since those are what cost is computed from. Defaulted
+        # so every STEP-17 test constructs this exactly as before.
+        self._usage = usage if usage is not None else TokenUsage(1, 1)
+        self.model = model
         self.calls = 0
         self.keys_seen: list[str] = []
 
@@ -74,8 +81,8 @@ class FakeProvider(AIProvider):
         return CompletionResponse(
             content=f"answer from {self._name}",
             provider=self._name,
-            model="fake-model",
-            usage=TokenUsage(prompt_tokens=1, completion_tokens=1),
+            model=self.model,
+            usage=self._usage,
         )
 
 

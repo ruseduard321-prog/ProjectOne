@@ -54,10 +54,16 @@ A 422 carries a third key, `errors`, listing `field` / `message` / `type`. Field
 | `IdentityProviderError` | 503 | Ours, not the caller's — Supabase was unreachable, so the credentials were never judged. |
 | `AuthorizationError` / `WorkspaceAccessError` | 403 | Identity known; the answer is still no. |
 | `LastOwnerError` | 409 | Permission held; the workspace's *state* refuses. |
+| `BudgetExceededError` / `ExecutionLimitExceededError` | **402** | Well-formed and authorized; the workspace has spent its allowance. |
+| `AIShutdownError` / `SpendBreakerOpenError` | **503** + `Retry-After` | Operational and temporary; nothing about the caller is at fault. |
 | Validation failure | 422 | The request never formed a valid operation. |
 | Unhandled exception | 500 | Fixed message; the traceback goes to the log. |
 
 The 401/403 split must never be collapsed. `AuthorizationError` is deliberately not an `AuthError` subclass ([[Authorization Model]]) so a permission failure cannot be mistaken for a credential failure — which would send a correct client into a token-refresh loop over a settled "no".
+
+**402 rather than 403 for a spend ceiling**, and the distinction matters to the reader of the response: 403 says *"you may never do this"* and sends someone to the permission model, while a budget refusal succeeds again next period or once the limit is raised. See [[AI Cost Governance]].
+
+Registered by [[STEP-18 AI Cost Governance Controls]] **before any route can raise one**. Without the handler a deliberate, correct cost control would reach the client as a **500** — a control reported as a crash, sending a user to support and an engineer to a stack trace that does not exist. `ExecutionLimitExceededError` shares the 402 with the budget deliberately: from the caller's side both mean "this workflow consumed its allowance", and splitting them would leak how runs are bounded internally.
 
 ### Translation lives in handlers, not routers
 

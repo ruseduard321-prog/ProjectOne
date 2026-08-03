@@ -55,8 +55,8 @@ Status appears in two places — the step note and the row below — and they mu
 | STEP-12a | [[STEP-12a Trusted Proxy and Per-User Rate Limiting]] | Done | full |
 | STEP-16a | [[STEP-16a Developer Session Inspector]] | Done | full |
 | STEP-17 | [[STEP-17 AI Router and Provider Abstraction]] | Done | full |
-| STEP-18 | [[STEP-18 AI Cost Governance Controls]] | Not Started | full |
-| STEP-19 | [[STEP-19 Settings and BYOK UI]] | Not Started | outline |
+| STEP-18 | [[STEP-18 AI Cost Governance Controls]] | Done | full |
+| STEP-19 | [[STEP-19 Settings and BYOK UI]] | Not Started | full |
 | STEP-20 | [[STEP-20 Projects Schema and Lifecycle]] | Not Started | outline |
 | STEP-21 | [[STEP-21 Projects UI]] | Not Started | outline |
 | STEP-22 | [[STEP-22 Minimum Workflow Engine]] | Not Started | outline |
@@ -229,7 +229,17 @@ The three migrations were applied and the result verified: revision at head, `au
 
 **The AI Router is built, provider-agnostic, and reaches no user** (STEP-17). Two providers behind one ABC, proven by a single parametrized contract suite run against both rather than two bespoke suites. Selection follows [[AI Providers]]' documented order — preference → capability → availability → cost — and returns its reasoning as data rather than only logging it. **Two hard ceilings multiply to bound one request at six upstream calls**; both are refused below 1 at construction, and there is no "retry until success" branch to find. BYOK keys are RLS-protected tenant data, encrypted with AES-256-GCM under an environment key, with plaintext existing in exactly two places. Full detail in [[AI Router Implementation]].
 
-**[[STEP-18 AI Cost Governance Controls]] is a hard gate, and STEP-17 deliberately inverted the usual order.** The machinery that *makes* AI calls now exists before the machinery that *bounds spend*, which is only safe because nothing user-facing calls it: STEP-17 shipped no HTTP routes at all. Any scheduled work that would put a real provider call in front of a user before STEP-18 is `Done` is a plan problem to raise, not a risk to absorb.
+**Spend is now bounded before it is incurred, and the STEP-17 gate is open** (STEP-18). Every CLAUDE.md §15a control exists and has been observed *tripping*: per-workspace and per-workflow ceilings, a spend circuit breaker distinct from the availability one, recursion and wall-clock and token caps per run, near-real-time anomaly detection with teeth, and a deploy-free emergency shutdown at three scopes. Migration `b2e6f0a71c94` adds three tables. Full reasoning in [[AI Cost Governance]].
+
+**The central problem was that a budget must be enforced *before* a call whose cost is unknowable *until after* it.** Resolved as **reserve → call → settle**: a pessimistic worst case reserved atomically, then adjusted to the real figure. The reservation is a **compare-and-increment in one statement**, so PostgreSQL's row lock settles concurrency — the read-then-write alternative is a textbook TOCTOU race where two workers both read a total under the ceiling and both proceed. An in-process counter was refused outright: N workers each permitting the full budget is N× the ceiling, which for money is a defect rather than an approximation.
+
+**The evidence is the negative controls and a live database, not the passing suite.** Each control's absence is reproduced and the breach observed. Against the development database, 34 checks passed including the two properties a fake structurally cannot demonstrate: **twenty concurrent threads reserving $1 against a $10 ceiling granted exactly ten**, landing on `10.000000` precisely; and cross-tenant isolation with RLS disabled mid-test to observe the breach and restored afterwards. All probe rows removed and the database confirmed back to its prior contents.
+
+**Three defects were found by running it rather than reviewing it.** One governed call opened **six database connections** against a session pooler limited to 15 — two concurrent calls would exhaust it and the third would fail to connect, turning a cost control into an availability failure; a session collapses it to **one**, measured rather than assumed. A governance refusal had **no HTTP handler**, so a deliberate, correct control would have reached the client as a 500 — now 402 for a ceiling, 503 for a shutdown. And **`provider_credentials` was never registered for erasure** (a STEP-17 gap), so a workspace erasure silently left encrypted provider keys behind — fixed alongside registering this step's own store, since shipping one while leaving the sibling broken would knowingly ship a [[CLAUDE|CLAUDE.md]] §16 violation.
+
+**One exposure is recorded rather than glossed:** an owner can currently zero their own `spent_usd`, because PostgreSQL policies are per-row and the UPDATE policy must exist for configuration. The immutable ledger — not that counter — is what a billing reconciliation reads, and the test documents the exposure honestly instead of asserting a protection that does not exist. Closing it is a column-level grant belonging to STEP-19.
+
+**STEP-18 carries an owner approval gate** (Critical — AI architecture, database schema, security controls, multi-tenancy). STEP-19 does not begin until the owner confirms.
 
 **A cross-tenant key leak was caught during implementation, in the router's own first draft.** `AIRouter` held the request-scoped key resolver as instance state while being constructed once and shared across requests — so two concurrent requests would race and the loser would resolve **another workspace's** credential. Same class of defect as the pooled-connection claim leak STEP-10 reproduced, and now prevented structurally: the resolver is a parameter, so there is no attribute to race on.
 

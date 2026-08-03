@@ -52,6 +52,19 @@ from fastapi import HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+# `app.core` importing `app.ai` is worth a word, because the name suggests the
+# opposite direction. This module is not a general-purpose core utility -- it is
+# the application's *error contract*, whose whole job is knowing every error type
+# the application can raise and what HTTP answer each deserves. It already
+# imports `app.core.security`'s hierarchy for the same reason.
+#
+# `app.ai.governance` imports only `app.ai.errors` and `app.core.logging`, so
+# there is no cycle; verified by importing `app.main`. The alternative -- a
+# local import inside the handler, as `app.core.config` uses for `parse_encryption_key`
+# -- was rejected here: config genuinely is a lower layer that must not know
+# about AI, whereas an error contract that does not name an error it must
+# translate is an error contract with a hole in it.
+from app.ai.governance import AIShutdownError, GovernanceError, SpendBreakerOpenError
 from app.core.api import current_request_id
 from app.core.logging import get_logger, log_context
 from app.core.security import (
@@ -244,6 +257,59 @@ def _unhandled(_request: Request, exception: Exception) -> JSONResponse:
     return error_response(status.HTTP_500_INTERNAL_SERVER_ERROR, "Internal server error")
 
 
+def _governance_refusal(_request: Request, exception: Exception) -> JSONResponse:
+    """Translate a cost-governance refusal into 402 or 503.
+
+    Registered by [[STEP-18 AI Cost Governance Controls]], before any route can
+    raise one. Without an entry here a budget refusal would reach the client as
+    a **500** -- a deliberate, correct control reported as a server crash, which
+    would send a user to support and an engineer to a stack trace that does not
+    exist.
+
+    Two statuses, because the two refusals are genuinely different answers:
+
+    - **402 Payment Required** for a budget ceiling. The request was well-formed
+      and authorized, and the workspace has spent its allowance. It succeeds
+      again next period, or once the limit is raised -- which is what 402 means
+      more precisely than any 4xx alternative. 403 would say "you may never do
+      this", which is wrong and sends the reader to the permission model.
+    - **503 Service Unavailable** for a shutdown or a tripped breaker. Nothing
+      about the caller is at fault, and the condition is operational and
+      temporary -- the same reasoning that makes `IdentityProviderError` a 503
+      rather than a 401.
+
+    `ExecutionLimitExceededError` is a 400-class refusal of the *run* rather than
+    a spend condition, but it is deliberately answered as 402 alongside the
+    budget: from the caller's side both mean "this workflow consumed its
+    allowance", and splitting them would leak how ProjectOne bounds runs.
+
+    Retryable governance refusals carry `Retry-After`, like the rate limiter's
+    429 -- a client told to back off without being told how long backs off
+    arbitrarily.
+    """
+    logger.warning(log_context(event="ai_governance_refusal", cause=type(exception).__name__))
+
+    message = getattr(exception, "public_message", GovernanceError.public_message)
+
+    if isinstance(exception, AIShutdownError | SpendBreakerOpenError):
+        return error_response(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            message,
+            headers={"Retry-After": str(_GOVERNANCE_RETRY_AFTER_SECONDS)},
+        )
+
+    return error_response(status.HTTP_402_PAYMENT_REQUIRED, message)
+
+
+#: What a client is told to wait before retrying a shutdown or breaker refusal.
+#:
+#: Deliberately long. Neither condition clears on its own: a shutdown is lifted
+#: by an operator and a spend breaker is reset manually, so a short value would
+#: invite a client to hammer an endpoint that will refuse it identically for as
+#: long as the incident lasts.
+_GOVERNANCE_RETRY_AFTER_SECONDS = 300
+
+
 #: Every handler the application registers, in one table.
 #:
 #: A table rather than a sequence of `add_exception_handler` calls in the
@@ -259,6 +325,7 @@ EXCEPTION_HANDLERS: tuple[tuple[type[Exception] | int, Any], ...] = (
     (AuthorizationError, _authorization_denied),
     (LastOwnerError, _last_owner_conflict),
     (RateLimitExceededError, _rate_limit_exceeded),
+    (GovernanceError, _governance_refusal),
     (RequestValidationError, _validation_failed),
     (HTTPException, _http_exception),
     (Exception, _unhandled),

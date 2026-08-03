@@ -16,7 +16,7 @@ If the two disagree, this note describes reality and the other describes intent 
 
 ## Current Tables
 
-As of [[STEP-13 Auth Users Workspaces Endpoints]]:
+As of [[STEP-18 AI Cost Governance Controls]]:
 
 | Table | Purpose | Tenant-scoped | RLS |
 |---|---|---|---|
@@ -25,8 +25,16 @@ As of [[STEP-13 Auth Users Workspaces Endpoints]]:
 | [[Table - workspace_members]] | User ↔ workspace membership with role | Yes | ✅ Enabled + forced |
 | [[Table - audit_log]] | Who changed what, and when — append-only | Yes | ✅ Enabled + forced (SELECT only) |
 | [[Table - provider_credentials]] | Workspace AI provider keys (BYOK), encrypted at rest | Yes | ✅ Enabled + forced |
+| [[Table - ai_spend_records]] | The AI spend ledger — append-only | Yes | ✅ Enabled + forced (SELECT only) |
+| [[Table - ai_budgets]] | Spend ceilings, running totals and the spend breaker | Yes | ✅ Enabled + forced |
+| [[Table - ai_shutdown_switches]] | Emergency stop for AI spend, at three scopes | Yes, **except the platform row** | ✅ Enabled + forced |
 
-[[Table - audit_log]] is the one table that deliberately breaks [[Table Conventions]]: no `deleted_at`, no `version`, no `touch_row` trigger, and a single SELECT policy. Those departures are its security property — an audit record its own subject can edit or remove is not an audit record.
+Two tables deliberately break [[Table Conventions]], and in both cases the departure **is** the security property:
+
+- [[Table - audit_log]] — no `deleted_at`, no `version`, no `touch_row` trigger, and a single SELECT policy. An audit record its own subject can edit or remove is not an audit record.
+- [[Table - ai_spend_records]] — keeps the standard columns but has no INSERT or UPDATE policy and no trigger. A client-writable spend ledger is forgeable, and a workspace could flood it to poison its own anomaly baseline.
+
+[[Table - ai_shutdown_switches]] holds the schema's one **nullable** tenant column: `workspace_id IS NULL` means platform-wide, so that row belongs to no tenant and is deliberately unreachable by every RLS policy.
 
 `alembic_version` also exists — Alembic's own migration tracking table, not application schema.
 
@@ -72,6 +80,7 @@ Applied in order. History is append-only: a correction is a new migration, never
 | `b8e1d94c50a7` | Make membership removal possible; move the `deleted_at` filter out of the SELECT policy and add the last-owner trigger | [[STEP-11a Membership Removal Policy]] |
 | `a3c07d5e91f4` | Create the append-only `audit_log` with its SELECT-only policy and grants | [[STEP-13 Auth Users Workspaces Endpoints]] |
 | `f1a4c8d29b57` | Create `provider_credentials` for BYOK keys, with membership-scoped reads and role-scoped writes | [[STEP-17 AI Router and Provider Abstraction]] |
+| `b2e6f0a71c94` | Create `ai_spend_records`, `ai_budgets` and `ai_shutdown_switches` — the spend ledger, the ceilings, and the emergency stop | [[STEP-18 AI Cost Governance Controls]] |
 
 Apply with `./scripts/migrate.sh up` (or `.\scripts\migrate.ps1 up`); see `scripts/README.md`.
 
@@ -85,6 +94,10 @@ Apply with `./scripts/migrate.sh up` (or `.\scripts\migrate.ps1 up`); see `scrip
 | `trg_workspaces_touch_row` | Trigger | Attaches `touch_row()` to `workspaces` |
 | `trg_workspace_members_touch_row` | Trigger | Attaches `touch_row()` to `workspace_members` |
 | `trg_provider_credentials_touch_row` | Trigger | Attaches `touch_row()` to `provider_credentials` |
+| `trg_ai_budgets_touch_row` | Trigger | Attaches `touch_row()` to `ai_budgets` |
+| `trg_ai_shutdown_switches_touch_row` | Trigger | Attaches `touch_row()` to `ai_shutdown_switches` |
+
+`ai_spend_records` deliberately has **no** `touch_row` trigger: it is append-only, so there is no UPDATE for one to fire on.
 
 ## Roles
 
