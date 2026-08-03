@@ -25,6 +25,7 @@ from app.core.dependencies import (
 from app.core.security import InvalidTokenError, SigningKeyUnavailableError
 from app.main import create_app
 from app.services.token_service import AuthenticatedUser
+from tests.conftest import TEST_BYOK_KEY
 from tests.test_health import StubDatabase
 
 
@@ -36,6 +37,7 @@ def make_settings() -> Settings:
         SUPABASE_SECRET_KEY=SecretStr("unused"),
         DATABASE_URL=SecretStr("postgresql://unused/db"),
         REQUEST_DATABASE_URL=SecretStr("postgresql://unused/db"),
+        byok_encryption_key=SecretStr(TEST_BYOK_KEY),
         _env_file=None,
     )
 

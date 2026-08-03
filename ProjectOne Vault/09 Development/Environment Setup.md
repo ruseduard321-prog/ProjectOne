@@ -99,7 +99,7 @@ Two details worth knowing before editing these rules:
    cp apps/web/.env.example apps/web/.env.local
    ```
 
-   The web template's defaults are correct as-is. **`apps/api/.env` needs real Supabase credentials** — the API will not start without `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `DATABASE_URL` and `REQUEST_DATABASE_URL`. Get the first three from the Supabase dashboard (Project Settings → API and → Database); the fourth is set in step 6 below. Neither file is ever committed.
+   The web template's defaults are correct as-is. **`apps/api/.env` needs real Supabase credentials** — the API will not start without `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `DATABASE_URL`, `REQUEST_DATABASE_URL` and `PROJECTONE_BYOK_ENCRYPTION_KEY`. Get the first three from the Supabase dashboard (Project Settings → API and → Database); the fourth is set in step 6 below and the fifth in step 7. Neither file is ever committed.
 5. Apply migrations so the local database schema matches the code: `./scripts/migrate.sh up` (or `.\scripts\migrate.ps1 up`). Safe to re-run — it is a no-op when already current.
 6. **Give the request-path role a password.** Migration `d7b95c1f4e08` creates `projectone_api` — the role the API serves requests as, which unlike `postgres` does not bypass RLS ([[Authentication Implementation]]). The migration deliberately sets no password, because a credential in a migration is a credential in source control. Set one per environment in the Supabase SQL editor:
 
@@ -110,10 +110,24 @@ Two details worth knowing before editing these rules:
    Then put it in `REQUEST_DATABASE_URL`, using the same host and database as `DATABASE_URL` but with this role and password.
 
    **This must be repeated after any rollback past `d7b95c1f4e08`** — the downgrade drops the role, so the recreated one has no password and the API fails to connect until it is set again.
-7. Ensure `.mcp.json` is present at the project root — the Filesystem server bootstraps automatically via `npx` on first use, no manual install step required.
-8. Terminal, Playwright (Chromium), and Computer Use are available immediately with no setup — they ship with the Claude Code harness itself.
-9. If GitHub operations are needed, confirm the GitHub MCP server is configured at the appropriate level (user/global config) — this is outside `.mcp.json` and outside this repository's version control.
-10. Firefox and WebKit browser binaries are **not** installed by default (Chromium only) — install deliberately with `npx playwright install firefox webkit` only if cross-browser manual validation becomes necessary; this is a real download/disk-write action, not a no-op.
+
+   > [!warning] This pairing has no automated consistency check
+   > The role's password lives only in the database; `REQUEST_DATABASE_URL` lives only in git-ignored `.env`. Nothing validates that they still agree, so a mismatch is invisible until the first request that touches a tenant table — which cost most of a session on 2026-08-03. [[DOC-02 Validate the Request-Path Credential at Startup]] proposes the fix and is unscheduled.
+
+7. **Generate the BYOK encryption key** (required as of [[STEP-17 AI Router and Provider Abstraction]]). Workspace AI provider keys are encrypted at rest with it, and the API refuses to start without a valid one — the alternative would be storing customer provider keys in plaintext.
+
+   ```bash
+   python -c "import base64,os; print(base64.b64encode(os.urandom(32)).decode())"
+   ```
+
+   Put the result in `PROJECTONE_BYOK_ENCRYPTION_KEY`. **Per environment, never shared, never committed** ([[CLAUDE|CLAUDE.md]] §28a) — it is a secret in the same class as `DATABASE_URL`.
+
+   **Rotation is not supported yet.** Changing this value makes every stored provider credential undecryptable, and each workspace must re-enter its keys.
+
+8. Ensure `.mcp.json` is present at the project root — the Filesystem server bootstraps automatically via `npx` on first use, no manual install step required.
+9. Terminal, Playwright (Chromium), and Computer Use are available immediately with no setup — they ship with the Claude Code harness itself.
+10. If GitHub operations are needed, confirm the GitHub MCP server is configured at the appropriate level (user/global config) — this is outside `.mcp.json` and outside this repository's version control.
+11. Firefox and WebKit browser binaries are **not** installed by default (Chromium only) — install deliberately with `npx playwright install firefox webkit` only if cross-browser manual validation becomes necessary; this is a real download/disk-write action, not a no-op.
 
 ## Known Gaps
 

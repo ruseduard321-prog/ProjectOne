@@ -166,7 +166,11 @@ An optional single-hop platform header (`PROJECTONE_CLIENT_ADDRESS_HEADER`, e.g.
 | `app/core/middleware.py` | Correlation id, request logging, public-path rate limiting |
 | `app/core/client_address.py` | Trusted-proxy resolution — pure, framework-free, exhaustively tested |
 | `app/core/user_rate_limit.py` | Per-user rate limiting (`limit_by_user`) for authenticated routes |
+| `app/ai/` | The provider-agnostic AI layer — see [[AI Router Implementation]]. Imports no FastAPI, so its failures reach HTTP only through the handler table above |
 | `app/main.py` | Registers the above; defines no mapping itself |
+
+> [!note] AI provider failures have no handler entry yet
+> [[STEP-17 AI Router and Provider Abstraction]] deliberately shipped no HTTP routes, so nothing raises a `ProviderError` into the handler chain. The exception classes already carry `public_message` in the established shape, so the step that adds the first AI endpoint adds **one row to `EXCEPTION_HANDLERS`** — never a `try/except` in a route.
 
 ## What This Step Did Not Build
 

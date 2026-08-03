@@ -18,6 +18,7 @@ from app.core.dependencies import get_database_repository
 from app.main import create_app
 from app.repositories.database import DatabaseRepository
 from app.services.health_service import HealthService
+from tests.conftest import TEST_BYOK_KEY
 
 
 class StubDatabase(DatabaseRepository):
@@ -55,6 +56,9 @@ def make_settings(**overrides: object) -> Settings:
         # are different roles in every real environment, and a test fixture that
         # collapsed them would model a configuration that must never exist.
         "REQUEST_DATABASE_URL": "postgresql://projectone_api:test@127.0.0.1:5432/test",
+        # Required as of STEP-17. Shared from conftest so the next required
+        # setting is one edit rather than eight.
+        "byok_encryption_key": TEST_BYOK_KEY,
     }
     values.update(overrides)
 

@@ -19,7 +19,7 @@ from pydantic import SecretStr
 
 from app.core.config import Environment, Settings
 from app.repositories.session import RequestSessionFactory
-from tests.conftest import seed_identity
+from tests.conftest import TEST_BYOK_KEY, seed_identity
 
 
 def make_settings(request_url: str, admin_url: str) -> Settings:
@@ -30,6 +30,7 @@ def make_settings(request_url: str, admin_url: str) -> Settings:
         SUPABASE_SECRET_KEY=SecretStr("not-used-here"),
         DATABASE_URL=SecretStr(admin_url),
         REQUEST_DATABASE_URL=SecretStr(request_url),
+        byok_encryption_key=SecretStr(TEST_BYOK_KEY),
         _env_file=None,
     )
 

@@ -23,6 +23,7 @@ from collections.abc import Iterator
 import pytest
 from fastapi import APIRouter, Depends, FastAPI
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
 
 from app.core.api import API_PREFIX
 from app.core.config import Environment, Settings, get_settings
@@ -32,6 +33,7 @@ from app.core.middleware import RateLimitMiddleware, RateLimitRule, RequestConte
 from app.core.user_rate_limit import UserRateLimiter, get_user_rate_limiter, limit_by_user
 from app.main import create_app
 from app.services.token_service import AuthenticatedUser
+from tests.conftest import TEST_BYOK_KEY
 from tests.test_auth_endpoints import StubTokenService, make_settings
 from tests.test_health import StubDatabase
 
@@ -78,6 +80,7 @@ def settings_trusting_the_test_client() -> Settings:
         SUPABASE_SECRET_KEY=make_settings().supabase_secret_key,
         DATABASE_URL=make_settings().database_url,
         REQUEST_DATABASE_URL=make_settings().request_database_url,
+        byok_encryption_key=SecretStr(TEST_BYOK_KEY),
         _env_file=None,
     )
 

@@ -24,6 +24,7 @@ As of [[STEP-13 Auth Users Workspaces Endpoints]]:
 | [[Table - workspaces]] | The tenant boundary | Is the boundary | ✅ Enabled + forced |
 | [[Table - workspace_members]] | User ↔ workspace membership with role | Yes | ✅ Enabled + forced |
 | [[Table - audit_log]] | Who changed what, and when — append-only | Yes | ✅ Enabled + forced (SELECT only) |
+| [[Table - provider_credentials]] | Workspace AI provider keys (BYOK), encrypted at rest | Yes | ✅ Enabled + forced |
 
 [[Table - audit_log]] is the one table that deliberately breaks [[Table Conventions]]: no `deleted_at`, no `version`, no `touch_row` trigger, and a single SELECT policy. Those departures are its security property — an audit record its own subject can edit or remove is not an audit record.
 
@@ -70,6 +71,7 @@ Applied in order. History is append-only: a correction is a new migration, never
 | `9f4d2c7a1b83` | Make the UPDATE policies role-aware, and add the role-filtered membership helper | [[STEP-11 Authorization and RBAC]] |
 | `b8e1d94c50a7` | Make membership removal possible; move the `deleted_at` filter out of the SELECT policy and add the last-owner trigger | [[STEP-11a Membership Removal Policy]] |
 | `a3c07d5e91f4` | Create the append-only `audit_log` with its SELECT-only policy and grants | [[STEP-13 Auth Users Workspaces Endpoints]] |
+| `f1a4c8d29b57` | Create `provider_credentials` for BYOK keys, with membership-scoped reads and role-scoped writes | [[STEP-17 AI Router and Provider Abstraction]] |
 
 Apply with `./scripts/migrate.sh up` (or `.\scripts\migrate.ps1 up`); see `scripts/README.md`.
 
@@ -82,6 +84,7 @@ Apply with `./scripts/migrate.sh up` (or `.\scripts\migrate.ps1 up`); see `scrip
 | `trg_users_touch_row` | Trigger | Attaches `touch_row()` to `users` |
 | `trg_workspaces_touch_row` | Trigger | Attaches `touch_row()` to `workspaces` |
 | `trg_workspace_members_touch_row` | Trigger | Attaches `touch_row()` to `workspace_members` |
+| `trg_provider_credentials_touch_row` | Trigger | Attaches `touch_row()` to `provider_credentials` |
 
 ## Roles
 

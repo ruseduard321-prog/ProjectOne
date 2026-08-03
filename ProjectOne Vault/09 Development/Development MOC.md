@@ -2,7 +2,7 @@
 title: Development MOC
 category: MOC
 status: stable
-version: "1.3"
+version: "1.4"
 last_updated: 2026-08-03
 tags: [moc, engineering, documentation]
 aliases: ["Development Map of Content"]
@@ -35,6 +35,7 @@ Practices, standards and process documentation for day-to-day engineering work.
 Standalone documentation corrections that are not Build Plan steps — no code, no release dependency, and no slot in the build sequence.
 
 - [[DOC-01 Align ADR Template with CLAUDE.md]] — the ADR template's status vocabulary diverges from [[CLAUDE|CLAUDE.md]] §7 (missing `Review` and `Rejected`)
+- [[DOC-02 Validate the Request-Path Credential at Startup]] — `REQUEST_DATABASE_URL` is checked for presence, never for whether it actually authenticates; a mismatch surfaces on the first tenant request rather than at boot
 
 ## Environment & Tooling
 

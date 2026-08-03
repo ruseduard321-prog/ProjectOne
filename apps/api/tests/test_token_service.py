@@ -18,6 +18,7 @@ from pydantic import SecretStr
 from app.core.config import Environment, Settings
 from app.core.security import InvalidTokenError, SigningKeyUnavailableError
 from app.services.token_service import TokenService
+from tests.conftest import TEST_BYOK_KEY
 
 ISSUER = "https://project.test/auth/v1"
 
@@ -37,6 +38,7 @@ def settings() -> Settings:
         SUPABASE_SECRET_KEY=SecretStr("unused"),
         DATABASE_URL=SecretStr("postgresql://unused/db"),
         REQUEST_DATABASE_URL=SecretStr("postgresql://unused/db"),
+        byok_encryption_key=SecretStr(TEST_BYOK_KEY),
         _env_file=None,
     )
 

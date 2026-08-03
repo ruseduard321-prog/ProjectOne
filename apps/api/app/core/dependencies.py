@@ -20,21 +20,30 @@ from fastapi import Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt import PyJWKClient
 
+from app.ai.crypto import CredentialCipher, parse_encryption_key
+from app.ai.health import ProviderHealthTracker
+from app.ai.provider import AIProvider
+from app.ai.providers.anthropic import AnthropicProvider
+from app.ai.providers.openai import OpenAIProvider
+from app.ai.router import AIRouter
 from app.core.config import Settings, get_settings
 from app.core.permissions import WorkspacePermission, WorkspaceRole
 from app.core.security import InvalidTokenError
 from app.repositories.audit import AuditRepository
 from app.repositories.database import DatabaseRepository
 from app.repositories.memberships import MembershipRepository
+from app.repositories.provider_credentials import ProviderCredentialRepository
 from app.repositories.session import RequestSessionFactory
 from app.repositories.supabase_auth import SupabaseAuthRepository
 from app.repositories.users import UserRepository
+from app.services.ai_service import AIService
 from app.services.audit_service import AuditService
 from app.services.auth_service import AuthService
 from app.services.authorization_service import AuthorizationService
 from app.services.data_ownership_service import REGISTERED_STORES, DataOwnershipService
 from app.services.health_service import HealthService
 from app.services.membership_service import MembershipService
+from app.services.provider_credential_service import ProviderCredentialService
 from app.services.token_service import AuthenticatedUser, TokenService, build_jwk_client
 from app.services.workspace_service import WorkspaceService
 
@@ -322,3 +331,112 @@ def requires(permission: WorkspacePermission) -> Callable[..., WorkspaceRole]:
 def user_id_of(user: AuthenticatedUser) -> uuid.UUID:
     """Return the identifier of a verified user."""
     return user.id
+
+
+@lru_cache
+def _provider_health_tracker() -> ProviderHealthTracker:
+    """Return the process-wide provider health tracker.
+
+    Cached because the breaker *is* accumulated state: a per-request tracker
+    would start empty every time, so a provider could never reach the failure
+    threshold and would be retried on every single request during an outage --
+    the exact behaviour `app.ai.health` exists to prevent.
+
+    Per process, so N workers track independently. A stated approximation, with
+    the same resolution as the rate limiter's: a shared store is a new
+    infrastructure dependency needing its own ADR (CLAUDE.md §10, §28).
+    """
+    return ProviderHealthTracker()
+
+
+@lru_cache
+def _credential_cipher(encoded_key: str) -> CredentialCipher:
+    """Return the process-wide cipher for a given key.
+
+    Cached on the key itself rather than on `Settings`, which is unhashable --
+    the same pattern as `_jwk_client`. Constructing an `AESGCM` per request
+    would re-derive the key schedule on every call for no benefit.
+    """
+    return CredentialCipher(parse_encryption_key(encoded_key))
+
+
+def get_ai_providers(settings: SettingsDep) -> tuple[AIProvider, ...]:
+    """Return every provider this deployment can route to.
+
+    The registry, and deliberately the *only* place provider classes are named.
+    Adding a provider is one entry here plus its adapter module -- the router,
+    the selection logic and every test reach providers through this tuple rather
+    than by importing a class (CLAUDE.md §7 -- replaceable without redesign).
+    """
+    return (
+        OpenAIProvider(timeout_seconds=settings.ai_provider_timeout_seconds),
+        AnthropicProvider(timeout_seconds=settings.ai_provider_timeout_seconds),
+    )
+
+
+AIProvidersDep = Annotated[tuple[AIProvider, ...], Depends(get_ai_providers)]
+
+
+def get_ai_router(providers: AIProvidersDep) -> AIRouter:
+    """Construct the AI router over the configured providers.
+
+    The router is cheap to build and holds no per-request state -- the health
+    tracker it consults is the cached one, and the key resolver is passed per
+    call rather than held (see `AIRouter._attempt_provider`). Building it per
+    request is therefore correct and keeps the wiring uniform.
+    """
+    return AIRouter(providers, _provider_health_tracker())
+
+
+AIRouterDep = Annotated[AIRouter, Depends(get_ai_router)]
+
+
+def get_provider_credential_repository(
+    connection: TenantConnectionDep,
+) -> ProviderCredentialRepository:
+    """Construct the credential repository over the request's tenant connection.
+
+    `TenantConnectionDep`, never the privileged one. A provider key is tenant
+    data, so RLS is what keeps one workspace's key away from another -- reaching
+    this table over the privileged connection would look identical here and have
+    no isolation at all (RLS Policy Pattern).
+    """
+    return ProviderCredentialRepository(connection)
+
+
+ProviderCredentialRepositoryDep = Annotated[
+    ProviderCredentialRepository, Depends(get_provider_credential_repository)
+]
+
+
+def get_provider_credential_service(
+    settings: SettingsDep,
+    repository: ProviderCredentialRepositoryDep,
+) -> ProviderCredentialService:
+    """Construct the BYOK credential service.
+
+    The encryption key is unwrapped here rather than inside the service, so the
+    wiring layer remains the one readable place where a secret is handed to the
+    code that uses it -- the same reasoning as the privileged DSN in
+    `get_workspace_service`.
+    """
+    return ProviderCredentialService(
+        repository,
+        _credential_cipher(settings.byok_encryption_key.get_secret_value()),
+    )
+
+
+ProviderCredentialServiceDep = Annotated[
+    ProviderCredentialService, Depends(get_provider_credential_service)
+]
+
+
+def get_ai_service(
+    router: AIRouterDep,
+    credentials: ProviderCredentialServiceDep,
+) -> AIService:
+    """Construct the AI service with its dependencies."""
+    return AIService(router, credentials)
+
+
+AIServiceDep = Annotated[AIService, Depends(get_ai_service)]

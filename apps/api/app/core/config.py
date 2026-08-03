@@ -128,6 +128,30 @@ class Settings(BaseSettings):
     # honour a header any client could send once a proxy is trusted.
     client_address_header: str = ""
 
+    # The AES-256 key BYOK provider credentials are encrypted with, base64
+    # encoded (32 bytes -> 44 characters). Required: the alternative to a
+    # configured key is storing provider keys in plaintext, and a default here
+    # would be a hardcoded encryption key shared by every deployment -- which is
+    # not encryption (CLAUDE.md §16).
+    #
+    # Generate one with:
+    #   python -c "import base64,os; print(base64.b64encode(os.urandom(32)).decode())"
+    #
+    # Rotating it makes every stored credential undecryptable until each
+    # workspace re-enters its keys; there is no re-encryption path yet, and that
+    # limitation is recorded in the step note rather than hidden here.
+    # No explicit alias, unlike the Supabase fields above: those carry one
+    # because Supabase names them, so a PROJECTONE_ prefix would contradict
+    # every dashboard and tutorial. This variable is ProjectOne's own, so it
+    # takes the standard prefix and reads as PROJECTONE_BYOK_ENCRYPTION_KEY.
+    byok_encryption_key: SecretStr
+
+    # Per-attempt timeout for an AI provider call. Bounded for the same reason
+    # every other timeout here is: one hanging upstream call must not hold a
+    # worker open indefinitely. Generous relative to the others because
+    # generation genuinely is slow -- a completion is not a health check.
+    ai_provider_timeout_seconds: float = 30.0
+
     @property
     def trusted_proxy_networks(self) -> tuple[IPv4Network | IPv6Network, ...]:
         """Return the parsed trusted-proxy allowlist.
@@ -207,6 +231,24 @@ def get_settings() -> Settings:
             f"ProjectOne API cannot start: {Settings.model_config['env_prefix']}TRUSTED_PROXIES "
             f"is invalid.\n  - {error}\n"
             "See apps/api/.env.example for the expected format."
+        )
+
+    # Validated at startup for the same reason as the allowlist above: a
+    # malformed encryption key means every BYOK operation fails, and finding
+    # that out on a user's first AI call is strictly worse than not starting.
+    #
+    # Imported here rather than at module scope to keep `app.core.config` free
+    # of a dependency on `app.ai` -- configuration is the lower layer, and an
+    # import in that direction would invert it (CLAUDE.md §28).
+    from app.ai.crypto import CredentialEncryptionError, parse_encryption_key
+
+    try:
+        parse_encryption_key(settings.byok_encryption_key.get_secret_value())
+    except CredentialEncryptionError as error:
+        sys.exit(
+            f"ProjectOne API cannot start: {Settings.model_config['env_prefix']}"
+            f"BYOK_ENCRYPTION_KEY is invalid.\n  - {error}\n"
+            "See apps/api/.env.example for how to generate one."
         )
 
     if not trusted:

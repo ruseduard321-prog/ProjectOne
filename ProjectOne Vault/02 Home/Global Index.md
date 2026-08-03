@@ -68,8 +68,13 @@ Every note in the vault, grouped by folder. This is the exhaustive map — for c
 
 - [[Architecture MOC]]
 - [[Authentication Implementation]]
+- [[Authorization Model]]
+- [[API Conventions]]
+- [[API Endpoints]]
+- [[Web Session Handling]]
+- [[AI Router Implementation]]
 
-**Schema:** [[Schema Overview]] · [[Table Conventions]] · [[RLS Policy Pattern]] · [[Table - users]] · [[Table - workspaces]] · [[Table - workspace_members]]
+**Schema:** [[Schema Overview]] · [[Table Conventions]] · [[RLS Policy Pattern]] · [[Table - users]] · [[Table - workspaces]] · [[Table - workspace_members]] · [[Table - audit_log]] · [[Table - provider_credentials]]
 
 ## 06 AI
 
@@ -104,6 +109,7 @@ Every note in the vault, grouped by folder. This is the exhaustive map — for c
 - [[Environment Setup]]
 - [[Environment and Secrets]]
 - [[DOC-01 Align ADR Template with CLAUDE.md]] — documentation task, not a Build Plan step
+- [[DOC-02 Validate the Request-Path Credential at Startup]] — backlog item, not a Build Plan step
 
 **Build Plan:** [[Build Plan]] (step index) · [[Execution Protocol]] (execution rules)
 

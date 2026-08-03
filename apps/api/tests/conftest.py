@@ -115,6 +115,16 @@ _REQUEST_ROLE_LOGIN = f"""
 ALTER ROLE {_REQUEST_ROLE_NAME} WITH LOGIN PASSWORD '{_REQUEST_ROLE_PASSWORD}';
 """
 
+# A fixed, obviously-fake AES-256 key for tests that construct `Settings`
+# directly (STEP-17).
+#
+# Deterministic rather than random so a failure is reproducible, and shared from
+# here rather than repeated in eight files so adding the next required setting
+# is one edit. It encrypts nothing real: the tests that exercise encryption
+# generate their own random keys, and this exists purely to satisfy a required
+# field.
+TEST_BYOK_KEY = "dGVzdC1ieW9rLWtleS0zMi1ieXRlcy1sb25nLXh4eHg="  # noqa: S105 - fake test key
+
 TEST_DATABASE_URL_VAR = "PROJECTONE_TEST_DATABASE_URL"
 
 # Set in CI. Turns "no database configured" from a skip into a failure.

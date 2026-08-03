@@ -28,7 +28,7 @@ from app.core.dependencies import get_database_repository, get_token_service
 from app.core.security import InvalidTokenError
 from app.main import create_app
 from app.services.token_service import AuthenticatedUser
-from tests.conftest import Identity, seed_identity
+from tests.conftest import TEST_BYOK_KEY, Identity, seed_identity
 from tests.test_health import StubDatabase
 
 pytestmark = pytest.mark.usefixtures("migrated_database")
@@ -104,6 +104,7 @@ def client(roles: Roles, request_database_url: str) -> Iterator[TestClient]:
             SUPABASE_SECRET_KEY=SecretStr("unused"),
             DATABASE_URL=SecretStr(request_database_url),
             REQUEST_DATABASE_URL=SecretStr(request_database_url),
+            byok_encryption_key=SecretStr(TEST_BYOK_KEY),
             _env_file=None,
         )
 

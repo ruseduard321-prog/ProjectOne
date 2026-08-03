@@ -66,6 +66,7 @@ Implemented (as opposed to intended model):
 - [[Authorization Model]]
 - [[API Conventions]]
 - [[API Endpoints]]
+- [[AI Router Implementation]]
 
 See also: [[Backend MOC]]
 
@@ -92,7 +93,7 @@ Implemented schema (as opposed to intended model):
 - [[Schema Overview]]
 - [[Table Conventions]]
 - [[RLS Policy Pattern]]
-- [[Table - users]] · [[Table - workspaces]] · [[Table - workspace_members]] · [[Table - audit_log]]
+- [[Table - users]] · [[Table - workspaces]] · [[Table - workspace_members]] · [[Table - audit_log]] · [[Table - provider_credentials]]
 
 See also: [[Database MOC]]
 
