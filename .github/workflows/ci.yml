@@ -179,7 +179,29 @@ jobs:
       # broken service container would silently downgrade the security suite to
       # skips and CI would still report green, losing precisely the coverage
       # this job exists to provide.
+      # `pipefail` is essential: without it the pipeline reports `tee`'s exit
+      # code, so a failing suite would be reported as green — a far worse
+      # failure than the unreadable log this captures.
       - name: Test
         env:
           PROJECTONE_REQUIRE_DATABASE_TESTS: '1'
-        run: pytest -ra
+        shell: bash
+        run: |
+          set -o pipefail
+          pytest -ra --tb=short | tee pytest-output.txt
+
+      # Job logs need admin rights on this repository to download, so a
+      # contributor without them can see *that* the suite failed but not *why* —
+      # which turns a one-line fix into several blind round-trips. The step
+      # summary is readable by anyone who can see the run, so the failure
+      # travels with it.
+      #
+      # `if: failure()` so a green run stays quiet, and `tail` so a large
+      # failure cannot bury the summary.
+      - name: Report test failures
+        if: failure()
+        run: |
+          echo '## API test failures' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          tail -c 60000 pytest-output.txt >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
