@@ -99,20 +99,32 @@ Two details worth knowing before editing these rules:
    cp apps/web/.env.example apps/web/.env.local
    ```
 
-   The web template's defaults are correct as-is. **`apps/api/.env` needs real Supabase credentials** — the API will not start without `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `DATABASE_URL`, `REQUEST_DATABASE_URL` and `PROJECTONE_BYOK_ENCRYPTION_KEY`. Get the first three from the Supabase dashboard (Project Settings → API and → Database); the fourth is set in step 6 below and the fifth in step 7. Neither file is ever committed.
-5. Apply migrations so the local database schema matches the code: `./scripts/migrate.sh up` (or `.\scripts\migrate.ps1 up`). Safe to re-run — it is a no-op when already current.
-6. **Give the request-path role a password.** Migration `d7b95c1f4e08` creates `projectone_api` — the role the API serves requests as, which unlike `postgres` does not bypass RLS ([[Authentication Implementation]]). The migration deliberately sets no password, because a credential in a migration is a credential in source control. Set one per environment in the Supabase SQL editor:
+   The web template's defaults are correct as-is. **`apps/api/.env` needs real Supabase credentials** — the API will not start without `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `DATABASE_URL`, `REQUEST_DATABASE_URL` and `PROJECTONE_BYOK_ENCRYPTION_KEY`. Get the first three from the Supabase dashboard (Project Settings → API and → Database); the fourth is generated in step 6 below and the fifth in step 7. Neither file is ever committed.
 
-   ```sql
-   ALTER ROLE projectone_api WITH LOGIN PASSWORD '<a strong password>';
+   > [!important] Use the **Session pooler** connection string, not the direct one
+   > Both `DATABASE_URL` and `REQUEST_DATABASE_URL` point at `aws-0-<region>.pooler.supabase.com:5432` — see [[#The Connection Architecture]] below for why, and for the two details that are easy to get wrong.
+
+5. Apply migrations so the local database schema matches the code: `./scripts/migrate.sh up` (or `.\scripts\migrate.ps1 up`). Safe to re-run — it is a no-op when already current.
+6. **Generate the request-path role's credential.** Migration `d7b95c1f4e08` creates `projectone_api` — the role the API serves requests as, which unlike `postgres` does not bypass RLS ([[Authentication Implementation]]). The migration deliberately sets no password, because a credential in a migration is a credential in source control.
+
+   **Do not set it by hand.** Run:
+
+   ```bash
+   python scripts/sync-request-role-credential.py
    ```
 
-   Then put it in `REQUEST_DATABASE_URL`, using the same host and database as `DATABASE_URL` but with this role and password.
+   It generates the password, applies it with `ALTER ROLE`, **proves it by connecting as that role** and asserting `rolbypassrls = false`, and only then rewrites `REQUEST_DATABASE_URL`. No human ever sees or types the value, so it cannot reach a terminal history, a clipboard or a transcript.
 
-   **This must be repeated after any rollback past `d7b95c1f4e08`** — the downgrade drops the role, so the recreated one has no password and the API fails to connect until it is set again.
+   To check the two still agree without changing anything:
 
-   > [!warning] This pairing has no automated consistency check
-   > The role's password lives only in the database; `REQUEST_DATABASE_URL` lives only in git-ignored `.env`. Nothing validates that they still agree, so a mismatch is invisible until the first request that touches a tenant table — which cost most of a session on 2026-08-03. [[DOC-02 Validate the Request-Path Credential at Startup]] proposes the fix and is unscheduled.
+   ```bash
+   python scripts/sync-request-role-credential.py --check
+   ```
+
+   **Re-run the script after any rollback past `d7b95c1f4e08`** — the downgrade drops the role, so the recreated one has no password.
+
+   > [!warning] Why this is a script rather than a documented SQL statement
+   > The role's password lives only in the database; `REQUEST_DATABASE_URL` lives only in git-ignored `.env`. **Two independent writes with nothing linking them**, so a divergence is invisible until the first request that touches a tenant table. That is not hypothetical: it happened twice on 2026-08-03 and cost most of two sessions, the second time after a manual `ALTER ROLE` that was believed to have fixed it. Automating the pair is the fix; [[DOC-02 Validate the Request-Path Credential at Startup]] proposes catching it at boot as well.
 
 7. **Generate the BYOK encryption key** (required as of [[STEP-17 AI Router and Provider Abstraction]]). Workspace AI provider keys are encrypted at rest with it, and the API refuses to start without a valid one — the alternative would be storing customer provider keys in plaintext.
 
@@ -128,6 +140,45 @@ Two details worth knowing before editing these rules:
 9. Terminal, Playwright (Chromium), and Computer Use are available immediately with no setup — they ship with the Claude Code harness itself.
 10. If GitHub operations are needed, confirm the GitHub MCP server is configured at the appropriate level (user/global config) — this is outside `.mcp.json` and outside this repository's version control.
 11. Firefox and WebKit browser binaries are **not** installed by default (Chromium only) — install deliberately with `npx playwright install firefox webkit` only if cross-browser manual validation becomes necessary; this is a real download/disk-write action, not a no-op.
+
+## The Connection Architecture
+
+**Both connection strings use the Supabase Session pooler on port 5432.** Established 2026-08-03 by owner decision and verified end-to-end; this is now the documented architecture, not a workaround.
+
+```
+DATABASE_URL          postgres.<project-ref>@aws-0-<region>.pooler.supabase.com:5432
+REQUEST_DATABASE_URL  projectone_api.<project-ref>@aws-0-<region>.pooler.supabase.com:5432
+```
+
+### Why not the direct connection
+
+`db.<project-ref>.supabase.co` publishes **an AAAA record and no A record** — Supabase serves direct connections over IPv6 only, with IPv4 available as a paid add-on. Verified against three independent resolvers. An IPv4-only network therefore cannot reach it at all: `getaddrinfo` returns an address with no route and the connection fails before authentication is attempted.
+
+The session pooler is IPv4-reachable on every tier, and reaches the database over IPv6 on Supabase's side.
+
+### Three details that are mandatory
+
+1. **Username is `<role>.<project-ref>`.** A bare `projectone_api` is rejected by the pooler. Verified: both forms were tested, only the qualified one connects.
+2. **Port 5432 (session mode), never 6543 (transaction mode).** Transaction mode does not support prepared statements, which psycopg uses.
+3. **The region must be correct.** Every `aws-0-<region>.pooler.supabase.com` hostname resolves, so DNS cannot tell you which is yours — a wrong region fails with `password authentication failed`, indistinguishable from a wrong credential. Take it from the dashboard, or prove it by connecting.
+
+### What was verified
+
+The pooler was not assumed to preserve the properties multi-tenancy depends on — each was checked over it:
+
+| Property | Result |
+|---|---|
+| `projectone_api` authenticates | ✅ |
+| `rolbypassrls = false` | ✅ — policies apply |
+| `rolinherit = false` | ✅ — a missing `SET ROLE` fails closed |
+| `SET LOCAL ROLE` + transaction-scoped `set_config` | ✅ |
+| Cross-tenant read of `provider_credentials` | ✅ **blocked** |
+| Cross-tenant update | ✅ **blocked** (0 rows) |
+| `DELETE` | ✅ **refused** |
+| Negative control (RLS disabled → breach observed, then restored) | ✅ |
+
+> [!note] The application code was already pooler-safe, by accident of an earlier decision
+> `RequestSessionFactory` uses `SET LOCAL ROLE` and transaction-scoped `set_config` because [[STEP-10 Authentication Backend]] found that session-scoped forms leak a caller's identity into the next request on a pooled connection. That choice — made for a different reason — is exactly what transaction-mode pooling requires, so the tenant isolation model transferred to the pooler unchanged.
 
 ## Known Gaps
 

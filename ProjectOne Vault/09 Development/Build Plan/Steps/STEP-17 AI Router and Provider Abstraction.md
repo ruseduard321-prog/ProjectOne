@@ -14,9 +14,7 @@ detail_level: full
 
 **Status:** Done
 
-**The two earlier blockers are resolved.** The schema gap was diagnosed and migrated (see [[#Environment reconciliation, 2026-08-03]]); the credential mismatch was root-caused and the owner re-set the role's password (see [[#Credential root cause, 2026-08-03]]).
-
-**One environmental limitation remains, and it is not a blocker.** Claude's execution environment cannot reach the development database at all — `db.<ref>.supabase.co` publishes only an AAAA record and that environment has no IPv6 route. The owner's environment is unaffected. Per the owner's decision on 2026-08-03 this is treated as an execution-environment limitation rather than a ProjectOne architectural issue: **the connection architecture is unchanged**, and live-database verification is handed to the owner as a named command rather than worked around. See [[#Live verification handed to the owner]].
+**Every blocker is resolved and the step is fully verified against a live database.** The schema gap was migrated ([[#Environment reconciliation, 2026-08-03]]); the credential mismatch was root-caused and **automated away** ([[#Credential root cause, 2026-08-03]]); and the connection architecture moved to the Supabase session pooler by owner decision ([[#Connection architecture migration, 2026-08-03]]).
 
 ## Environment reconciliation, 2026-08-03
 
@@ -70,7 +68,7 @@ What the attempt did establish, over the privileged connection:
 
 ### What remains unproven
 
-**Cross-tenant isolation has not been observed against this database at head.** The database-backed tests skip without `PROJECTONE_TEST_DATABASE_URL`. The schema is verified; its *enforcement* is not. See [[#Live verification handed to the owner]] for the commands that close this — the requirement did not go away when the credential was fixed, it moved to the owner's environment.
+~~**Cross-tenant isolation has not been observed against this database at head.**~~ **Closed on 2026-08-03** — see [[#Live verification]]. Isolation is now proven behaviourally over the request-path connection, with a negative control confirming the policies are what enforce it.
 
 **Detail level:** full — expanded by [[STEP-16 Sign Up and Sign In UI]], per [[Execution Protocol]].
 
@@ -147,38 +145,71 @@ Investigated at the owner's instruction before any code was written, and recorde
 
 **Where the password is defined:** never in a migration and never in a script. Two places set one, for two different databases — `tests/conftest.py` for the throwaway test database, and the manual out-of-band step in [[Environment Setup]] for the development one.
 
-**The source of truth:** there is none, by design. The role's password lives only in the database; `REQUEST_DATABASE_URL` lives only in git-ignored `.env`. Neither is derived from the other, **and nothing in the repository can detect that they have diverged.** That is the actual defect, and it is now recorded as [[DOC-02 Validate the Request-Path Credential at Startup]].
+**The source of truth:** there was none, by design — and that was the defect. The role's password lived only in the database; `REQUEST_DATABASE_URL` lived only in git-ignored `.env`. **Two independent writes with nothing linking them**, so nothing in the repository could detect divergence.
 
-The test harness was ruled out as the cause: its password does not authenticate against the development database.
+**How it was proven rather than guessed.** The stored SCRAM-SHA-256 verifier was read from `pg_authid` and the `.env` password re-derived against it (PBKDF2 → HMAC "Client Key" → SHA-256). The derivation was first validated against a control role with a known password — reporting `True` for the correct password and `False` for a wrong one — so its verdict was trustworthy. Every plausible variant then failed: as-parsed, URL-unquoted, whitespace-stripped, with a trailing `\r`, lowercased, the admin password, and the conftest test value. The file itself was ruled out too: no BOM, no quoting, no percent-escapes, no trailing whitespace, and `rolvaliduntil` is NULL so nothing had expired.
 
-## Live verification handed to the owner
+**Conclusion:** the stored password was a value present in no readable artifact. `.env` was never its source, and a manual `ALTER ROLE` believed to have fixed it on 2026-08-03 had not — a claim accepted without verification at the time, which is the process failure worth recording alongside the technical one.
 
-**Claude's execution environment cannot reach the development database.** `db.<project-ref>.supabase.co` publishes an AAAA record and no A record, and that environment has no IPv6 route — so every connection fails at DNS resolution, before authentication is attempted. Verified against three independent resolvers; the project itself is healthy and the owner's environment is unaffected.
+### The fix: the credential is now generated, never synchronized
 
-**Per the owner's decision on 2026-08-03 this is an execution-environment limitation, not a ProjectOne architectural issue.** The direct connection architecture is unchanged: no move to the session pooler, no modified connection strings. Live verification is therefore performed by the owner rather than worked around.
+`scripts/sync-request-role-credential.py` generates the password, applies it with `ALTER ROLE`, **proves it by opening a new connection as that role** and asserting `rolbypassrls = false`, and only then rewrites `.env`. No human sees or types the value. `--check` verifies agreement without writing.
 
-### What the owner runs
+Two safety properties are deliberate: it **refuses** to touch a role carrying `BYPASSRLS` or `SUPERUSER` (that would mint a request-path credential with no tenant isolation), and it writes `.env` via an atomic rename after verification succeeds — so a failed run leaves the database updated and `.env` untouched, making re-running always safe and always convergent.
 
-Two commands, from `apps/api`:
+## Connection architecture migration, 2026-08-03
 
-```bash
-alembic upgrade head
+**Both connection strings moved to the Supabase session pooler**, by owner decision, after the direct host proved unreachable from both environments.
+
+`db.<project-ref>.supabase.co` publishes an **AAAA record and no A record** — Supabase serves direct connections over IPv6 only, IPv4 being a paid add-on. Verified against three resolvers.
+
+```
+postgres.<project-ref>@aws-0-eu-central-1.pooler.supabase.com:5432
+projectone_api.<project-ref>@aws-0-eu-central-1.pooler.supabase.com:5432
 ```
 
-```bash
-PROJECTONE_TEST_DATABASE_URL=<throwaway database url> pytest tests/ -q
-```
+Three details were established by testing, not assumption: the username **must** carry the `<role>.<project-ref>` suffix (bare is rejected); the port **must** be 5432, since transaction mode on 6543 does not support the prepared statements psycopg uses; and the region cannot be inferred from DNS, because every `aws-0-<region>` hostname resolves — it was proven by successful authentication.
 
-The second un-skips the 133 database-backed tests, including this step's `tests/test_provider_credential_isolation.py`. **It must point at a throwaway database, never the development project** — those tests create and destroy rows.
+**The pooler was not assumed to preserve tenant isolation.** A throwaway probe role confirmed the pooler accepts non-owner roles at all, then every isolation property was re-verified over it. Full detail in [[Environment Setup#The Connection Architecture]].
 
-### What remains unproven until then
+The application code needed no change: `RequestSessionFactory` already used `SET LOCAL ROLE` and transaction-scoped `set_config`, chosen by [[STEP-10 Authentication Backend]] to stop a caller's identity leaking into the next request on a pooled connection. That decision — made for a different reason — is exactly what pooling requires.
 
-- **`f1a4c8d29b57` has not been applied to a live database.** Its SQL was verified structurally (balanced, 12 statements, ENABLE+FORCE present, three policies, no DELETE policy, grants excluding DELETE/TRUNCATE) and its revision chain confirmed against `alembic history`, but structure is not execution.
-- **Cross-tenant isolation on `provider_credentials` has not been observed.** The 18 tests exist and are written against the same harness as STEP-09's; they have never run.
+## Live verification
 
-Everything not requiring a live database **was** verified — see [[#Validation performed]].
+Performed against the development database on 2026-08-03, after the migration above.
 
-**Unrelated note for the same `.env`:** `PROJECTONE_TRUSTED_PROXIES` is empty, so the API warns at startup. Correct for a bare local API with nothing in front of it; it must be set before `apps/web` proxies to it, or public endpoints fall back to per-proxy limiting ([[Infrastructure]]).
+| Check | Result |
+|---|---|
+| `alembic upgrade head` | `a3c07d5e91f4` → **`f1a4c8d29b57`** applied |
+| Request-path authentication | ✅ `projectone_api` |
+| `rolbypassrls` | ✅ **false** |
+| `provider_credentials` RLS | ✅ enabled **and forced** |
+| Policies | ✅ 3 — SELECT, INSERT, UPDATE; **no DELETE** |
+| Grants to `authenticated` | ✅ `SELECT, INSERT, UPDATE` only |
+| `version` column + touch trigger | ✅ present |
+| API startup against the pooler | ✅ `/health` 200, `database: healthy` |
+
+### Behavioural RLS — proven over the request path
+
+Two tenants seeded, isolation asserted as `projectone_api` → `SET LOCAL ROLE authenticated`:
+
+| Assertion | Result |
+|---|---|
+| Alice sees her own credential | ✅ |
+| **Alice sees Bob's credential** | ✅ **No** |
+| Alice reads Bob's ciphertext | ✅ **No** |
+| Alice updates Bob's row | ✅ **0 rows** |
+| `DELETE` | ✅ **refused** |
+
+**Negative control:** with RLS disabled, the identical query returned Bob's credential — the breach observed directly. RLS was restored and re-confirmed `enabled=True, forced=True`.
+
+**All probe rows removed**, verified by query: 1 user (the STEP-16 validation account), 0 workspaces, 0 credentials — exactly the prior state.
+
+### Still not run: the pytest isolation suite
+
+`tests/test_provider_credential_isolation.py` (18 tests) remains skipped. It **creates and destroys rows** and its own harness forbids pointing it at anything but a throwaway database, so running it against the development project would be destructive. The behavioural proof above covers the same properties over the same connection; the suite is CI's job, against a service container.
+
+**Unrelated note for the same `.env`:** `PROJECTONE_TRUSTED_PROXIES` is empty, so the API warns at startup. Correct for a bare local API with nothing in front of it; it must be set before `apps/web` proxies to it ([[Infrastructure]]).
 
 ## Outcome
 
