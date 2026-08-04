@@ -23,7 +23,21 @@ from app.core.config import get_settings
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # `disable_existing_loggers=False` is load-bearing, and the default (True)
+    # is actively wrong here.
+    #
+    # `fileConfig` otherwise sets `.disabled = True` on every logger not named
+    # in `alembic.ini` -- which is every application logger. Standalone that is
+    # harmless, because the process exits when the migration does. Under pytest
+    # it is not: the session-scoped `migrated_database` fixture runs migrations
+    # in-process, so from the first database test onward every `app.*` logger is
+    # silenced for the remainder of the run.
+    #
+    # That is what made the request-logging assertions fail on CI while passing
+    # locally -- locally the database tests skip, so this never executes.
+    # Confirmed by reproduction: before the call `app.core.middleware.disabled`
+    # is False, after it is True.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 
 def _as_psycopg_url(url: str) -> str:
