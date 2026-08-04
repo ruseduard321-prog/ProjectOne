@@ -2,8 +2,8 @@
 title: Table Conventions
 category: Architecture/Schema
 status: stable
-version: "1.1"
-last_updated: 2026-08-03
+version: "1.2"
+last_updated: 2026-08-04
 tags: [database, architecture, standards]
 aliases: ["Column Conventions", "Standard Columns"]
 ---
@@ -143,6 +143,16 @@ The policies themselves follow one reviewed pattern — **[[RLS Policy Pattern]]
 - **History is append-only.** Correcting an applied migration means writing a new one, not editing the old file — the file must keep describing what actually ran.
 - **Write `downgrade()` at the same time as `upgrade()`**, and verify it. An untested rollback path is discovered during an incident.
 - Expand/contract for anything touching a populated table: add, backfill, cut over, drop — four deploys, never one.
+
+### Migrations run in-process under pytest, so `env.py` must not reconfigure logging
+
+`migrations/env.py` calls `logging.config.fileConfig(...)`, and its `disable_existing_loggers` parameter **must stay `False`**. The default is `True`, which sets `.disabled = True` on every logger not named in `alembic.ini` — that is, every `app.*` logger.
+
+For a standalone `alembic upgrade` that is harmless: the process exits with the migration. Under pytest it is not. The session-scoped `migrated_database` fixture runs migrations **in-process**, so with the default every application logger is silenced from the first database test onward, for the remainder of the run. Any test asserting on log output then fails with an empty capture and no indication why.
+
+This is exactly how it was found: two request-logging assertions passed locally and failed only in CI, because locally the database tests skip and `fileConfig` never runs. The diagnostic signature is a `console` handler on the root logger (Alembic's, from `alembic.ini`) alongside an empty `caplog` while every level and propagation flag looks correct — **loggers being disabled, not filtered.**
+
+The same caution applies to `configure_logging()` in `app/core/logging.py`, which removes its own named handler rather than clearing the root logger's handlers wholesale — clearing them all also destroys `caplog`'s capture handler.
 
 ---
 
