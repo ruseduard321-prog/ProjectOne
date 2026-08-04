@@ -259,30 +259,66 @@ class TestBudgetIsolation:
     ) -> None:
         """Resetting `spent_usd` would be granting yourself unlimited budget.
 
-        The UPDATE policy permits owner/admin writes for *configuration*, so this
-        is not blocked by RLS -- it is blocked by nothing reaching this column
-        except the privileged reserve/settle path. This test records the current,
-        deliberate exposure honestly rather than asserting a protection that does
-        not exist: an owner *can* zero their own counter today, and the control
-        is that STEP-19 will expose only `limit_usd` on the settings route.
+        **This test asserted the opposite until STEP-19.** STEP-18 recorded the
+        exposure honestly rather than claiming a protection that did not exist:
+        the UPDATE policy permits owner/admin writes for *configuration*, and a
+        PostgreSQL policy is per-row rather than per-column, so it reached the
+        running total too. The assertion was `affected == 1`.
+
+        Migration `c9d3b71e08af` closes it with the mechanism RLS structurally
+        cannot provide -- a **column-level grant**, evaluated before any policy
+        runs. The table-wide UPDATE is revoked in favour of one on `limit_usd`
+        and `period_interval`, so this write is now refused outright rather than
+        affecting a row.
+
+        `InsufficientPrivilege` rather than a zero rowcount, and the difference
+        matters: a policy mismatch silently affects no rows, while a missing
+        grant raises. The refusal is therefore loud, which is the correct
+        treatment for an attempt to rewrite a spend ceiling's enforcement state.
         """
         alice, _ = two_tenants
         spend_repository.upsert_budget(alice.workspace_id, None, Decimal("10.00"))
         spend_repository.try_reserve(alice.workspace_id, "chat", Decimal("5.00"))
 
         with as_user(request_database_url, alice.user_id) as connection:
-            with connection.cursor() as cursor:
+            with connection.cursor() as cursor, pytest.raises(psycopg.errors.InsufficientPrivilege):
                 cursor.execute(
                     "UPDATE public.ai_budgets SET spent_usd = 0 WHERE workspace_id = %s",
                     (alice.workspace_id,),
                 )
-                affected = cursor.rowcount
+            connection.rollback()
+
+        # The counter is untouched, which is the outcome rather than the
+        # exception type. `try_reserve` above moved it to 5.
+        budgets = spend_repository.budgets_for(alice.workspace_id, "chat")
+        assert budgets[0].spent_usd == Decimal("5.000000")
+
+    def test_the_configuration_columns_are_still_writable(
+        self,
+        request_database_url: str,
+        spend_repository: AISpendRepository,
+        two_tenants: tuple[Identity, Identity],
+    ) -> None:
+        """The negative control on the grant: it narrowed, it did not close.
+
+        Without this, a migration that revoked UPDATE and granted nothing back
+        would pass the test above while breaking the settings route entirely --
+        an owner would be unable to change their own spending limit.
+        """
+        alice, _ = two_tenants
+        spend_repository.upsert_budget(alice.workspace_id, None, Decimal("10.00"))
+
+        with as_user(request_database_url, alice.user_id) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE public.ai_budgets SET limit_usd = 99 WHERE workspace_id = %s",
+                    (alice.workspace_id,),
+                )
+                assert cursor.rowcount == 1
             connection.commit()
 
-        # Documented exposure: an owner can currently rewrite this column. The
-        # ledger (`ai_spend_records`) is the immutable record, and it is what a
-        # billing reconciliation reads -- not this counter.
-        assert affected == 1
+        budgets = spend_repository.budgets_for(alice.workspace_id, "chat")
+        assert budgets[0].limit_usd == Decimal("99.000000")
 
     def test_a_member_cannot_change_a_budget(
         self,

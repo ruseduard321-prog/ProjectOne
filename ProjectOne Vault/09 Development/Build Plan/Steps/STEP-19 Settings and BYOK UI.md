@@ -2,17 +2,17 @@
 title: STEP-19 Settings and BYOK UI
 category: Development/Build Step
 status: draft
-version: "2.0"
-last_updated: 2026-08-03
+version: "2.1"
+last_updated: 2026-08-04
 tags: [engineering, workflow, build-step, frontend,security,ai]
 step_id: STEP-19
-step_status: Not Started
+step_status: Done
 detail_level: full
 ---
 
 # STEP-19 — Settings and BYOK UI
 
-**Status:** Not Started
+**Status:** Done
 **Detail level:** full — expanded by [[STEP-18 AI Cost Governance Controls]], per [[Execution Protocol]].
 
 ## Goal
@@ -79,6 +79,87 @@ Recorded during expansion, while the context was loaded. These are the load-bear
 Settings screens exist for Profile, Workspace, AI Providers and AI Spend, each with loading, empty and error states, each following the Design System. Their endpoints follow [[API Conventions]], enforce roles in both layers, and are audited where consequential. No route returns key material. A user can configure a provider key, see their spend against a ceiling, and understand a refusal when one occurs.
 
 **This is a Critical change** ([[CLAUDE|CLAUDE.md]] §21 — public API contract, security controls, multi-tenancy, and the first user-facing AI path) and carries an **owner approval gate**.
+
+---
+
+## Outcome
+
+**A user can now configure a provider key, set a spending ceiling, see what they have spent, and understand a refusal — and no route in the codebase can return a stored key.** Nine endpoints, four settings sections, two migrations, and two defects found by running the work rather than reviewing it.
+
+### What was built
+
+- **`app/routers/ai_settings.py`** — `GET/PUT/DELETE .../ai/providers`, `GET/PUT .../ai/budgets`, `GET .../ai/spend`. Members read; owners and admins write. Full contract in [[API Endpoints#AI settings — providers, budgets and spend]].
+- **`PATCH /api/v1/auth/me`** — the one genuine profile gap. `email` is deliberately not editable: it is authoritative upstream and reconciled on every authenticated request, so a write here would silently revert.
+- **Four settings sections** — Profile, Workspace, AI Providers, AI Spend — each with loading skeleton, empty state and a route-scoped error boundary that keeps the shell rather than replacing the page.
+- **Migration `c9d3b71e08af`** — the column-level grant closing STEP-18's `spent_usd` exposure, plus three audit actions.
+- **Migration `d1f70a4c62be`** — the revocation fix (see below).
+
+### `spent_usd` is closed, by the mechanism RLS cannot provide
+
+STEP-18 recorded honestly that an owner could zero their own running total, because a PostgreSQL policy is per-row and cannot restrict *columns*. A **column-level grant** can, and it is evaluated before any policy runs:
+
+```sql
+REVOKE UPDATE ON public.ai_budgets FROM authenticated;
+GRANT UPDATE (limit_usd, period_interval) ON public.ai_budgets TO authenticated;
+```
+
+Three independent gates now stand on that value: `extra="forbid"` makes sending it a **422** rather than a silent discard, the handler never passes it on, and the grant refuses the write regardless of what any future route accepts. The third exists precisely because it is the one that holds when a route forgets.
+
+Verified live, including a **negative control** that re-granted the column, reproduced the breach, and revoked it again — so the refusal is demonstrably the grant rather than something incidental. The `touch_row` trigger still increments `version`, because it runs as the table owner rather than as the caller.
+
+### Two defects, both found by running it
+
+**1. Revoking a provider key was impossible — for every role, including `owner`.**
+
+`provider_credentials_select_same_workspace` filtered `deleted_at IS NULL`, and revocation is an `UPDATE` that *sets* `deleted_at`. PostgreSQL applies the SELECT policy to the resulting row, so the write was refused by the policy governing **reading**, with an error naming row-level security that points the reader at the UPDATE policy where nothing is wrong.
+
+Established by narrowing against a live database rather than by inference:
+
+| Statement | Result |
+|---|---|
+| `UPDATE ... SET last_four = '9999'` | **1 row** — the UPDATE policy passes |
+| `UPDATE ... SET deleted_at = now()` | **refused** |
+| the same, with `deleted_at` dropped from the SELECT policy | **1 row** |
+
+**This is [[STEP-11a Membership Removal Policy]]'s defect, exactly, on a second table.** It recurred because [[RLS Policy Pattern]] recorded that fix as "a deliberate exception, and the only one" while still instructing every new table to filter `deleted_at` in each `USING` clause — so `provider_credentials` and the STEP-18 tables copied the broken shape from the instruction rather than the correction. That note now states the general rule and flags the four tables still carrying the latent version.
+
+Worse than a broken button: **`ProviderCredentialStore.erase` had been silently failing since STEP-17**, so a workspace erasure left provider keys behind — a [[CLAUDE|CLAUDE.md]] §16 obligation broken with no test covering it, because nothing had ever revoked a key.
+
+**2. Raising a ceiling silently reset the billing period.**
+
+`upsert_budget` collapsed an unstated `period_interval` to a 30-day default and *wrote* it, so a budget configured with a 7-day period became a 30-day one the next time anyone changed the limit. `None` now means "leave it" on update (`COALESCE(%s, period_interval)`, one statement so the read and write share a row lock) and takes the default only on insert.
+
+The failure was invisible from the response, which is what makes it worth a named regression test: the endpoint reported `period_days: 30` and was telling the truth about what had just been written.
+
+### Validation
+
+The pytest harness **cannot reach the development database**: `conftest.request_database_url` rebuilds the DSN with a bare `projectone_api` username, and the Supabase session pooler requires the `<role>.<project-ref>` suffix. Creating a scratch database on the same instance did not help — same pooler, same requirement. That harness is built for the direct-connection PostgreSQL CI provides, so **the 25 database-backed tests in `test_ai_settings_endpoints.py` will first execute in CI.**
+
+Rather than mark that unverified, the same assertions were driven **in-process against the live development database** through a real `TestClient` using the application's own working DSNs:
+
+- **37 HTTP-layer checks passed** — no key in any response body (including a 20-character prefix scan across list, export and audit), the role asymmetry in both directions, cross-tenant refusals, revocation, rotation, the `spent_usd` 422, the bounded spend limit, and a tripped breaker surfacing with its reason.
+- **The negative control neutered the API's authorization gate** and confirmed the member is no longer refused 403 — while **RLS still refused the write independently**, which is the two-layer property asserted rather than assumed.
+- **11 further checks** on the grant and the audit constraint, including the re-grant/revoke negative control.
+- **6 checks** confirming the two inverted STEP-18 assertions and the period fix.
+- Every probe removed its rows and **confirmed the database back to its prior contents by query**.
+
+Offline: `apps/api` 325 passed, `apps/web` 97 passed (up from 74). Ruff, ruff-format, mypy `strict`, ESLint, `tsc --noEmit` and `next build` all clean. `/settings` builds as a dynamic route; `/dev/session` remains absent from the production build.
+
+**A STEP-18 test asserted the old exposure** (`affected == 1`) and would have failed in CI. It is inverted rather than deleted, and its docstring records what changed and why.
+
+### Decisions made
+
+- **Workspace selection is "the caller's first workspace", resolved server-side.** The web application had no workspace concept at all before this step, and a switcher — persisted selection, a picker, workspace-carrying URLs — is a real feature belonging with [[STEP-20 Projects Schema and Lifecycle]] onward. The limitation is **disclosed on screen** ("You belong to N other workspaces — switching is not available yet") rather than left to be discovered. `GET /workspaces` orders by name, so "first" is stable across requests.
+- **A stored key is never rendered, because none is retrievable.** The UI shows `••••••••1234` and an explicit **Replace** affordance rather than an always-present input — replacing a working credential is a deliberate act, and an open field invites a half-pasted value over a key that was working.
+- **Sections with no backend are not rendered at all.** Billing, Notifications, Integrations, Connected Accounts and Storage are in [[Settings]] but have no step. A settings section that appears to save and does not is worse than one that is honestly absent.
+- **Amounts cross every boundary as decimal strings**, never parsed to `number`. A cost displayed as `0.001234` matches the ledger it came from.
+
+### Known gaps
+
+- **No workspace switcher** — see above.
+- **The four tables carrying the latent `deleted_at` policy defect** (`ai_budgets`, `ai_shutdown_switches`, `users`, `workspaces`) are recorded in [[RLS Policy Pattern]], not fixed. Each becomes live the moment a route soft-deletes that table.
+- **A tripped spend breaker cannot be reset from the settings screen**, deliberately — it trips because something spent more than expected, which does not resolve by the tenant clearing it.
+- **`test_ai_settings_endpoints.py` has not run locally.** CI is where it first executes.
 
 ---
 

@@ -69,6 +69,13 @@ from app.core.config import Settings
 #: "workspace-wide" -- a distinction worth naming where a policy depends on it.
 WORKSPACE_WIDE: str | None = None
 
+#: The billing period a budget takes when one is created without a stated period.
+#:
+#: Applied on **insert only**. On an update, an unstated period means "leave the
+#: existing one alone" -- see `upsert_budget`, where conflating the two silently
+#: reset a workspace's configured period.
+DEFAULT_BUDGET_PERIOD = dt.timedelta(days=30)
+
 
 @dataclass(frozen=True)
 class Budget:
@@ -591,31 +598,52 @@ class AISpendRepository:
 
         Written on the privileged path rather than through the tenant connection
         even though an RLS policy permits owner/admin writes. The policy exists
-        for the settings route STEP-19 will add; this method is the platform's
-        own path, used by provisioning and by tests.
+        for the settings route STEP-19 added; this method is the platform's own
+        path, used by that route, by provisioning and by tests.
+
+        Args:
+            workspace_id: The tenant the ceiling belongs to.
+            workflow_type: The scope it governs, or None for workspace-wide.
+            limit_usd: The ceiling itself.
+            period_interval: The billing period, or **None to leave an existing
+                one unchanged**. On an insert, None takes the 30-day default.
+
+                The distinction was a defect until STEP-19 found it by running
+                the route: None was collapsed to 30 days and *written*, so
+                raising a ceiling on a budget configured with a 7-day period
+                silently reset it to 30. An edit about one field must not change
+                billing behaviour on another, and the failure was invisible --
+                the response looked correct because it reported the value that
+                had just been written.
 
         Returns:
             The budget's id.
         """
-        interval = period_interval if period_interval is not None else dt.timedelta(days=30)
-
         with self._connect() as connection, connection.cursor() as cursor:
+            # `COALESCE(%s, period_interval)` rather than branching in Python:
+            # one statement, so the read of the existing value and the write
+            # happen under the same row lock. Choosing the value in Python would
+            # need a prior SELECT, which is a second round trip and a race.
             cursor.execute(
                 """
                 UPDATE public.ai_budgets
-                SET limit_usd = %s, period_interval = %s
+                SET limit_usd = %s,
+                    period_interval = COALESCE(%s, period_interval)
                 WHERE workspace_id = %s
                   AND deleted_at IS NULL
                   AND workflow_type IS NOT DISTINCT FROM %s
                 RETURNING id
                 """,
-                (limit_usd, interval, workspace_id, workflow_type),
+                (limit_usd, period_interval, workspace_id, workflow_type),
             )
             row = cursor.fetchone()
 
             if row is not None:
                 return uuid.UUID(str(row[0]))
 
+            # There is no existing period to preserve on an insert, so this is
+            # where the default belongs -- applied once, at the only point a
+            # value is genuinely absent rather than merely unspecified.
             cursor.execute(
                 """
                 INSERT INTO public.ai_budgets
@@ -623,7 +651,12 @@ class AISpendRepository:
                 VALUES (%s, %s, %s, %s)
                 RETURNING id
                 """,
-                (workspace_id, workflow_type, limit_usd, interval),
+                (
+                    workspace_id,
+                    workflow_type,
+                    limit_usd,
+                    period_interval if period_interval is not None else DEFAULT_BUDGET_PERIOD,
+                ),
             )
             inserted = cursor.fetchone()
 

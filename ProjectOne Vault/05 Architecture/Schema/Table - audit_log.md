@@ -2,8 +2,8 @@
 title: "Table - audit_log"
 category: Database Table
 status: stable
-version: "1.0"
-last_updated: 2026-08-02
+version: "1.1"
+last_updated: 2026-08-04
 tags: [database, schema, security, multi-tenancy]
 table_name: "audit_log"
 ---
@@ -25,11 +25,18 @@ Records **who changed what**, in which workspace, and when. This is the distinct
 | `workspace_id` | `uuid` | NOT NULL, FK → `workspaces.id` `ON DELETE RESTRICT` | The workspace the action happened in. |
 | `actor_id` | `uuid` | NOT NULL, **no FK** | Who acted. |
 | `actor_email` | `text` | — | The actor's address **at the time they acted** — a point-in-time snapshot, not a live join. |
-| `action` | `text` | NOT NULL, `ck_audit_log_action_valid` | One of `workspace.created`, `member.added`, `member.removed`, `member.left`, `ownership.transferred`. |
+| `action` | `text` | NOT NULL, `ck_audit_log_action_valid` | One of `workspace.created`, `member.added`, `member.removed`, `member.left`, `ownership.transferred`, `provider_key.stored`, `provider_key.revoked`, `budget.updated`. |
+
 | `target_id` | `uuid` | — | Who or what was acted on. Null where the target is the workspace itself. |
 | `detail` | `jsonb` | NOT NULL, default `'{}'` | Action-specific context: the role granted, the workspace name at creation. |
 
 **Index:** `ix_audit_log_workspace_id_created_at` on `(workspace_id, created_at DESC)` — serves both the policy's filter and the newest-first sort every audit view wants.
+
+### The three AI settings actions
+
+`provider_key.stored`, `provider_key.revoked` and `budget.updated` were added by migration `c9d3b71e08af` ([[STEP-19 Settings and BYOK UI]]). Storing a provider key authorizes spend against the workspace's own provider account, so its appearance and disappearance are security questions somebody eventually needs answered; a budget ceiling is a decision about money, where "who changed it" is the first question asked after a surprising invoice.
+
+**Neither the key nor its `last_four` is recorded.** An audit row is readable by *every* member, including a plain one, so four characters of a credential in this table would be a leak that took one extra step rather than none. The row names the provider and the actor, and nothing else.
 
 ## Two Conventions Deliberately Broken
 

@@ -2,8 +2,8 @@
 title: RLS Policy Pattern
 category: Architecture/Schema
 status: stable
-version: "1.0"
-last_updated: 2026-08-01
+version: "1.1"
+last_updated: 2026-08-04
 tags: [database, security, multi-tenancy, standards]
 aliases: ["Row Level Security Pattern", "Tenant Isolation Pattern"]
 ---
@@ -52,8 +52,10 @@ $$;
 **Every tenant policy routes through this function.** A new tenant-scoped table's policy is, in the normal case, exactly one line:
 
 ```sql
-USING (deleted_at IS NULL AND workspace_id IN (SELECT public.app_current_user_workspaces()))
+USING (workspace_id IN (SELECT public.app_current_user_workspaces()))
 ```
+
+Note what is **not** there: `deleted_at IS NULL`. Liveness belongs in the query, and putting it in a SELECT policy makes soft-deleting the table impossible — see [[#A SELECT policy that filters deleted at makes soft deletion impossible]].
 
 ### Why a function at all
 
@@ -114,13 +116,28 @@ USING (
 
 The role vocabulary and what each role permits are defined once, in `apps/api/app/core/permissions.py`. **If that matrix and these policies disagree, the policies are correct and the matrix is a bug** — see [[Authorization Model]].
 
-### `workspace_members` SELECT does not filter `deleted_at`
+### A SELECT policy that filters `deleted_at` makes soft deletion impossible
 
-**A deliberate exception to the rule above, and the only one.** Every other policy filters `deleted_at IS NULL`; this one does not, and removing that filter is what made membership removal possible at all.
+**This is the rule, not an exception — and calling it an exception is what made it cost two steps.**
 
-STEP-11 found that soft-deleting a `workspace_members` row was rejected for **every** role including `owner`: the row being written became invisible to the policy governing the statement writing it, and PostgreSQL refused with *"new row violates row-level security policy"*. Verified in all three directions, and confirmed by observing the same update succeed once the filter was lifted.
+`workspace_members` was the first table to hit it (STEP-11a) and `provider_credentials` the second ([[STEP-19 Settings and BYOK UI]]), because this note previously recorded the fix as a one-off and told every new table to filter `deleted_at` in each `USING` clause. Tables written after the fix copied the broken shape from the instruction rather than from the correction.
 
-The filter therefore **moved out of the policy and into the queries**:
+**The mechanism.** Revocation is an `UPDATE` that *sets* `deleted_at`, so the row it produces no longer satisfies a SELECT policy filtering `deleted_at IS NULL` — and PostgreSQL applies that policy to the resulting row when the statement's `WHERE` clause requires the row to be visible. The write is refused by the policy governing **reading**, with a message naming row-level security, which sends the reader to the UPDATE policy where nothing is wrong.
+
+Established by narrowing rather than inference, against a live database during STEP-19:
+
+| Statement | Result |
+|---|---|
+| `UPDATE ... SET last_four = '9999'` | **1 row** — the UPDATE policy passes |
+| `UPDATE ... SET deleted_at = now()` | **refused** |
+| the same, with `deleted_at` dropped from the SELECT policy | **1 row** |
+
+> [!warning] The same latent defect remains on four tables
+> `ai_budgets`, `ai_shutdown_switches`, `users` and `workspaces` all have a SELECT policy filtering `deleted_at IS NULL` **and** an UPDATE policy. Each becomes a live defect the moment a route soft-deletes that table over the request connection. None does today, which is why STEP-19 fixed only `provider_credentials` rather than widening its migration to tables it does not touch ([[CLAUDE|CLAUDE.md]] §29/§35) — but this is a known trap, not an unknown one, and the step that first soft-deletes any of them must fix its policy in the same change.
+>
+> Worth noting how invisible it is: `ProviderCredentialStore.erase` had been soft-deleting `provider_credentials` since STEP-17 as part of **workspace data erasure**, and was silently failing — a [[CLAUDE|CLAUDE.md]] §16 obligation broken with no test covering it, because nothing had ever revoked a key.
+
+The fix, in both cases, is the same: the filter **moves out of the policy and into the queries**.
 
 - **A policy answers "whose rows may this caller touch"** — a tenant question, which `deleted_at` has nothing to do with.
 - **A query answers "which of those rows do I want"** — excluding removed members from a listing, which always was a query concern.
@@ -162,9 +179,13 @@ A user is not owned by a workspace, so its policy asks "which users is this requ
 
 That policy queries `workspace_members` directly rather than only through the helper, because it must confirm the *target* user's membership too. No recursion arises: it is a policy on `users`, not on `workspace_members`.
 
-### Every policy filters `deleted_at IS NULL`
+### Liveness belongs in the query, not the policy
 
-Membership is soft-deleted, so a removed member's row still exists. A policy that omits this keeps serving them indefinitely — and it fails silently, because everything still looks correct. The partial indexes from `8a6f39b07c12` carry the same predicate, so matching policies stay index-served.
+**A SELECT policy must not filter `deleted_at IS NULL` on a table anything soft-deletes** — see above for why it makes the soft delete itself impossible.
+
+What still filters, and must: `app_current_user_workspaces()` checks `deleted_at IS NULL` on the caller's *own* membership, so a removed member loses access immediately. That is where liveness is load-bearing for **isolation**; everywhere else it is a question about which rows a caller wants, which the query owns.
+
+Every query on such a table therefore states it explicitly. A listing that inherited the filter from a policy and never said so will start showing soft-deleted rows the moment the policy is corrected.
 
 ### DELETE is granted to no one
 
@@ -250,7 +271,7 @@ Until [[STEP-10 Authentication Backend]], RLS was doing all the work: `anon` and
 1. Create the table with `workspace_id uuid NOT NULL` referencing `workspaces(id)`.
 2. In the **same migration**: `ENABLE` and `FORCE` row level security.
 3. Add SELECT / INSERT / UPDATE policies `TO authenticated` routing through `app_current_user_workspaces()`. No DELETE policy.
-4. Filter `deleted_at IS NULL` in every `USING` clause.
+4. **Do not filter `deleted_at IS NULL` in the SELECT policy** if anything will ever soft-delete this table — it makes the soft delete impossible, and the refusal names row-level security while pointing at the wrong policy. Filter liveness in the queries instead. Two steps have now been spent on this exact defect.
 5. **Grant only what the policies need:** `GRANT SELECT, INSERT, UPDATE ... TO authenticated`, and nothing to `anon`. The corrected default privileges (`c4f21a86b3de`) should already produce this, but state it in the migration rather than depending on it.
 6. Reach the table through `TenantConnectionDep` only. A tenant query over the privileged connection has no isolation at all, and nothing about the query will look wrong.
 7. Add an isolation test to `apps/api/tests/test_rls_isolation.py` proving a user from workspace A cannot read, update or delete workspace B's rows.

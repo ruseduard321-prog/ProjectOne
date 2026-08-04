@@ -2,8 +2,8 @@
 title: Table - provider_credentials
 category: Architecture/Schema
 status: stable
-version: "1.0"
-last_updated: 2026-08-03
+version: "1.1"
+last_updated: 2026-08-04
 tags: [database, schema, ai, security, multi-tenancy]
 aliases: ["provider_credentials", "BYOK Table"]
 ---
@@ -71,6 +71,15 @@ Enabled **and forced**. Follows [[RLS Policy Pattern]], with one asymmetry worth
 
 `WITH CHECK` on UPDATE is not optional here: without it, an admin could move a credential row into a workspace they do not administer.
 
+> [!warning] The SELECT policy no longer filters `deleted_at` — and must not
+> As created by STEP-17, `provider_credentials_select_same_workspace` filtered `deleted_at IS NULL`. **That made revoking a key impossible for every role, including `owner`**, and it also silently broke workspace data erasure, which soft-deletes this table. Migration `d1f70a4c62be` ([[STEP-19 Settings and BYOK UI]]) removes the filter.
+>
+> Revocation is an `UPDATE` that sets `deleted_at`, producing a row the SELECT policy no longer matched — and PostgreSQL applies that policy to the resulting row, so the write was refused by the policy governing *reading*. The identical defect and fix are [[STEP-11a Membership Removal Policy]]'s; the general rule is now stated in [[RLS Policy Pattern]] rather than as a per-table exception.
+>
+> **Tenant isolation is unchanged.** The predicate that enforces the boundary — `app_current_user_workspaces()` — is untouched. What widened is liveness, not visibility: a caller can see their own workspace's soft-deleted credential rows, which carry no plaintext key and which they were always entitled to.
+>
+> **Every query must now state `deleted_at IS NULL` itself.** All four repository methods and both `ProviderCredentialStore` queries already do.
+
 ### Grants
 
 ```sql
@@ -97,7 +106,9 @@ Full detail — nonce discipline, why GCM, where plaintext exists — in [[AI Ro
 
 Includes `test_policies_are_what_makes_these_tests_pass`, which disables RLS, observes the breach, and restores it — [[RLS Policy Pattern]] step 8. An isolation test that would pass with RLS off is asserting nothing.
 
-**These have not yet run against a live database.** See [[STEP-17 AI Router and Provider Abstraction#Live verification handed to the owner]].
+**That pytest file still runs only in CI**, against a throwaway container — the development project sits behind the Supabase session pooler, which the harness cannot reach (`conftest.request_database_url` rebuilds the DSN with a bare `projectone_api` username, and the pooler requires the `<role>.<project-ref>` suffix).
+
+**The table's behaviour has been verified live regardless.** [[STEP-19 Settings and BYOK UI]] drove the full settings surface against the development database through a real `TestClient`: cross-tenant reads and writes refused, the role asymmetry, revocation, rotation after revocation, and a **negative control** neutering the API's authorization gate to confirm RLS refuses the write independently. 37 checks, all rows removed afterwards and the database confirmed back to its prior contents.
 
 ---
 

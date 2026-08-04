@@ -80,7 +80,7 @@ function isErrorBody(value: unknown): value is ApiErrorBody {
 interface ApiRequest {
   /** Path beneath the version prefix, e.g. `/auth/sign-in`. */
   readonly path: string;
-  readonly method: "GET" | "POST";
+  readonly method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   /** JSON body, serialized by this function. Omit for a bodyless request. */
   readonly body?: unknown;
   /** Access token to present as a bearer credential, when the route needs one. */
@@ -147,6 +147,9 @@ export async function apiRequest<T>({
     throw new ApiUnreachableError();
   }
 
+  // A 204 carries no body, so parsing one is not a failure to tolerate — it is
+  // the expected outcome. `.catch(() => null)` already handles it, and the null
+  // is only ever returned to a caller whose response type says `void`.
   const payload: unknown = await response.json().catch(() => null);
 
   if (!response.ok) {
@@ -232,6 +235,180 @@ export function refreshSession(
 export function readProfile(accessToken: string): Promise<ApiProfile> {
   return apiRequest<ApiProfile>({
     path: "/auth/me",
+    method: "GET",
+    accessToken,
+  });
+}
+
+export function updateProfile(accessToken: string, displayName: string): Promise<ApiProfile> {
+  return apiRequest<ApiProfile>({
+    path: "/auth/me",
+    method: "PATCH",
+    body: { display_name: displayName },
+    accessToken,
+  });
+}
+
+/** A workspace the caller belongs to, from `GET /workspaces`. */
+export interface ApiWorkspace {
+  readonly id: string;
+  readonly name: string;
+  readonly owner_id: string;
+}
+
+export function listWorkspaces(accessToken: string): Promise<ApiWorkspace[]> {
+  return apiRequest<ApiWorkspace[]>({
+    path: "/workspaces",
+    method: "GET",
+    accessToken,
+  });
+}
+
+export function renameWorkspace(
+  accessToken: string,
+  workspaceId: string,
+  name: string,
+): Promise<ApiWorkspace> {
+  return apiRequest<ApiWorkspace>({
+    path: `/workspaces/${workspaceId}`,
+    method: "PATCH",
+    body: { name },
+    accessToken,
+  });
+}
+
+/** The caller's role in a workspace, from `GET /workspaces/{id}/permissions`. */
+export interface ApiPermissions {
+  readonly workspace_id: string;
+  readonly role: "owner" | "admin" | "member";
+  readonly permissions: readonly string[];
+}
+
+export function readPermissions(
+  accessToken: string,
+  workspaceId: string,
+): Promise<ApiPermissions> {
+  return apiRequest<ApiPermissions>({
+    path: `/workspaces/${workspaceId}/permissions`,
+    method: "GET",
+    accessToken,
+  });
+}
+
+/**
+ * A stored provider key, as the settings screen may see it.
+ *
+ * **There is no field for the key itself, and there never will be.** The API
+ * returns `last_four` and nothing more, because no route in the backend can
+ * produce a stored key — see `app/routers/ai_settings.py`. A field added here
+ * would have nothing to populate it from.
+ */
+export interface ApiProviderCredential {
+  readonly id: string;
+  readonly provider: string;
+  readonly last_four: string;
+}
+
+export function listProviderCredentials(
+  accessToken: string,
+  workspaceId: string,
+): Promise<ApiProviderCredential[]> {
+  return apiRequest<ApiProviderCredential[]>({
+    path: `/workspaces/${workspaceId}/ai/providers`,
+    method: "GET",
+    accessToken,
+  });
+}
+
+export function storeProviderCredential(
+  accessToken: string,
+  workspaceId: string,
+  provider: string,
+  apiKey: string,
+): Promise<ApiProviderCredential> {
+  return apiRequest<ApiProviderCredential>({
+    path: `/workspaces/${workspaceId}/ai/providers/${provider}`,
+    method: "PUT",
+    body: { api_key: apiKey },
+    accessToken,
+  });
+}
+
+export function revokeProviderCredential(
+  accessToken: string,
+  workspaceId: string,
+  provider: string,
+): Promise<void> {
+  return apiRequest<void>({
+    path: `/workspaces/${workspaceId}/ai/providers/${provider}`,
+    method: "DELETE",
+    accessToken,
+  });
+}
+
+/**
+ * A spend ceiling and its usage.
+ *
+ * Amounts are strings, matching the API. They are rendered and compared as
+ * decimal strings rather than parsed to `number`: a ceiling that survives a
+ * round trip through JavaScript's binary floating point is a ceiling that can be
+ * displayed truthfully, and `0.1 + 0.2` is the reason not to find out otherwise.
+ */
+export interface ApiBudget {
+  readonly id: string;
+  readonly workflow_type: string | null;
+  readonly limit_usd: string;
+  readonly spent_usd: string;
+  readonly remaining_usd: string;
+  readonly period_started_at: string;
+  readonly period_days: number;
+  readonly breaker_open: boolean;
+  readonly breaker_reason: string | null;
+}
+
+export function listBudgets(accessToken: string, workspaceId: string): Promise<ApiBudget[]> {
+  return apiRequest<ApiBudget[]>({
+    path: `/workspaces/${workspaceId}/ai/budgets`,
+    method: "GET",
+    accessToken,
+  });
+}
+
+export function updateBudget(
+  accessToken: string,
+  workspaceId: string,
+  limitUsd: string,
+  periodDays?: number,
+): Promise<ApiBudget> {
+  return apiRequest<ApiBudget>({
+    path: `/workspaces/${workspaceId}/ai/budgets`,
+    method: "PUT",
+    // `spent_usd` is deliberately absent and the API would answer 422 if it were
+    // present — the running total is not a client-writable value.
+    body: periodDays === undefined
+      ? { limit_usd: limitUsd }
+      : { limit_usd: limitUsd, period_days: periodDays },
+    accessToken,
+  });
+}
+
+/** One entry from a workspace's AI spend history. */
+export interface ApiSpendRecord {
+  readonly created_at: string;
+  readonly provider: string;
+  readonly model: string;
+  readonly workflow_type: string;
+  readonly prompt_tokens: number;
+  readonly completion_tokens: number;
+  readonly cost_usd: string;
+}
+
+export function listSpendRecords(
+  accessToken: string,
+  workspaceId: string,
+): Promise<ApiSpendRecord[]> {
+  return apiRequest<ApiSpendRecord[]>({
+    path: `/workspaces/${workspaceId}/ai/spend`,
     method: "GET",
     accessToken,
   });

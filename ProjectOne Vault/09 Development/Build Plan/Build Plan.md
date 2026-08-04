@@ -2,7 +2,7 @@
 title: Build Plan
 category: Development
 status: stable
-version: "2.4"
+version: "2.5"
 last_updated: 2026-08-04
 tags: [engineering, documentation, workflow]
 aliases: ["Implementation Plan", "Build Roadmap", "Step Index"]
@@ -56,8 +56,8 @@ Status appears in two places — the step note and the row below — and they mu
 | STEP-16a | [[STEP-16a Developer Session Inspector]] | Done | full |
 | STEP-17 | [[STEP-17 AI Router and Provider Abstraction]] | Done | full |
 | STEP-18 | [[STEP-18 AI Cost Governance Controls]] | Done | full |
-| STEP-19 | [[STEP-19 Settings and BYOK UI]] | Not Started | full |
-| STEP-20 | [[STEP-20 Projects Schema and Lifecycle]] | Not Started | outline |
+| STEP-19 | [[STEP-19 Settings and BYOK UI]] | Done | full |
+| STEP-20 | [[STEP-20 Projects Schema and Lifecycle]] | Not Started | full |
 | STEP-21 | [[STEP-21 Projects UI]] | Not Started | outline |
 | STEP-22 | [[STEP-22 Minimum Workflow Engine]] | Not Started | outline |
 | STEP-23 | [[STEP-23 AI Chat End to End]] | Not Started | outline |
@@ -253,6 +253,24 @@ The three migrations were applied and the result verified: revision at head, `au
 - **Alembic's `fileConfig()` disabled every application logger.** `disable_existing_loggers` defaults to `True`, and because the session-scoped fixture runs migrations **in-process**, every `app.*` logger was silenced from the first database test onward. This is why two logging assertions passed locally and failed only in CI: locally the database tests skip, so it never ran.
 
 The lesson worth carrying: **all three were invisible locally and only reachable in CI**, and the failure each produced pointed somewhere other than its cause. Diagnosing them needed the CI log, which this repository does not serve without admin rights — so pytest failures are now emitted as check-run annotations, which are readable by anyone who can see the run. That plumbing took three attempts of its own, the last because a workflow command is ignored unless it starts at the beginning of a line.
+
+**The AI layer is reachable by a real user, and no route can return a key** (STEP-19). Nine endpoints and four settings screens — Profile, Workspace, AI Providers, AI Spend — each with a loading skeleton, an empty state and a route-scoped error boundary that keeps the shell rather than replacing the page. Members read; owners and admins write, enforced by a `requires(...)` dependency *and* an RLS policy, because the policy makes the write impossible while the dependency makes the answer honest. Full contract in [[API Endpoints#AI settings — providers, budgets and spend]].
+
+**"Show my key" is not a feature that was declined — it is one the backend structurally cannot serve.** `key_for` is the only method producing plaintext, no route calls it, and the response type has no field capable of holding a key. Rotation is therefore *replace, never reveal*. Proven by grep against real response bodies including a 20-character prefix scan, not by reading the serializer.
+
+**STEP-18's `spent_usd` exposure is closed by the mechanism RLS structurally cannot provide.** A PostgreSQL policy is per-row and cannot restrict columns; a **column-level grant** can, and is evaluated before any policy runs. Migration `c9d3b71e08af` revokes the table-wide `UPDATE` on `ai_budgets` in favour of `UPDATE (limit_usd, period_interval)`. Three independent gates now stand on that value — `extra="forbid"` makes sending it a 422 rather than a silent discard, the handler never passes it on, and the grant refuses it regardless of what a future route accepts. A **negative control** re-granted the column, reproduced the breach, and revoked it again.
+
+**Two defects were found by running it, and the first is a repeat.** Revoking a provider key was **impossible for every role including `owner`**: `provider_credentials_select_same_workspace` filtered `deleted_at IS NULL`, and revocation is an `UPDATE` that *sets* it — so PostgreSQL refused the write via the policy governing *reading*, with an error naming row-level security that points at the UPDATE policy where nothing is wrong. Established by narrowing against a live database (updating `last_four` succeeded, updating `deleted_at` did not, and dropping the filter fixed it). **This is [[STEP-11a Membership Removal Policy]]'s defect exactly, on a second table**, and it recurred because [[RLS Policy Pattern]] recorded that fix as "the only exception" while still telling every new table to filter `deleted_at` in each `USING` clause. That note now states the general rule and flags the four tables still carrying the latent version (`ai_budgets`, `ai_shutdown_switches`, `users`, `workspaces`). Worse than a broken button: **`ProviderCredentialStore.erase` had been silently failing since STEP-17**, so a workspace erasure left provider keys behind — a [[CLAUDE|CLAUDE.md]] §16 obligation broken with no test covering it. The second defect: **raising a ceiling silently reset the billing period**, because `upsert_budget` collapsed an unstated interval to a 30-day default and wrote it.
+
+**The pytest harness cannot reach the development database** — `conftest.request_database_url` rebuilds the DSN with a bare `projectone_api` username and the Supabase session pooler requires the `<role>.<project-ref>` suffix; a scratch database on the same instance hits the same wall. The 25 database-backed tests therefore first execute in CI. Rather than leave that unverified, the same assertions were driven in-process against the live database through a real `TestClient`: **37 HTTP-layer checks**, plus 11 on the grant and audit constraint and 6 on the inverted STEP-18 assertions — including a negative control that neutered the API's authorization gate and confirmed **RLS still refused the write independently**. Every probe removed its rows and confirmed the database back to its prior contents. `apps/api` grew to 325 offline tests, `apps/web` from 74 to 97.
+
+**A STEP-18 test asserted the old exposure and would have failed in CI.** It is inverted rather than deleted, with its docstring recording what changed.
+
+**The credential mismatch recurred and was fixed by the script built for it.** `REQUEST_DATABASE_URL` had drifted from the role's password again; `scripts/sync-request-role-credential.py` regenerated it, proved it by connecting, and confirmed `rolbypassrls = False`.
+
+**Workspace selection is a stated limitation, not a silent one.** The web application had no workspace concept at all before this step; it now resolves the caller's *first* workspace server-side (`GET /workspaces` orders by name, so "first" is stable) and **says so on screen** when the user belongs to others. A switcher is a real feature belonging with [[STEP-20 Projects Schema and Lifecycle]] onward, not scope for a settings step.
+
+**STEP-19 carries an owner approval gate** (Critical — public API contract, security controls, multi-tenancy, database schema, and the first user-facing AI path). It is `Done` and committed, but STEP-20 does not begin until the owner confirms it — including confirming the CI run, which this environment cannot observe on a private repository.
 
 **A long-term UI vision now exists, and it changes nothing in this plan** (2026-08-03). The project owner supplied [[Design Backlog and UI Vision]] — a premium-AI-OS design direction plus a Dashboard concept mockup. It is filed as **informational only** by explicit owner instruction: **not a step, not a roadmap change, not an architecture change, and overriding no engineering document.** No step was added, renumbered or rescheduled, and the [[Roadmap]] is untouched.
 

@@ -17,7 +17,12 @@ a decision about this endpoint rather than about the error type.
 
 from fastapi import APIRouter, HTTPException, status
 
-from app.core.dependencies import AccessTokenDep, AuthServiceDep, CurrentUserDep
+from app.core.dependencies import (
+    AccessTokenDep,
+    AuthServiceDep,
+    CurrentUserDep,
+    TenantConnectionDep,
+)
 from app.core.security import CredentialsRejectedError
 from app.repositories.supabase_auth import AuthSession
 from app.schemas.auth import (
@@ -29,6 +34,7 @@ from app.schemas.auth import (
     SignUpRequest,
     SignUpResponse,
 )
+from app.schemas.settings import ProfileUpdateRequest
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -126,3 +132,50 @@ def read_me(user: CurrentUserDep, auth_service: AuthServiceDep) -> ProfileRespon
         email=profile.email,
         display_name=profile.display_name,
     )
+
+
+@router.patch("/me", response_model=ProfileResponse, summary="Update the caller's profile")
+def update_me(
+    request: ProfileUpdateRequest,
+    user: CurrentUserDep,
+    connection: TenantConnectionDep,
+) -> ProfileResponse:
+    """Change the caller's display name.
+
+    The row written is always the caller's own, and there are two independent
+    reasons it cannot be anyone else's: the schema carries no id, and the
+    `users_update_self` policy scopes the UPDATE to `id = auth.uid()` with a
+    matching `WITH CHECK` so the row cannot be reassigned to another identity on
+    the way out. The `WHERE id = %s` below is a filter, not the control.
+
+    `email` is deliberately not updatable -- see `app.schemas.settings`. The
+    address is authoritative upstream and reconciled on every authenticated
+    request, so a write here would silently revert.
+
+    Runs over the tenant connection rather than through `AuthService`, which
+    holds the *privileged* `UserRepository` for provisioning. Routing an
+    ordinary self-service edit through the one path that can write any user's row
+    would widen a deliberately narrow bypass (`UserRepository` module docstring).
+
+    Raises:
+        HTTPException: 404 when the caller's profile row is not visible, which
+            after a verified token means it was soft-deleted mid-request.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            UPDATE public.users SET display_name = %s
+            WHERE id = %s AND deleted_at IS NULL
+            RETURNING id, email, display_name
+            """,
+            (request.display_name, user.id),
+        )
+        row = cursor.fetchone()
+
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Profile not found",
+        )
+
+    return ProfileResponse(id=str(row[0]), email=row[1], display_name=row[2])

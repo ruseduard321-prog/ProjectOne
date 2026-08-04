@@ -25,13 +25,26 @@ export interface FormFieldProps {
   readonly id: string;
   readonly name: string;
   readonly label: string;
-  readonly type: "email" | "password";
+  /**
+   * `text` and `number` were added by STEP-19 for the settings forms.
+   *
+   * `password` remains the type used for a provider API key even though it is
+   * not a password: it is what makes the browser mask the value, keeps it out of
+   * autofill history, and stops it being read over a user's shoulder or captured
+   * in a screen share while they paste it.
+   */
+  readonly type: "email" | "password" | "text" | "number";
   readonly autoComplete: string;
   readonly error?: string;
   /** Hint rendered under the field when there is no error. */
   readonly hint?: string;
   readonly defaultValue?: string;
   readonly disabled?: boolean;
+  /** Placeholder text. Never a substitute for the label, which is always shown. */
+  readonly placeholder?: string;
+  readonly required?: boolean;
+  /** Passed through to `inputMode`, so a phone shows the right keyboard. */
+  readonly inputMode?: "decimal" | "numeric";
 }
 
 export function FormField({
@@ -44,6 +57,9 @@ export function FormField({
   hint,
   defaultValue,
   disabled,
+  placeholder,
+  required,
+  inputMode,
 }: FormFieldProps) {
   const errorId = `${id}-error`;
   const hintId = `${id}-hint`;
@@ -64,6 +80,9 @@ export function FormField({
         autoComplete={autoComplete}
         defaultValue={defaultValue}
         disabled={disabled}
+        placeholder={placeholder}
+        required={required}
+        inputMode={inputMode}
         aria-invalid={error !== undefined}
         aria-describedby={describedBy}
         className={[

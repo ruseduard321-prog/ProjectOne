@@ -2,8 +2,8 @@
 title: AI Router Implementation
 category: Architecture
 status: stable
-version: "1.1"
-last_updated: 2026-08-03
+version: "1.2"
+last_updated: 2026-08-04
 tags: [ai, backend, architecture, security, standards]
 aliases: ["AI Router", "Provider Abstraction", "BYOK"]
 ---
@@ -178,7 +178,8 @@ Stated so the next reader does not assume otherwise:
 - **Encryption key rotation is not supported.** Changing `PROJECTONE_BYOK_ENCRYPTION_KEY` makes every stored credential undecryptable, and each workspace must re-enter its keys. A re-encryption path is unbuilt.
 - **One deployment-wide encryption key**, not per-tenant. Per-tenant keys need a key management service to be worth anything — storing them in the same database as the ciphertext they protect is theatre. That is an ADR and infrastructure, not something to improvise.
 - **No streaming, embeddings, image generation or tool calling.** No scheduled step consumes them; adding one later is one method and one implementation per provider, while removing a speculative one is a breaking change.
-- **No HTTP routes.** [[STEP-19 Settings and BYOK UI]] and [[STEP-23 AI Chat End to End]] own those.
+- **No HTTP route reaches the router.** [[STEP-19 Settings and BYOK UI]] added routes that *manage* BYOK credentials and budgets, but none that runs a completion — that is [[STEP-23 AI Chat End to End]]'s. `test_no_route_can_reach_the_router_without_the_ai_service` still holds.
+- **A revoked credential was impossible to revoke** until [[STEP-19 Settings and BYOK UI]]. `provider_credentials_select_same_workspace` filtered `deleted_at IS NULL`, so the `UPDATE` setting `deleted_at` produced a row that policy no longer matched and PostgreSQL refused it — for every role, including `owner`. It also silently broke workspace data erasure, which soft-deletes this table. Fixed by migration `d1f70a4c62be`; the general rule is now in [[RLS Policy Pattern]]. Nothing caught it because the repository method had only ever run against a fake.
 - **Costs are hardcoded constants**, not fetched pricing. They exist to make providers comparable, not to bill.
 
 ---

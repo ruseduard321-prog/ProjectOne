@@ -2,8 +2,8 @@
 title: "Table - ai_budgets"
 category: Database Table
 status: stable
-version: "1.0"
-last_updated: 2026-08-03
+version: "1.1"
+last_updated: 2026-08-04
 tags: [database, schema, ai, cost, multi-tenancy]
 table_name: "ai_budgets"
 ---
@@ -84,10 +84,18 @@ The asymmetry mirrors [[Table - provider_credentials]]: reads are membership-sco
 
 Verified live: a tenant cannot see another workspace's budget, and an attempt to raise one affects **0 rows** — a `USING` mismatch affects zero rows silently rather than raising, so the test asserts the count rather than expecting an error ([[RLS Policy Pattern]]).
 
-> [!warning] Known limitation: an owner can zero their own `spent_usd`
-> The UPDATE policy exists so a settings route can change `limit_usd` and `period_interval`, and PostgreSQL policies are per-row, not per-column — so the same policy reaches the running total. An owner could therefore grant themselves fresh allowance.
+> [!success] Closed by [[STEP-19 Settings and BYOK UI]]: `spent_usd` is no longer writable
+> STEP-18 recorded a real exposure here — the UPDATE policy exists so a settings route can change `limit_usd` and `period_interval`, and **PostgreSQL policies are per-row, not per-column**, so the same policy reached the running total. An owner could grant themselves fresh allowance.
 >
-> The mitigation is that **[[Table - ai_spend_records]] is the immutable record** and is what a billing reconciliation reads; this counter is enforcement state, not the account of what was spent. Closing it properly means a column-level grant, which is a schema change belonging to the step that adds the settings route ([[STEP-19 Settings and BYOK UI]]). Recorded rather than glossed, and asserted honestly by `test_a_tenant_cannot_clear_its_own_running_total`, which documents the current exposure instead of claiming a protection that does not exist.
+> RLS cannot close it, because no policy can restrict which *columns* an UPDATE touches. The mechanism that can is a **column-level grant**, which PostgreSQL evaluates before any policy runs. Migration `c9d3b71e08af` revokes the table-wide `UPDATE` and grants:
+>
+> ```sql
+> GRANT UPDATE (limit_usd, period_interval) ON public.ai_budgets TO authenticated;
+> ```
+>
+> `spent_usd`, `breaker_tripped_at` and `breaker_reason` are therefore unwritable over the request connection **regardless of what any route accepts** — including a future route that forgets. Verified against a live database: the write is refused with `InsufficientPrivilege`, the two granted columns still write, the `touch_row` trigger still increments `version` (it runs as the table owner, not as the caller), and a **negative control** re-granting the column reproduced the breach before it was revoked again.
+>
+> Two further gates sit above it: `BudgetUpdateRequest` forbids extra fields, so sending `spent_usd` is a **422** rather than a silent discard, and the handler never passes it on. [[Table - ai_spend_records]] remains the immutable record a billing reconciliation reads — this counter is enforcement state, not the account of what was spent.
 
 ---
 

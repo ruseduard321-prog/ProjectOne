@@ -2,8 +2,8 @@
 title: API Endpoints
 category: Architecture
 status: stable
-version: "1.0"
-last_updated: 2026-08-02
+version: "1.1"
+last_updated: 2026-08-04
 tags: [backend, api, standards, documentation]
 aliases: ["Endpoint Reference", "API Reference"]
 ---
@@ -41,6 +41,9 @@ Established by [[STEP-10 Authentication Backend]]; see [[Authentication Implemen
 | `POST /api/v1/auth/sign-out` | Bearer | Revokes the session **upstream** at Supabase, not client-side — a local discard leaves the token valid until it expires. |
 | `POST /api/v1/auth/refresh` | — | Exchanges a refresh token. Rate limited **30/min**. |
 | `GET /api/v1/auth/me` | Bearer | The caller's profile; provisions the `public.users` row on first use. |
+| `PATCH /api/v1/auth/me` | Bearer | Changes the caller's `display_name` ([[STEP-19 Settings and BYOK UI]]). Carries **no id** — the row written is always the verified caller's, and `users_update_self` refuses any other. Runs over the *tenant* connection, never the privileged `UserRepository` path that provisioning uses. |
+
+**`email` is deliberately not editable.** The address is authoritative in Supabase Auth and reconciled into `public.users` on every authenticated request, so a write here would be silently reverted on the user's next request. Changing an address needs a verification flow that does not exist yet.
 
 **503, not 401, when Supabase is unreachable.** The caller's credentials were never judged, so reporting "invalid credentials" during an outage would both mislead the user and hide the outage.
 
@@ -95,11 +98,51 @@ Recorded actions: `workspace.created`, `member.added`, `member.removed`, `member
 
 **It is exportable but not erasable**, and that asymmetry is a documented legal exception ([[CLAUDE|CLAUDE.md]] §16): audit logs are retained on their own schedule because they exist precisely to survive the events they record. Otherwise anyone holding `DELETE_WORKSPACE` could destroy the evidence of what they did on the way out. A workspace erasure reports `"audit_log": 0`, which **discloses** the exception rather than hiding it.
 
+## AI settings — providers, budgets and spend
+
+Added by [[STEP-19 Settings and BYOK UI]]. **The first HTTP routes that reach the AI layer at all** — [[STEP-17 AI Router and Provider Abstraction]] built the router with no routes and [[STEP-18 AI Cost Governance Controls]] built the ceilings with none, so every route here is on the critical path for both tenant isolation and spend.
+
+| Endpoint | Auth | Permission | Notes |
+|---|---|---|---|
+| `GET /api/v1/workspaces/{id}/ai/providers` | Bearer | `VIEW_WORKSPACE` | Provider name and `last_four` only. **Never key material.** |
+| `PUT /api/v1/workspaces/{id}/ai/providers/{provider}` | Bearer | `UPDATE_WORKSPACE` | Stores or replaces a key. Idempotent on (workspace, provider). Audited. Rate limited **10/min**. **422** for an unknown provider or an implausibly short key. |
+| `DELETE /api/v1/workspaces/{id}/ai/providers/{provider}` | Bearer | `UPDATE_WORKSPACE` | Soft-deletes the key. **204**, or **404** when none was stored — a false confirmation is worse than an error for a security action. Audited. |
+| `GET /api/v1/workspaces/{id}/ai/budgets` | Bearer | `VIEW_WORKSPACE` | Ceilings, usage, period and breaker state. |
+| `PUT /api/v1/workspaces/{id}/ai/budgets` | Bearer | `UPDATE_WORKSPACE` | Sets `limit_usd` and optionally `period_days`. Audited. Rate limited **10/min**. |
+| `GET /api/v1/workspaces/{id}/ai/spend` | Bearer | `VIEW_WORKSPACE` | Spend ledger, newest first. `?limit=` 1–200, default 50. |
+
+### No route can return a stored key
+
+`ProviderCredentialService.key_for` is the only method in the codebase producing a plaintext provider key, and **no route calls it**. The response type carries `id`, `provider` and `last_four` and has no field capable of holding a key, so a future route returning it cannot leak one by accident.
+
+Rotation is therefore **replace, never reveal** — a user who has lost their key stores a new one. Proven by grep against real response bodies rather than by reading the serializer, the [[STEP-16a Developer Session Inspector]] standard.
+
+### Members read, owners and admins write
+
+Deliberate asymmetry, and both halves matter. A tripped ceiling must be explainable to the person whose request it refused, so every live member can read budgets, spend and which providers are configured. Changing a key or a ceiling is billing-adjacent and belongs to the roles that already control such settings.
+
+Enforced in **both layers**: a `requires(...)` dependency on the route *and* an RLS policy scoped to `owner`/`admin`. The policy makes the write impossible; the dependency makes the answer honest — without it a member would receive a 500 or an unaffected row where a 403 is the truth.
+
+### `spent_usd` is unwritable by three independent mechanisms
+
+The running total every ceiling is enforced against is not a client-writable value:
+
+1. **`BudgetUpdateRequest` forbids extra fields**, so sending it is a **422** rather than a silent discard.
+2. **The handler never passes it on.**
+3. **A column-level grant** (migration `c9d3b71e08af`) replaced the table-wide `UPDATE` with one on `limit_usd` and `period_interval` only, so the request connection cannot write it even if the two layers above were bypassed.
+
+The third exists because it is the one that holds when a future route forgets. This closes the exposure [[STEP-18 AI Cost Governance Controls]] recorded — see [[Table - ai_budgets]].
+
+### Governance refusals
+
+Routes raise; they do not map. A ceiling or execution limit reaches the client as **402**, a shutdown or tripped breaker as **503** with `Retry-After`, through the handler table in `app/core/errors.py`.
+
 ## Not Built Yet
 
 Recorded so the next reader does not assume otherwise:
 
-- **User-facing endpoints beyond `/auth/me`.** There is no `PATCH /users/me` and no way to set a display name. Nothing needs it until there is a UI ([[STEP-16 Sign Up and Sign In UI]]).
+- **User-facing endpoints beyond `/auth/me`.** `PATCH /api/v1/auth/me` now sets a display name ([[STEP-19 Settings and BYOK UI]]); nothing else about a user is editable, and changing an email address remains unbuilt.
+- **Workspace switching.** A user belonging to several workspaces can currently only configure the first — the web application resolves one server-side and discloses the limitation on screen. A switcher belongs with [[STEP-20 Projects Schema and Lifecycle]] onward.
 - **Workspace deletion itself.** `DELETE /workspaces/{id}/data` erases contents; the workspace row remains. Deleting the workspace itself needs the last-owner and orphaning questions answered deliberately.
 - **Invitation of non-users.** See above.
 - **Idempotency keys.** `POST /workspaces` is the first endpoint creating a resource from a client-supplied request, so it is the first that could benefit. [[API Architecture]] calls for idempotency where appropriate; a retried creation currently makes a second workspace.

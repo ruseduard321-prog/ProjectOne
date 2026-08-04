@@ -2,8 +2,8 @@
 title: AI Cost Governance
 category: Architecture
 status: stable
-version: "1.0"
-last_updated: 2026-08-03
+version: "1.1"
+last_updated: 2026-08-04
 tags: [ai, backend, architecture, security, cost, standards]
 aliases: ["Spend Governance", "AI Budgets", "Cost Controls"]
 ---
@@ -226,11 +226,12 @@ Three things enforce it rather than one convention:
 
 Stated so the next reader does not assume otherwise:
 
-- **An owner can currently zero their own `spent_usd`.** The UPDATE policy exists for configuration (`limit_usd`, `period_interval`), and PostgreSQL policies are per-row, not per-column. The mitigation is that `ai_spend_records` is the immutable record and is what a billing reconciliation reads — not this counter. A column-level grant would close it and is a schema change belonging to the step that adds the settings route ([[STEP-19 Settings and BYOK UI]]).
+- ~~**An owner can currently zero their own `spent_usd`.**~~ **Closed by [[STEP-19 Settings and BYOK UI]].** Migration `c9d3b71e08af` revokes the table-wide `UPDATE` on `ai_budgets` and grants `UPDATE (limit_usd, period_interval)` instead, so the running total is unwritable over the request connection regardless of what any route accepts — the column-level mechanism RLS structurally cannot provide. Verified live, with a negative control re-granting the column to observe the breach before revoking it again. See [[Table - ai_budgets]].
 - **No budget is configured by default**, so a new workspace is unmetered rather than blocked. Refusing every call on a platform that has not asked anyone to set a limit would be the wrong default; whether it stays that way in production is a launch decision ([[STEP-25 Launch Readiness Criteria]]).
 - **Anomaly detection runs inline**, after each recorded call. It is near-real-time as §15a requires, but it adds two queries to the settle path. A background evaluation is the natural evolution once there is a scheduler.
 - **Prompt token estimation is `len // 4`**, not a real tokenizer. It feeds only the pre-call reservation and is replaced by the provider's real count on settlement. A real tokenizer means a dependency per provider ([[CLAUDE|CLAUDE.md]] §28) to compute a number discarded moments later.
-- **No HTTP routes.** [[STEP-19 Settings and BYOK UI]] exposes budgets and spend to a user; nothing here is reachable over the API yet.
+- ~~**No HTTP routes.**~~ **[[STEP-19 Settings and BYOK UI]] added them:** `GET`/`PUT .../ai/budgets` and `GET .../ai/spend`, members reading and owners/admins writing, with governance refusals surfacing as 402 or 503 — see [[API Endpoints#AI settings — providers, budgets and spend]]. A budget can now be configured and a refusal understood without a database client.
+- **Budget periods are configured, not the breaker.** A tripped spend breaker is deliberately **not** resettable from the settings surface: it trips because something spent more than expected, which does not resolve by the tenant clearing it. Resetting is a manual decision (`AISpendRepository.reset_breaker`), and the request schema is not a path to it.
 - **Alerting is a log line at `ERROR`**, not a pager. Routing it to an on-call channel is infrastructure ([[Infrastructure]]), not application code.
 
 ---

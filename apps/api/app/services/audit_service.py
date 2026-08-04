@@ -53,6 +53,16 @@ class AuditAction(StrEnum):
     MEMBER_LEFT = "member.left"
     OWNERSHIP_TRANSFERRED = "ownership.transferred"
 
+    # Added by STEP-19, alongside migration `c9d3b71e08af` which widens the
+    # CHECK constraint to accept them. A provider key authorizes spend against
+    # the workspace's own provider account, so its appearance and disappearance
+    # are security questions somebody will eventually need answered -- and a
+    # budget ceiling is a decision about money, where "who changed it" is the
+    # first question asked after a surprising invoice.
+    PROVIDER_KEY_STORED = "provider_key.stored"
+    PROVIDER_KEY_REVOKED = "provider_key.revoked"
+    BUDGET_UPDATED = "budget.updated"
+
 
 class AuditService:
     """Records consequential actions to the audit log."""
