@@ -2,8 +2,8 @@
 title: Environment Setup
 category: Development
 status: stable
-version: "1.8"
-last_updated: 2026-08-01
+version: "1.9"
+last_updated: 2026-08-05
 tags: [engineering, documentation, ai, mcp]
 aliases: ["Local Development Setup", "AI Tooling Setup"]
 ---
@@ -180,11 +180,34 @@ The pooler was not assumed to preserve the properties multi-tenancy depends on �
 > [!note] The application code was already pooler-safe, by accident of an earlier decision
 > `RequestSessionFactory` uses `SET LOCAL ROLE` and transaction-scoped `set_config` because [[STEP-10 Authentication Backend]] found that session-scoped forms leak a caller's identity into the next request on a pooled connection. That choice — made for a different reason — is exactly what transaction-mode pooling requires, so the tenant isolation model transferred to the pooler unchanged.
 
+## Running the database-backed tests locally
+
+**Roughly half the API suite only executes with a real PostgreSQL, and the development Supabase project cannot host it** — the session pooler requires a `<role>.<project-ref>` username, while `conftest.request_database_url` rebuilds the DSN with a bare `projectone_api`. Without a local server those tests *skip*, and a skip reads as a pass: STEP-19 pushed three database-only defects to CI that no offline run could have caught, because 192 tests silently never ran.
+
+A throwaway local server closes that gap and needs no installer or admin rights. The EnterpriseDB downloads return 403 from this machine; the PostgreSQL 17 binaries published to Maven Central work:
+
+```bash
+curl -o pg.jar https://repo1.maven.org/maven2/io/zonky/test/postgres/embedded-postgres-binaries-windows-amd64/17.4.0/embedded-postgres-binaries-windows-amd64-17.4.0.jar
+```
+
+Unzip it, extract the inner `postgres-windows-x86_64.txz`, then `initdb -D data -U postgres --auth=md5 --pwfile=...` and start on a port that does not collide with anything else (5433 was used).
+
+Then run the suite exactly as CI does — the environment variables are the whole point, since `PROJECTONE_REQUIRE_DATABASE_TESTS` is what turns a silent skip into a failure:
+
+```bash
+PROJECTONE_TEST_DATABASE_URL=postgresql://postgres:...@127.0.0.1:5433/projectone_test PROJECTONE_REQUIRE_DATABASE_TESTS=1 pytest -ra
+```
+
+**`DATABASE_URL` and `REQUEST_DATABASE_URL` must stay distinct**, as they are in production and in the CI workflow. Collapsing them onto the unprivileged role is what caused STEP-19's `permission denied for table ai_budgets`: the privileged path lost rights that the `ai_budgets` column grant is only meant to deny the tenant connection.
+
+Expected result: **518 passed, 0 skipped**. Any skip means the database was not reached.
+
 ## Known Gaps
 
 - No Supabase or Vercel MCP configuration exists yet. For Vercel this is expected — there is no deployment target. For Supabase a database now exists (STEP-07), but the API reaches it over plain PostgreSQL and migrations run through Alembic, so the MCP is only needed for dashboard-level operations.
 - `@playwright/test` is not installed as a project dependency — the harness's Playwright capability is validated for exploratory/manual use only, not automated CI test coverage. See [[MCP/Playwright|Playwright]] Recommendations.
 - **GitHub workflow results are not readable from this environment.** Commits push successfully and the [[MCP/GitHub|GitHub MCP]] reads repository data (validated against the real repository as of STEP-06), but the MCP exposes no workflow-run tool, `gh` is not installed, and the repository is private so unauthenticated API and browser access return 404. Confirming a CI run is therefore an owner action. Installing `gh` or adding a workflow-run capability would close this.
+	- **Mitigated since STEP-19**, though not closed: the full CI suite now runs locally against a real PostgreSQL (see above), so a red run is reproducible here rather than diagnosable only from the owner's screen. The workflow also writes pytest output to the run's step summary and an artifact, both readable without admin rights — which is what made STEP-19's three failures actionable.
 - No `08 ADR/` entries exist yet recording these tooling decisions as formally accepted architecture — see [[08 ADR]].
 
 ## Unresolved Security Finding

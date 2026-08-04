@@ -75,15 +75,31 @@ def outsider(admin_connection: psycopg.Connection) -> Identity:
 def client(
     roles: Roles,
     outsider: Identity,
+    migrated_database: str,
     request_database_url: str,
 ) -> Iterator[TestClient]:
     """Return a client backed by the real test database.
 
-    Both DSNs point at `projectone_api`, the role a real request uses, which has
-    no `rolbypassrls`. That is stricter than production, where the privileged DSN
-    connects as the owner -- and it is what makes the `spent_usd` grant test
-    meaningful: a client whose privileged connection bypassed RLS and grants
-    could not demonstrate a column-level refusal at all.
+    **The two DSNs are deliberately different, exactly as they are in
+    production.** `REQUEST_DATABASE_URL` connects as `projectone_api`, the role a
+    real request uses, which has no `rolbypassrls`; `DATABASE_URL` connects as
+    the owner, which is the privileged path `AISpendRepository` opens for the
+    reserve/settle methods that must maintain `spent_usd`.
+
+    An earlier version of this fixture pointed *both* at `projectone_api`,
+    reasoning that a stricter privileged role would make the `spent_usd` grant
+    test more meaningful. That was wrong in a way only a real database revealed:
+    it also stripped the privileged path of the rights it legitimately needs, so
+    `PUT .../ai/budgets` failed with `permission denied for table ai_budgets` --
+    the route was refused by the very grant that is supposed to constrain only
+    the tenant connection.
+
+    The grant tests lose nothing by this. They do not rely on the fixture's
+    privileged DSN at all: `test_an_owner_cannot_write_spent_usd_over_the_request_connection`
+    and `test_the_granted_columns_are_still_writable` each open their own
+    connection to `request_database_url` and `SET LOCAL ROLE authenticated`,
+    which is a more faithful reproduction of a route's connection than
+    borrowing the fixture's would have been.
     """
 
     def settings() -> Settings:
@@ -91,7 +107,7 @@ def client(
             environment=Environment.DEVELOPMENT,
             SUPABASE_URL="https://project.test",
             SUPABASE_SECRET_KEY=SecretStr("unused"),
-            DATABASE_URL=SecretStr(request_database_url),
+            DATABASE_URL=SecretStr(migrated_database),
             REQUEST_DATABASE_URL=SecretStr(request_database_url),
             byok_encryption_key=SecretStr(TEST_BYOK_KEY),
             _env_file=None,

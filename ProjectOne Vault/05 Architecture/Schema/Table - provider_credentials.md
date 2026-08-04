@@ -2,8 +2,8 @@
 title: Table - provider_credentials
 category: Architecture/Schema
 status: stable
-version: "1.1"
-last_updated: 2026-08-04
+version: "1.2"
+last_updated: 2026-08-05
 tags: [database, schema, ai, security, multi-tenancy]
 aliases: ["provider_credentials", "BYOK Table"]
 ---
@@ -102,11 +102,15 @@ Full detail — nonce discipline, why GCM, where plaintext exists — in [[AI Ro
 
 ## Testing
 
-`apps/api/tests/test_provider_credential_isolation.py` — 18 tests covering cross-tenant read, cross-tenant write, the role requirement, the DELETE denial, the grants, the partial index, and the `touch_row` trigger.
+`apps/api/tests/test_provider_credential_isolation.py` — 17 tests covering cross-tenant read, cross-tenant write, the role requirement, the DELETE denial, the grants, the partial index, and the `touch_row` trigger.
+
+**Soft-delete invisibility is asserted through the repository, not through a raw `SELECT`.** Since `d1f70a4c62be` the policy deliberately does not filter `deleted_at`, so a policy-level assertion would pass only while revocation was broken. `test_a_soft_deleted_credential_is_invisible` drives all three read methods instead, and `test_a_soft_deleted_credential_stays_within_its_tenant` pins the property the policy *does* still own — that widening liveness did not widen visibility across tenants.
 
 Includes `test_policies_are_what_makes_these_tests_pass`, which disables RLS, observes the breach, and restores it — [[RLS Policy Pattern]] step 8. An isolation test that would pass with RLS off is asserting nothing.
 
-**That pytest file still runs only in CI**, against a throwaway container — the development project sits behind the Supabase session pooler, which the harness cannot reach (`conftest.request_database_url` rebuilds the DSN with a bare `projectone_api` username, and the pooler requires the `<role>.<project-ref>` suffix).
+**The development Supabase project cannot run this file** — it sits behind the session pooler, which the harness cannot reach (`conftest.request_database_url` rebuilds the DSN with a bare `projectone_api` username, and the pooler requires the `<role>.<project-ref>` suffix).
+
+**A local PostgreSQL 17 runs it in full, and that is now the expected way to validate this table before pushing.** Point `PROJECTONE_TEST_DATABASE_URL` at a throwaway local server and set `PROJECTONE_REQUIRE_DATABASE_TESTS=1`, exactly as the CI workflow does. STEP-19 established this after database-only defects reached CI that no offline run could have caught — setup is in [[Environment Setup#Running the database-backed tests locally]].
 
 **The table's behaviour has been verified live regardless.** [[STEP-19 Settings and BYOK UI]] drove the full settings surface against the development database through a real `TestClient`: cross-tenant reads and writes refused, the role asymmetry, revocation, rotation after revocation, and a **negative control** neutering the API's authorization gate to confirm RLS refuses the write independently. 37 checks, all rows removed afterwards and the database confirmed back to its prior contents.
 

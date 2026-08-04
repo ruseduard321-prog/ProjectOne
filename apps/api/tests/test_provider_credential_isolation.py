@@ -24,6 +24,7 @@ from collections.abc import Iterator
 import psycopg
 import pytest
 
+from app.repositories.provider_credentials import ProviderCredentialRepository
 from tests.conftest import Identity, seed_identity
 
 # Every test in this module needs a database, and skips without one.
@@ -132,7 +133,24 @@ def test_an_unauthenticated_session_reads_nothing(
 def test_a_soft_deleted_credential_is_invisible(
     admin_connection: psycopg.Connection, seeded_credentials: tuple[Identity, Identity]
 ) -> None:
-    """A revoked key must stop being readable immediately."""
+    """A revoked key must stop being returned by every query that reads one.
+
+    **Liveness is enforced in the queries, not in the SELECT policy**, since
+    migration `d1f70a4c62be` ([[STEP-19 Settings and BYOK UI]]). A policy that
+    filtered `deleted_at IS NULL` made revocation impossible for every role
+    including `owner`: the `UPDATE` setting `deleted_at` produces a row the
+    policy no longer matches, so PostgreSQL refused the write via the *read*
+    policy. That is the same defect [[STEP-11a Membership Removal Policy]] fixed
+    on `workspace_members`.
+
+    So this asserts the guarantee at the layer that now owns it -- every
+    repository method -- rather than at the layer that used to. Asserting a raw
+    `SELECT count(*)` here would be asserting the defect: it would pass only
+    while revocation was broken.
+
+    The tenant boundary is unchanged and still proven by the policy, in
+    `test_a_soft_deleted_credential_stays_within_its_tenant` below.
+    """
     alice, _ = seeded_credentials
 
     with admin_connection.cursor() as cursor:
@@ -141,9 +159,39 @@ def test_a_soft_deleted_credential_is_invisible(
             (alice.workspace_id,),
         )
 
+    repository = ProviderCredentialRepository(admin_connection)
+
+    # Each of the three read paths, because "invisible" that holds for one query
+    # and not another is exactly how a revoked key comes back to life.
+    assert repository.credential_for(alice.workspace_id, "openai") is None
+    assert repository.configured_providers(alice.workspace_id) == ()
+    assert repository.list_summaries(alice.workspace_id) == ()
+
+
+def test_a_soft_deleted_credential_stays_within_its_tenant(
+    admin_connection: psycopg.Connection, seeded_credentials: tuple[Identity, Identity]
+) -> None:
+    """Widening liveness must not have widened *visibility*.
+
+    The policy stopped filtering `deleted_at`, so a soft-deleted row is now
+    reachable by the policy. This pins the property that actually matters: it is
+    reachable by its **own** tenant only. If this ever passes for Bob, the
+    revocation fix leaked another workspace's rows.
+    """
+    alice, bob = seeded_credentials
+
+    with admin_connection.cursor() as cursor:
+        cursor.execute(
+            "UPDATE public.provider_credentials SET deleted_at = now() WHERE workspace_id = %s",
+            (alice.workspace_id,),
+        )
+
     with admin_connection.transaction():
-        cursor = as_user(admin_connection, alice.user_id)
-        cursor.execute("SELECT count(*) FROM public.provider_credentials")
+        cursor = as_user(admin_connection, bob.user_id)
+        cursor.execute(
+            "SELECT count(*) FROM public.provider_credentials WHERE workspace_id = %s",
+            (alice.workspace_id,),
+        )
         count = cursor.fetchone()
 
     assert count is not None

@@ -2,8 +2,8 @@
 title: STEP-19 Settings and BYOK UI
 category: Development/Build Step
 status: draft
-version: "2.1"
-last_updated: 2026-08-04
+version: "2.2"
+last_updated: 2026-08-05
 tags: [engineering, workflow, build-step, frontend,security,ai]
 step_id: STEP-19
 step_status: Done
@@ -133,7 +133,14 @@ The failure was invisible from the response, which is what makes it worth a name
 
 ### Validation
 
-The pytest harness **cannot reach the development database**: `conftest.request_database_url` rebuilds the DSN with a bare `projectone_api` username, and the Supabase session pooler requires the `<role>.<project-ref>` suffix. Creating a scratch database on the same instance did not help — same pooler, same requirement. That harness is built for the direct-connection PostgreSQL CI provides, so **the 25 database-backed tests in `test_ai_settings_endpoints.py` will first execute in CI.**
+The pytest harness **cannot reach the development database**: `conftest.request_database_url` rebuilds the DSN with a bare `projectone_api` username, and the Supabase session pooler requires the `<role>.<project-ref>` suffix. Creating a scratch database on the same instance did not help — same pooler, same requirement.
+
+> [!warning] The first push was red, and this is why
+> Because those 25 tests had never executed, the step was reported complete on an offline run where **192 tests silently skipped**. A skip reads as a pass in a summary line. CI ran them against a real PostgreSQL and surfaced three failures the offline run could not have caught.
+>
+> **The fix was to stop relying on CI as the first execution.** A throwaway local PostgreSQL 17 now runs the full suite — **518 passed, 0 skipped** — and [[Environment Setup#Running the database-backed tests locally]] records the setup. `PROJECTONE_REQUIRE_DATABASE_TESTS=1` is what turns a skip back into a failure; without it the same blindness returns.
+>
+> This is the step's most transferable lesson: *a validation number is only meaningful next to its skip count.*
 
 Rather than mark that unverified, the same assertions were driven **in-process against the live development database** through a real `TestClient` using the application's own working DSNs:
 
@@ -143,9 +150,17 @@ Rather than mark that unverified, the same assertions were driven **in-process a
 - **6 checks** confirming the two inverted STEP-18 assertions and the period fix.
 - Every probe removed its rows and **confirmed the database back to its prior contents by query**.
 
-Offline: `apps/api` 325 passed, `apps/web` 97 passed (up from 74). Ruff, ruff-format, mypy `strict`, ESLint, `tsc --noEmit` and `next build` all clean. `/settings` builds as a dynamic route; `/dev/session` remains absent from the production build.
+Final: **`apps/api` 518 passed, 0 skipped** against a local PostgreSQL 17; `apps/web` 97 passed. Ruff, ruff-format, mypy `strict`, ESLint, `tsc --noEmit` and `next build` all clean. `/settings` builds as a dynamic route; `/dev/session` remains absent from the production build.
 
 **A STEP-18 test asserted the old exposure** (`affected == 1`) and would have failed in CI. It is inverted rather than deleted, and its docstring records what changed and why.
+
+### The three CI failures, and their root causes
+
+All three were **defects in the tests, not in the application** — which is why the offline run and the live-database probes both missed them: the probes exercised the real routes, while the tests exercised a misconfigured copy of them.
+
+1. **`permission denied for table ai_budgets`** (8 tests). The `client` fixture set `DATABASE_URL` — the *privileged* DSN — to `request_database_url`, the unprivileged `projectone_api` role. `AISpendRepository.upsert_budget` correctly opens a privileged connection, which was therefore refused by the `c9d3b71e08af` column grant that is only meant to constrain the *tenant* connection. The fixture's docstring had argued for this deliberately, to make the `spent_usd` refusal demonstrable; the reasoning was wrong, because the two grant tests open their own `request_database_url` connections and never needed the fixture's. **Fixed by giving the two DSNs different roles, as production and the CI workflow do.**
+2. **`test_the_audit_trail_does_not_record_the_key_or_its_last_four`** — a *downstream* effect of the same defect, not an independent one. The budget write failed, and `AuditService.record` swallows every exception by design, so the route returned 200 with no audit row. Fixing the DSN fixed this test with no change to it. **Worth noting for a later step:** an audit write that fails silently is correct for availability and dangerous for forensics; that trade-off is recorded, not changed here.
+3. **`test_a_soft_deleted_credential_is_invisible`** — the test encoded STEP-17's assumption that the SELECT policy filters `deleted_at`. Migration `d1f70a4c62be` deliberately removed that filter *in this same step*, because it made revocation impossible for every role. The assertion could only have passed while revocation was broken. **Fixed by asserting the guarantee at the layer that now owns it** — all three repository read methods — and adding `test_a_soft_deleted_credential_stays_within_its_tenant` to pin what the policy still owns. Verified load-bearing: 0 rows with RLS on, 1 with RLS off.
 
 ### Decisions made
 
@@ -159,7 +174,7 @@ Offline: `apps/api` 325 passed, `apps/web` 97 passed (up from 74). Ruff, ruff-fo
 - **No workspace switcher** — see above.
 - **The four tables carrying the latent `deleted_at` policy defect** (`ai_budgets`, `ai_shutdown_switches`, `users`, `workspaces`) are recorded in [[RLS Policy Pattern]], not fixed. Each becomes live the moment a route soft-deletes that table.
 - **A tripped spend breaker cannot be reset from the settings screen**, deliberately — it trips because something spent more than expected, which does not resolve by the tenant clearing it.
-- **`test_ai_settings_endpoints.py` has not run locally.** CI is where it first executes.
+- **`AuditService.record` swallows every exception.** Correct for availability — an audit failure must not fail the user's operation — but it means a broken audit path is invisible until a test asserts the row's presence, which is how failure 2 above hid behind failure 1. Not changed here; recorded for a step that owns the audit surface.
 
 ---
 
