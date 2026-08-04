@@ -51,7 +51,13 @@ def pytest_runtest_logreport(report: pytest.TestReport) -> None:
     # Newlines terminate a workflow command, so a multi-line traceback has to be
     # encoded or everything after the first line is silently dropped.
     detail = str(report.longrepr).replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
-    print(f"::error title=pytest {report.when} failure::{report.nodeid}%0A{detail}")
+
+    # The leading newline is load-bearing. GitHub only parses a workflow command
+    # that starts at the beginning of a line, and pytest's progress output
+    # ("tests/test_x.py F") leaves the cursor mid-line -- so without this the
+    # command is emitted as "...py F::error title=..." and silently ignored.
+    # Verified by reproducing the piped CI invocation locally.
+    print(f"\n::error title=pytest {report.when} failure::{report.nodeid}%0A{detail}")
 
 
 # Applied to the throwaway test database only.
