@@ -25,6 +25,35 @@ from collections.abc import Iterator
 import psycopg
 import pytest
 
+
+def pytest_runtest_logreport(report: pytest.TestReport) -> None:
+    """Emit each failure as a GitHub Actions annotation.
+
+    **Why this exists.** Downloading job logs from this repository requires admin
+    rights, and artifact downloads require authentication, so a failing CI run
+    could be seen to fail without the failure itself being readable by whoever
+    had to fix it. Check-run annotations are served to anyone who can see the
+    run, so routing failures there keeps a red build diagnosable.
+
+    Emitting a `::error::` workflow command is the documented way to create one.
+    Outside GitHub Actions the environment variable is absent and this is inert,
+    so local runs are unchanged.
+    """
+    if not os.environ.get("GITHUB_ACTIONS"):
+        return
+
+    if not (report.when == "call" or (report.when == "setup" and report.failed)):
+        return
+
+    if not report.failed:
+        return
+
+    # Newlines terminate a workflow command, so a multi-line traceback has to be
+    # encoded or everything after the first line is silently dropped.
+    detail = str(report.longrepr).replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    print(f"::error title=pytest {report.when} failure::{report.nodeid}%0A{detail}")
+
+
 # Applied to the throwaway test database only.
 #
 # `auth.uid()` is supplied by Supabase's platform image, not by PostgreSQL, so a
