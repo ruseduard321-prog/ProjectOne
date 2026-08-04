@@ -168,7 +168,19 @@ def test_an_owner_is_allowed_the_same_action(client: TestClient, roles: Roles) -
     # it with a zero count discloses that retention exception rather than
     # hiding it -- an omitted store would be indistinguishable from a forgotten
     # one. See `AuditLogStore`.
-    assert response.json()["erased"] == {"workspace_members": 2, "audit_log": 0}
+    #
+    # `provider_credentials` (STEP-17) and `ai_spend_records` (STEP-18) are
+    # listed for the same reason and report 0 because this workspace never
+    # stored a key or made a call. The assertion stays exact rather than
+    # checking a subset: a store that stops being registered is exactly the
+    # CLAUDE.md §16 defect this test exists to catch, and a subset check would
+    # pass straight through it.
+    assert response.json()["erased"] == {
+        "workspace_members": 2,
+        "audit_log": 0,
+        "provider_credentials": 0,
+        "ai_spend_records": 0,
+    }
 
 
 def test_a_member_cannot_rename_the_workspace_through_the_api(

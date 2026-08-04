@@ -26,6 +26,11 @@ from typing import Any
 
 from app.core.api import current_request_id
 
+# Identifies the root handler installed by `configure_logging`, so re-running it
+# replaces its own handler rather than clearing every handler on the root logger
+# -- including ones the test suite depends on.
+_HANDLER_NAME = "projectone.stdout"
+
 #: Patterns whose *values* are replaced wherever they appear in a log message.
 #:
 #: Matched on the rendered message rather than on argument names, because the
@@ -145,12 +150,30 @@ def configure_logging(level: int = logging.INFO) -> None:
     # neither can be skipped by a handler that formats early.
     handler.addFilter(RequestIdFilter())
     handler.addFilter(RedactingFilter())
+    # Marks this handler as ours, so re-running this function replaces it
+    # without touching handlers installed by anyone else -- see below.
+    handler.set_name(_HANDLER_NAME)
 
     root = logging.getLogger()
     root.setLevel(level)
 
+    # Remove only the handler *this function* installed, never every handler on
+    # the root logger.
+    #
+    # Clearing them all was indiscriminate: the application factory calls this,
+    # and pytest's `caplog` attaches its capturing handler to the root logger,
+    # so building an app inside a test silently destroyed the fixture's ability
+    # to see any log record. Whether that happened depended on whether the
+    # client fixture ran before or after `caplog` attached, which varies by
+    # interpreter -- the assertion-rewriting tests passed on 3.14 and failed on
+    # CI's 3.12 for exactly this reason.
+    #
+    # Removing by name keeps the idempotence this function needs (no stacked
+    # duplicate handlers across the many factory calls a suite makes) without
+    # taking anything that is not ours.
     for existing in list(root.handlers):
-        root.removeHandler(existing)
+        if existing.get_name() == _HANDLER_NAME:
+            root.removeHandler(existing)
 
     root.addHandler(handler)
 
