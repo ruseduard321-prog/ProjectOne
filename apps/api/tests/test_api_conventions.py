@@ -243,7 +243,13 @@ def test_the_correlation_id_in_the_log_matches_the_one_returned(
 
     assert response.headers[REQUEST_ID_HEADER] == "findable-id"
     assert any(getattr(record, "request_id", None) == "findable-id" for record in caplog.records), (
-        "no log record carried the request's correlation id"
+        "no log record carried the request's correlation id. "
+        f"captured={[(r.name, getattr(r, 'request_id', None)) for r in caplog.records]} "
+        f"root_level={logging.getLevelName(logging.getLogger().level)} "
+        f"root_handlers={[h.get_name() or type(h).__name__ for h in logging.getLogger().handlers]} "
+        f"mw_propagate={logging.getLogger('app.core.middleware').propagate} "
+        f"mw_effective={logging.getLevelName(logging.getLogger('app.core.middleware').getEffectiveLevel())} "
+        f"logging_disable={logging.root.manager.disable}"
     )
 
 
