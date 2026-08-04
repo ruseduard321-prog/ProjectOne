@@ -205,3 +205,14 @@ jobs:
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           tail -c 60000 pytest-output.txt >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      # Downloading job logs requires admin rights on this repository, but
+      # artifacts do not — so the same output is also uploaded, keeping a failing
+      # run diagnosable by anyone who can see it rather than only by an admin.
+      - name: Upload test output
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-pytest-output
+          path: apps/api/pytest-output.txt
+          retention-days: 7
