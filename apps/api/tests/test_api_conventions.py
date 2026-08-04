@@ -242,14 +242,20 @@ def test_the_correlation_id_in_the_log_matches_the_one_returned(
         )
 
     assert response.headers[REQUEST_ID_HEADER] == "findable-id"
-    assert any(getattr(record, "request_id", None) == "findable-id" for record in caplog.records), (
-        "no log record carried the request's correlation id. "
+
+    root = logging.getLogger()
+    middleware_logger = logging.getLogger("app.core.middleware")
+    state = (
         f"captured={[(r.name, getattr(r, 'request_id', None)) for r in caplog.records]} "
-        f"root_level={logging.getLevelName(logging.getLogger().level)} "
-        f"root_handlers={[h.get_name() or type(h).__name__ for h in logging.getLogger().handlers]} "
-        f"mw_propagate={logging.getLogger('app.core.middleware').propagate} "
-        f"mw_effective={logging.getLevelName(logging.getLogger('app.core.middleware').getEffectiveLevel())} "
+        f"root_level={logging.getLevelName(root.level)} "
+        f"root_handlers={[h.get_name() or type(h).__name__ for h in root.handlers]} "
+        f"mw_propagate={middleware_logger.propagate} "
+        f"mw_effective={logging.getLevelName(middleware_logger.getEffectiveLevel())} "
         f"logging_disable={logging.root.manager.disable}"
+    )
+
+    assert any(getattr(record, "request_id", None) == "findable-id" for record in caplog.records), (
+        f"no log record carried the request's correlation id. {state}"
     )
 
 
