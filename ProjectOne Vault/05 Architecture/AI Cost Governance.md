@@ -2,7 +2,7 @@
 title: AI Cost Governance
 category: Architecture
 status: stable
-version: "1.1"
+version: "1.2"
 last_updated: 2026-08-04
 tags: [ai, backend, architecture, security, cost, standards]
 aliases: ["Spend Governance", "AI Budgets", "Cost Controls"]
@@ -145,6 +145,17 @@ Five is low deliberately — [[CLAUDE|CLAUDE.md]] §15a asks for an "explicit, l
 **One budget per run, passed to every call in it.** That shared tally is what makes the recursion cap real; a fresh budget per call would bound nothing. A standalone call gets a fresh budget rather than none, so every path has a budget to check instead of a branch that skips the check.
 
 Monotonic clock, so an NTP correction mid-run cannot extend or collapse the limit.
+
+### The workflow engine is the first real consumer
+
+[[STEP-22 Minimum Workflow Engine]] is where "one run" stops being hypothetical. `WorkflowRunner` builds **one `ExecutionBudget` per execution** and passes it through `StepContext` to every step, which hands it to `AIService.complete`. `test_every_step_in_one_execution_shares_one_budget` asserts this **by identity** rather than equality — a copy would tally separately and look correct while being just as unbounded.
+
+Two decisions worth recording:
+
+- **A resumed run gets a fresh budget.** The ceiling bounds one *execution*, not the run's whole lifetime: a run paused overnight for approval must not fail on wall-clock time that elapsed while a human was deciding.
+- **A tripped ceiling fails the run**, and its public message reaches the run row, so a user seeing a stopped run learns a limit stopped it. §15a's "fails loudly rather than silently continuing", enforced end to end.
+
+See [[Workflow Execution#Governance]].
 
 ## Pricing Is Separate From Selection, On Purpose
 

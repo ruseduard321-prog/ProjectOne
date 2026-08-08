@@ -2,7 +2,7 @@
 title: RLS Policy Pattern
 category: Architecture/Schema
 status: stable
-version: "1.2"
+version: "1.3"
 last_updated: 2026-08-08
 tags: [database, security, multi-tenancy, standards]
 aliases: ["Row Level Security Pattern", "Tenant Isolation Pattern"]
@@ -100,6 +100,8 @@ Written **per command**, never as one `FOR ALL` policy. `FOR ALL` applies a sing
 | `workspace_members` | INSERT | Same workspace |
 | `projects` | SELECT / INSERT / UPDATE | Live membership — **any role**, since a workspace exists so its members can make things ([[STEP-20 Projects Schema and Lifecycle]]) |
 | `assets` | SELECT / INSERT / UPDATE | Live membership — same shape as `projects` |
+| `workflow_runs` | SELECT / INSERT / UPDATE | Live membership — any role. **Approval is gated at the API, not by a policy** ([[STEP-22 Minimum Workflow Engine]]) |
+| `workflow_step_runs` | SELECT / INSERT / UPDATE | Live membership — same shape |
 
 ### The role predicate
 
@@ -117,6 +119,17 @@ USING (
 **Its parameter is safe and STEP-09's parameterless design still holds.** The banned shape is a parameter naming *whose* access to inspect (`workspaces_for(user_id)`), which would let any caller ask what another user can see. This parameter names which *roles* to filter the caller's own memberships by; identity still comes from `auth.uid()` internally. Guarded by `test_role_function_only_ever_answers_about_the_caller`.
 
 The role vocabulary and what each role permits are defined once, in `apps/api/app/core/permissions.py`. **If that matrix and these policies disagree, the policies are correct and the matrix is a bug** — see [[Authorization Model]].
+
+### An *action* gate is not a policy
+
+[[STEP-22 Minimum Workflow Engine]] gates workflow approval to owner/admin, and deliberately does **not** express that as an RLS policy. The distinction generalizes:
+
+- **A policy answers "whose rows may this caller touch."** That is a tenant question.
+- **An action gate answers "may this caller do this particular thing to a row they can already see."** That is an authorization question.
+
+Approving a run is the second. Encoding it as a role-scoped UPDATE policy would mean a member's approval **matched zero rows and returned success** — the silent no-op `AuthorizationService` exists to turn into an honest 403.
+
+The `workspaces`/`workspace_members` UPDATE policies are role-aware because there the *row itself* must not be writable by that role at all, which RLS is exactly right for. Both mechanisms exist; use the one that matches the question.
 
 ### A SELECT policy that filters `deleted_at` makes soft deletion impossible
 
@@ -141,6 +154,8 @@ Established by narrowing rather than inference, against a live database during S
 
 > [!success] The rule held at creation time for the first time in [[STEP-20 Projects Schema and Lifecycle]]
 > `projects` and `assets` are both soft-deleted and **shipped without the filter in their SELECT policies**, rather than shipping the broken shape and paying for it in a later step. `test_soft_deleting_a_project_succeeds` asserts the soft delete through the service, so a future migration reintroducing the filter fails immediately rather than silently breaking an erasure path nothing covers.
+>
+> [[STEP-22 Minimum Workflow Engine]] did the same for `workflow_runs` and `workflow_step_runs`, guarded by `test_an_erased_run_disappears_from_the_listing`. Two consecutive steps have now got this right at creation time, against two that paid a step each for getting it wrong.
 
 The fix, in both cases, is the same: the filter **moves out of the policy and into the queries**.
 

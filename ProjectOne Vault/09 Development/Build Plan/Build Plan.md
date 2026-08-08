@@ -2,7 +2,7 @@
 title: Build Plan
 category: Development
 status: stable
-version: "2.7"
+version: "2.8"
 last_updated: 2026-08-08
 tags: [engineering, documentation, workflow]
 aliases: ["Implementation Plan", "Build Roadmap", "Step Index"]
@@ -59,8 +59,8 @@ Status appears in two places — the step note and the row below — and they mu
 | STEP-19 | [[STEP-19 Settings and BYOK UI]] | Done | full |
 | STEP-20 | [[STEP-20 Projects Schema and Lifecycle]] | Done | full |
 | STEP-21 | [[STEP-21 Projects UI]] | Done | full |
-| STEP-22 | [[STEP-22 Minimum Workflow Engine]] | Not Started | full |
-| STEP-23 | [[STEP-23 AI Chat End to End]] | Not Started | outline |
+| STEP-22 | [[STEP-22 Minimum Workflow Engine]] | Done | full |
+| STEP-23 | [[STEP-23 AI Chat End to End]] | Not Started | full |
 | STEP-24 | [[STEP-24 Dashboard]] | Not Started | outline |
 | STEP-25 | [[STEP-25 Launch Readiness Criteria]] | Not Started | outline |
 | STEP-26 | [[STEP-26 First Public Release]] | Not Started | outline |
@@ -307,6 +307,24 @@ The lesson worth carrying: **all three were invisible locally and only reachable
 **No project-specific permission was added**, deliberately. Every live member may create, edit, transition and delete any project in their workspace — unlike AI settings, projects are the workspace's shared work. A finer model's first question is "may I delete someone else's project?", which [[Projects]] does not answer, so it is a decision to raise rather than a detail to invent.
 
 **STEP-21 carries an owner approval gate** (Critical — public API contract, multi-tenancy). It is `Done` and committed, but STEP-22 does not begin until the owner confirms it, including confirming the CI run.
+
+**[[STEP-22 Minimum Workflow Engine]] gave ProjectOne its first automated execution** — two tables, six routes, an engine, one real AI agent, and 79 new tests. A workflow runs end to end through its seven phases, persists after every step, resumes correctly, refuses to execute a gated step without approval, and fails loudly on a ceiling. It is also the first step where **AI spend can occur without a human watching each call**, which is why the approval gate is the centre of it rather than a checklist at the end.
+
+**The approval default is `True`, and that is the load-bearing decision.** `WorkflowStep.requires_approval` defaults to requiring approval, so a step author who does not consider the question gets the safe behaviour; overriding it to `False` is an assertion that the step is read-only or trivially reversible, and owes the reasoning in its docstring — the documented exemption [[CLAUDE|CLAUDE.md]] §15 requires. The planning agent *inherits* the default rather than overriding it, which is itself the decision: it spends money. Approval is gated to **owner/admin** (`UPDATE_WORKSPACE`, the project owner's decision on 2026-08-08) because a gated step is by definition one that spends money or acts externally — the same class of consequence guarding AI keys and budgets. **No new permission was added.** Two related refusals hold: **one approval covers one step**, and **resuming is not approving** (409) — otherwise anyone able to restart a run, including an automated retry, could bypass the human the gate exists for.
+
+**Three defects were found before commit, all by the tests, and the most important one only by running the real workflow against a real database.** Step outputs were held in memory and *documented as a harmless limitation*, on the reasoning that a resumed run re-executes its earlier steps. **It does not** — a completed step is never re-run — so the planning agent resumed after approval, could not see the validation step's result, and failed the run. Every engine unit test passed, because their steps ignore their inputs. Fixed by persisting `workflow_step_runs.output` as `jsonb`; the guarding test was **verified to fail when the fix is reverted**. The other two: `resume` refused a `failed` run, which is the main thing anyone resumes; and a definition that lost steps while a run was paused reported the **truncated run as `completed`**, because `range(n, n)` is empty and execution fell through to the completion path. A fourth surfaced in the same probe — a cross-tenant `project_id` was correctly refused by the composite foreign key but reached the client as an **unhandled 500**, now translated to the same 404 any unreachable project gives.
+
+**A failed run is a 201, not a 500**, and this is now generalized in [[API Conventions]]: an error status describes the *request*, while a resource's own state describes the outcome. The run was created, executed and recorded why it stopped — reporting that as a server error would tell the client its call did not happen when it did, and would lose the run id they need to investigate.
+
+**An action gate is not an RLS policy**, recorded in [[RLS Policy Pattern]] as a general rule. Approval is enforced at the route rather than by a role-scoped policy, because a policy would make a member's approval match zero rows and *return success* — the silent no-op an honest 403 exists to replace.
+
+**Validation was 60/60 against the live development database**, driving the real routes in-process, with every seeded row removed and verified to zero across six tables. The migration was applied, **downgraded and re-applied twice** (the `output` column was added after the first probe). `apps/api` grew from 587 collected tests to 666; `apps/web` is untouched at 113, since this step is backend-only by design.
+
+**The teardown list stopped being alphabetical.** `workflow_runs` references `projects` but sorts after it, so `_WORKSPACE_DEPENDANTS` is now explicitly dependency-ordered — [[STEP-20 Projects Schema and Lifecycle]] had recorded the previous alphabetical ordering as *luck rather than design*, and this is where that luck ran out. [[Table Conventions]] now carries the dependency graph.
+
+**Five limitations are stated rather than discovered:** execution is synchronous on the request thread (bounded by the 300s wall-clock ceiling — but the persistence model is already the one a queue would need, so moving it later changes one call site); no branching, scheduling or parallelism; no UI, so runs are reachable over HTTP only; one workflow and one agent, since the interface is the deliverable; and a resumed run re-executes an interrupted step, making step execution at-least-once — safe for every current step, but a future step with an external side effect needs its own idempotency.
+
+**STEP-22 carries an owner approval gate** (Critical — AI/agent architecture, database schema, multi-tenancy, public API contract). It is `Done` and committed, but STEP-23 does not begin until the owner confirms it, including confirming the CI run.
 
 **A long-term UI vision now exists, and it changes nothing in this plan** (2026-08-03). The project owner supplied [[Design Backlog and UI Vision]] — a premium-AI-OS design direction plus a Dashboard concept mockup. It is filed as **informational only** by explicit owner instruction: **not a step, not a roadmap change, not an architecture change, and overriding no engineering document.** No step was added, renumbered or rescheduled, and the [[Roadmap]] is untouched.
 

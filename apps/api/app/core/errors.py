@@ -37,8 +37,11 @@ makes a user-reported failure findable without weakening either property.
 | `IdentityProviderError`| 503    | Ours, not the caller's — see below.         |
 | `AuthorizationError`   | 403    | Identity is known; the answer is still no.  |
 | `ProjectNotFoundError` | 404    | No such resource, or RLS hid it — one answer.|
+| `RunNotFoundError`     | 404    | The same, for a workflow run.               |
 | `LastOwnerError`       | 409    | Permission held; workspace state refuses.   |
 | `IllegalTransitionError`| 409   | Permission held; resource state refuses.    |
+| `RunNotResumableError` | 409    | The same, for a run's own state.            |
+| `WorkflowError`        | 422    | The run could never have formed — see below.|
 | Validation             | 422    | The request never formed a valid operation. |
 
 The 401/403 split is deliberate and must not be collapsed: `AuthorizationError`
@@ -84,6 +87,7 @@ from app.core.security import (
 # no cycle -- asserted by `test_no_import_cycle_reaches_the_error_contract`
 # rather than left to be discovered at startup.
 from app.services.project_service import IllegalTransitionError, ProjectNotFoundError
+from app.workflows.models import RunNotFoundError, RunNotResumableError, WorkflowError
 
 logger = get_logger(__name__)
 
@@ -229,6 +233,32 @@ def _illegal_transition(_request: Request, exception: Exception) -> JSONResponse
     message = getattr(exception, "public_message", "Conflict")
 
     return error_response(status.HTTP_409_CONFLICT, message)
+
+
+def _workflow_refused(_request: Request, exception: Exception) -> JSONResponse:
+    """Translate a workflow's own refusal into a 422.
+
+    **422, and only for the base `WorkflowError`.** Its two subclasses have their
+    own entries in the table below and are matched first, because Starlette
+    dispatches on the most specific registered class -- `RunNotFoundError` is a
+    404 and `RunNotResumableError` a 409, and inheriting this handler would
+    collapse both into 422.
+
+    What reaches here is the case where **the run could never have formed**: an
+    unknown workflow type, a run started against a definition that no longer has
+    the step it stopped at, a workflow requiring a project that was not given
+    one. Each is the request failing to describe a valid operation, which is what
+    422 means -- as opposed to 409, where the request is valid and the resource's
+    state refuses it.
+
+    A step *failing mid-run* never reaches here at all. That is not an HTTP
+    error: the run was started successfully and the response is a run in
+    `failed`, with the reason on the row. Reporting a failed run as a failed
+    request would tell a client its call did not happen when it did.
+    """
+    message = getattr(exception, "public_message", WorkflowError.public_message)
+
+    return error_response(status.HTTP_422_UNPROCESSABLE_CONTENT, message)
 
 
 def _rate_limit_exceeded(_request: Request, exception: Exception) -> JSONResponse:
@@ -385,6 +415,17 @@ EXCEPTION_HANDLERS: tuple[tuple[type[Exception] | int, Any], ...] = (
     (AuthorizationError, _authorization_denied),
     (ProjectNotFoundError, _resource_not_found),
     (IllegalTransitionError, _illegal_transition),
+    # The two subclasses are registered alongside their base and **before** it in
+    # reading order, though Starlette's most-specific-match makes the order
+    # irrelevant to dispatch. Both reuse the handlers their semantics already
+    # match exactly: a run that is absent-or-hidden is the same answer as a
+    # project that is, and a run refusing an action because of its own state is
+    # the same answer as an illegal project transition. Writing a third and
+    # fourth handler that produced identical responses would be two more places
+    # for the contract to drift.
+    (RunNotFoundError, _resource_not_found),
+    (RunNotResumableError, _illegal_transition),
+    (WorkflowError, _workflow_refused),
     (LastOwnerError, _last_owner_conflict),
     (RateLimitExceededError, _rate_limit_exceeded),
     (GovernanceError, _governance_refusal),

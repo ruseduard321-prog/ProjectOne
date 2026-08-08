@@ -2,7 +2,7 @@
 title: Architecture MOC
 category: MOC
 status: stable
-version: "1.1"
+version: "1.2"
 last_updated: 2026-08-08
 tags: [moc, architecture, documentation]
 aliases: ["Architecture Map of Content"]
@@ -69,6 +69,7 @@ Implemented (as opposed to intended model):
 - [[AI Router Implementation]]
 - [[AI Cost Governance]]
 - [[Project Lifecycle]]
+- [[Workflow Execution]]
 
 See also: [[Backend MOC]]
 
@@ -95,7 +96,7 @@ Implemented schema (as opposed to intended model):
 - [[Schema Overview]]
 - [[Table Conventions]]
 - [[RLS Policy Pattern]]
-- [[Table - users]] · [[Table - workspaces]] · [[Table - workspace_members]] · [[Table - audit_log]] · [[Table - provider_credentials]] · [[Table - ai_spend_records]] · [[Table - ai_budgets]] · [[Table - ai_shutdown_switches]] · [[Table - projects]] · [[Table - assets]]
+- [[Table - users]] · [[Table - workspaces]] · [[Table - workspace_members]] · [[Table - audit_log]] · [[Table - provider_credentials]] · [[Table - ai_spend_records]] · [[Table - ai_budgets]] · [[Table - ai_shutdown_switches]] · [[Table - projects]] · [[Table - assets]] · [[Table - workflow_runs]]
 
 See also: [[Database MOC]]
 

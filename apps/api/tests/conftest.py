@@ -168,19 +168,35 @@ TEST_BYOK_KEY = "dGVzdC1ieW9rLWtleS0zMi1ieXRlcy1sb25nLXh4eHg="  # noqa: S105 - f
 # is a one-line edit next to the reason it exists, and so a test can assert the
 # list against the database's own catalog instead of trusting it.
 #
-# Order within the list is unconstrained: none of these reference each other,
-# only `workspaces`. It is alphabetical for readability, not for correctness.
-# One ordering constraint does exist despite the note above: `assets` holds a
-# foreign key to `projects` as well as to `workspaces`, so it must be cleared
-# before `projects` is. Alphabetical order happens to satisfy that, which is
-# luck rather than design -- it is stated here so a future alphabetical
-# insertion is not assumed to be safe on that basis alone.
+# **Order within the list is constrained, and is no longer alphabetical.**
+#
+# Most of these reference only `workspaces` and could appear anywhere. Three do
+# not, and each must be cleared before the table it references:
+#
+#   assets            -> projects
+#   workflow_runs     -> projects
+#   workflow_step_runs -> workflow_runs
+#
+# `assets` before `projects` happened to be satisfied by alphabetical order,
+# which STEP-20 recorded as luck rather than design. STEP-22 is where that luck
+# ran out: `workflow_runs` sorts *after* `projects` but must be deleted before
+# it, so the list is now explicitly dependency-ordered.
+#
+# The failure mode if this is wrong is a `ForeignKeyViolation` during teardown,
+# which surfaces in whichever database test happened to run last rather than in
+# anything related to the table at fault. `test_teardown_completeness` catches a
+# missing entry; it does not catch a mis-ordered one, so read the graph above
+# before inserting anything here.
 _WORKSPACE_DEPENDANTS = (
     "ai_budgets",
     "ai_shutdown_switches",
     "ai_spend_records",
     "assets",
     "audit_log",
+    # The two workflow tables come **before** `projects`, breaking the
+    # alphabetical order deliberately -- see the ordering note above.
+    "workflow_step_runs",
+    "workflow_runs",
     "projects",
     "provider_credentials",
     "workspace_members",

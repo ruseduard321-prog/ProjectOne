@@ -38,6 +38,7 @@ from app.repositories.provider_credentials import ProviderCredentialRepository
 from app.repositories.session import RequestSessionFactory
 from app.repositories.supabase_auth import SupabaseAuthRepository
 from app.repositories.users import UserRepository
+from app.repositories.workflows import WorkflowRepository
 from app.services.ai_service import AIService
 from app.services.ai_spend_service import AISpendService
 from app.services.audit_service import AuditService
@@ -50,6 +51,7 @@ from app.services.project_service import ProjectService
 from app.services.provider_credential_service import ProviderCredentialService
 from app.services.token_service import AuthenticatedUser, TokenService, build_jwk_client
 from app.services.workspace_service import WorkspaceService
+from app.workflows.runner import WorkflowRunner
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 
@@ -479,6 +481,33 @@ def get_ai_spend_service(repository: AISpendRepositoryDep) -> AISpendService:
 
 
 AISpendServiceDep = Annotated[AISpendService, Depends(get_ai_spend_service)]
+
+
+def get_workflow_repository(connection: TenantConnectionDep) -> WorkflowRepository:
+    """Construct the workflow repository over the request's tenant connection.
+
+    `TenantConnectionDep`, never the privileged one. A run is the record of what
+    the platform did inside one workspace, so RLS is what keeps one tenant's
+    execution history away from another's.
+    """
+    return WorkflowRepository(connection)
+
+
+WorkflowRepositoryDep = Annotated[WorkflowRepository, Depends(get_workflow_repository)]
+
+
+def get_workflow_runner(repository: WorkflowRepositoryDep) -> WorkflowRunner:
+    """Construct the workflow runner.
+
+    The runner takes only the repository. Its *definitions* are built per request
+    from `app.workflows.definitions`, because a definition holds steps and steps
+    hold request-scoped services -- see that module's docstring for why a
+    module-level definition would be a cross-tenant leak.
+    """
+    return WorkflowRunner(repository)
+
+
+WorkflowRunnerDep = Annotated[WorkflowRunner, Depends(get_workflow_runner)]
 
 
 def get_ai_service(

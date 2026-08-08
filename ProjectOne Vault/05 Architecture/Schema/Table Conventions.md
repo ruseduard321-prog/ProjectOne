@@ -2,7 +2,7 @@
 title: Table Conventions
 category: Architecture/Schema
 status: stable
-version: "1.3"
+version: "1.4"
 last_updated: 2026-08-08
 tags: [database, architecture, standards]
 aliases: ["Column Conventions", "Standard Columns"]
@@ -116,7 +116,17 @@ The shared fixture in `apps/api/tests/conftest.py` seeds a workspace for most da
 
 This has already been missed twice. [[STEP-17 AI Router and Provider Abstraction]] added `provider_credentials` and [[STEP-18 AI Cost Governance Controls]] added three more tables, none registered; CI failed with `ForeignKeyViolation: fk_ai_spend_records_workspace_id_workspaces`. [[STEP-20 Projects Schema and Lifecycle]] registered `projects` and `assets` in the same change that created them, which is the intended shape.
 
-One ordering constraint applies to `assets` and is worth stating, since the list's comment otherwise says order is unconstrained: `assets` references `projects` as well as `workspaces`, so it must be cleared before `projects`. Alphabetical order happens to satisfy that — luck rather than design, so a future alphabetical insertion should not be assumed safe on that basis. The failure surfaces **in teardown**, so it appears in whichever database test happened to run last rather than in anything related to the new table — which is a slow way to find a one-line omission.
+**The list is dependency-ordered, and is no longer alphabetical.** Three tables reference something other than `workspaces` and must be cleared before it:
+
+```
+assets             → projects
+workflow_runs      → projects
+workflow_step_runs → workflow_runs
+```
+
+`assets` before `projects` was satisfied by alphabetical order, which [[STEP-20 Projects Schema and Lifecycle]] recorded as *luck rather than design*. [[STEP-22 Minimum Workflow Engine]] is where that luck ran out: `workflow_runs` sorts after `projects` but must be deleted before it, so the list was explicitly reordered.
+
+The failure surfaces **in teardown**, so it appears in whichever database test happened to run last rather than in anything related to the new table — a slow way to find a one-line omission. `test_teardown_completeness` catches a *missing* entry; it does **not** catch a mis-ordered one, so read the dependency graph above before inserting anything.
 
 `tests/test_teardown_completeness.py` now closes it: it queries the catalog for every table referencing `workspaces` and asserts the teardown list matches exactly, in both directions. A new unregistered table fails *there*, naming the table and the fix, instead of failing somewhere unrelated. A second test asserts those foreign keys are still `RESTRICT`, so the production guarantee cannot be quietly downgraded to `CASCADE` to make the error go away.
 

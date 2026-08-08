@@ -2,7 +2,7 @@
 title: API Endpoints
 category: Architecture
 status: stable
-version: "1.2"
+version: "1.3"
 last_updated: 2026-08-08
 tags: [backend, api, standards, documentation]
 aliases: ["Endpoint Reference", "API Reference"]
@@ -10,7 +10,7 @@ aliases: ["Endpoint Reference", "API Reference"]
 
 # API Endpoints
 
-**Every endpoint ProjectOne serves**, as of [[STEP-21 Projects UI]]. This is the contract the frontend consumes from [[STEP-16 Sign Up and Sign In UI]] onward.
+**Every endpoint ProjectOne serves**, as of [[STEP-22 Minimum Workflow Engine]]. This is the contract the frontend consumes from [[STEP-16 Sign Up and Sign In UI]] onward.
 
 Each entry documents only what is **specific to that endpoint**, exactly as [[API Endpoint Template]] instructs. The shared contract — the `/api/v1` prefix, the `{"detail", "request_id"}` error envelope, the correlation id, the generic 401/403/422 behaviour — is [[API Conventions]] and is deliberately not restated fourteen times. A reader needing it goes there once.
 
@@ -197,6 +197,41 @@ Deletion is permitted from any state, archived included — requiring archive fi
 `storage_path` is null on everything these routes create and **no bytes cross the API**. No storage backend is chosen, and choosing one is an ADR ([[CLAUDE|CLAUDE.md]] §10/§28) — the step that adds it also owes it a deletion path (§16). The field is present rather than hidden so a client can render "no file attached" honestly rather than being unable to tell an unbuilt feature from an empty one.
 
 `kind` is a **closed vocabulary** enforced by `ck_assets_kind_valid`. It was first written as free text, and driving the routes against a real database found the consequence immediately: the API accepted `kind: "script"` and PostgreSQL refused it, turning a client error into a 500. Typing it makes the same request a 422 naming the four valid values.
+
+## Workflow runs
+
+Added by [[STEP-22 Minimum Workflow Engine]]. **The first routes that cause AI spend without a human watching each call**, which is why the approval gate below is the centre of this surface rather than a detail of it.
+
+| Endpoint | Auth | Permission | Notes |
+|---|---|---|---|
+| `GET /api/v1/workspaces/{id}/workflows/catalog` | Bearer | `VIEW_WORKSPACE` | Workflow names this deployment can run. Served from the registry so a client picker cannot offer one the server lacks. |
+| `GET /api/v1/workspaces/{id}/workflows/runs` | Bearer | `VIEW_WORKSPACE` | Recent runs, newest first, each with its steps. Bounded by a repository limit — run count grows with automation, not human effort. |
+| `POST /api/v1/workspaces/{id}/workflows/runs` | Bearer | `VIEW_WORKSPACE` | **201.** Body: `{"workflow_type", "project_id"?}`. Executes until the run finishes, pauses or fails. **422** for an unknown workflow, **404** for another tenant's project. Rate limited **20/min** per user. |
+| `GET /api/v1/workspaces/{id}/workflows/runs/{run_id}` | Bearer | `VIEW_WORKSPACE` | One run with its full step history. **404** when absent *or* hidden by RLS. |
+| `POST /api/v1/workspaces/{id}/workflows/runs/{run_id}/approval` | Bearer | **`UPDATE_WORKSPACE`** | Approves the step the run is waiting on and continues. **409** when the run is not awaiting approval. |
+| `POST /api/v1/workspaces/{id}/workflows/runs/{run_id}/resume` | Bearer | `VIEW_WORKSPACE` | Continues an interrupted or failed run. **409** for a completed run, and **409** for one awaiting approval — resuming is not approving. |
+
+### A failed run is a 201, not a 500
+
+The least obvious rule on this surface and the most important. A run whose step fails returns **201 with the run in `failed`**, because the request succeeded: the run was created, executed, and recorded its outcome. Reporting it as a server error would tell the client its call did not happen when it did, and would lose the run id they need to investigate.
+
+What *is* an error status is a request that could never have produced a run — an unknown workflow (422), a run that cannot be seen (404), a run whose state refuses the action (409).
+
+### Approval is owner/admin; everything else is any live member
+
+The project owner's decision on 2026-08-08. A gated step is by definition one that spends money, publishes, or acts externally — the same class of consequence already guarding AI keys and spend ceilings, so it reuses `UPDATE_WORKSPACE`.
+
+Starting, reading and resuming are `VIEW_WORKSPACE`, matching projects: a member who cannot run a workflow on their own project cannot use the product. **No new permission was added** — `workflow:approve` would change the role model, which is an authorization decision rather than a detail of this step.
+
+### Resuming is not approving
+
+`POST /resume` answers **409** for a run in `awaiting_approval`, and it must: resuming carries only `VIEW_WORKSPACE`, so letting it clear a gate would let anyone able to restart a run — including an automated retry — bypass the human [[CLAUDE|CLAUDE.md]] §15 puts behind it.
+
+### One approval covers one step
+
+Approving continues the run until it finishes or reaches the **next** gated step, where it stops again. There is no "approve everything from here": that is autonomous execution, which §15 requires to be a documented, configured opt-in rather than a side effect of clicking approve.
+
+See [[Workflow Execution]] for the full model.
 
 ## Not Built Yet
 

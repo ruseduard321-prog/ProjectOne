@@ -465,6 +465,129 @@ class AssetStore:
             return cursor.rowcount
 
 
+class WorkflowRunStore:
+    """A workspace's workflow runs: exportable and erasable.
+
+    Registered by [[STEP-22 Minimum Workflow Engine]] in the same change that
+    creates the table.
+
+    A run records **what the platform did on the user's behalf** — which is
+    their data as much as the project it acted on, and arguably more sensitive:
+    it says what they automated and when. An erasure that left runs behind would
+    leave a behavioural record of a workspace that had asked to be forgotten.
+
+    Worth contrasting with `AuditLogStore`, which is deliberately un-erasable.
+    The distinction is *whose* record it is and *why it exists*: an audit entry
+    records a security-relevant action and survives precisely to outlive the
+    events it describes (a documented legal exception, CLAUDE.md §16). A workflow
+    run is ordinary product usage, so it carries no such exception and is erased
+    like any other workspace data.
+    """
+
+    name = "workflow_runs"
+
+    def export(
+        self, connection: psycopg.Connection, workspace_id: uuid.UUID
+    ) -> list[ExportedRecord]:
+        """Return every live run in a workspace."""
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT id, workflow_type, definition_version, status, project_id, "
+                "detail, started_at, finished_at, created_at "
+                "FROM public.workflow_runs "
+                "WHERE workspace_id = %s AND deleted_at IS NULL ORDER BY created_at",
+                (workspace_id,),
+            )
+
+            return [
+                {
+                    "id": str(row[0]),
+                    "workflow_type": row[1],
+                    "definition_version": row[2],
+                    "status": row[3],
+                    "project_id": None if row[4] is None else str(row[4]),
+                    "detail": row[5],
+                    "started_at": None if row[6] is None else row[6].isoformat(),
+                    "finished_at": None if row[7] is None else row[7].isoformat(),
+                    "created_at": row[8].isoformat(),
+                }
+                for row in cursor
+            ]
+
+    def erase(self, connection: psycopg.Connection, workspace_id: uuid.UUID) -> int:
+        """Soft-delete every run in a workspace.
+
+        An `UPDATE`, never a `DELETE` — the table has no DELETE policy and
+        `authenticated` holds no DELETE grant.
+
+        This works because `workflow_runs_select_same_workspace` does **not**
+        filter `deleted_at IS NULL`. Had it done so, this would silently affect
+        zero rows — the defect that cost STEP-11a and STEP-19 a step each.
+        """
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE public.workflow_runs SET deleted_at = now() "
+                "WHERE workspace_id = %s AND deleted_at IS NULL",
+                (workspace_id,),
+            )
+
+            return cursor.rowcount
+
+
+class WorkflowStepRunStore:
+    """A workspace's workflow step history: exportable and erasable.
+
+    Separate from `WorkflowRunStore` for the reason `AssetStore` is separate from
+    `ProjectStore`: per-store counts are what make an erasure auditable, and one
+    number covering both would hide whichever of them silently stopped working.
+
+    Step rows carry `detail` — a step's own message, including the reason a run
+    failed. That is workspace data and is erased with the rest.
+    """
+
+    name = "workflow_step_runs"
+
+    def export(
+        self, connection: psycopg.Connection, workspace_id: uuid.UUID
+    ) -> list[ExportedRecord]:
+        """Return every live step row in a workspace."""
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT id, run_id, step_index, step_name, status, detail, "
+                "tokens_used, started_at, finished_at "
+                "FROM public.workflow_step_runs "
+                "WHERE workspace_id = %s AND deleted_at IS NULL "
+                "ORDER BY run_id, step_index",
+                (workspace_id,),
+            )
+
+            return [
+                {
+                    "id": str(row[0]),
+                    "run_id": str(row[1]),
+                    "step_index": row[2],
+                    "step_name": row[3],
+                    "status": row[4],
+                    "detail": row[5],
+                    "tokens_used": row[6],
+                    "started_at": None if row[7] is None else row[7].isoformat(),
+                    "finished_at": None if row[8] is None else row[8].isoformat(),
+                }
+                for row in cursor
+            ]
+
+    def erase(self, connection: psycopg.Connection, workspace_id: uuid.UUID) -> int:
+        """Soft-delete every step row in a workspace."""
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE public.workflow_step_runs SET deleted_at = now() "
+                "WHERE workspace_id = %s AND deleted_at IS NULL",
+                (workspace_id,),
+            )
+
+            return cursor.rowcount
+
+
 class DataOwnershipService:
     """Exports and erases everything a workspace owns."""
 
@@ -547,4 +670,6 @@ REGISTERED_STORES: tuple[ExportableStore, ...] = (
     AISpendRecordStore(),
     ProjectStore(),
     AssetStore(),
+    WorkflowRunStore(),
+    WorkflowStepRunStore(),
 )
