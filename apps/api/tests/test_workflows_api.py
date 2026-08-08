@@ -157,6 +157,7 @@ def provider() -> StubProvider:
 @pytest.fixture
 def client(
     tenants: Tenants,
+    migrated_database: str,
     request_database_url: str,
     provider: StubProvider,
     admin_connection: psycopg.Connection,
@@ -167,6 +168,26 @@ def client(
     agent's call would otherwise be refused with `NoProviderAvailableError`
     before reaching the provider -- which is correct behaviour and not what these
     tests are about.
+
+    ## Both connections are configured, and they are genuinely different
+
+    `DATABASE_URL` is the **privileged** connection and `REQUEST_DATABASE_URL`
+    the request role, matching production and matching
+    `test_ai_settings_endpoints.py` -- the only other suite that exercises the
+    AI spend path.
+
+    That distinction is load-bearing here, unlike in `test_projects_api.py`
+    where both may point at the request role because nothing privileged runs.
+    `AISpendRepository` reads the shutdown switch and reserves budget over the
+    **privileged** connection **by design**: a ceiling must be found whether or
+    not the caller can see the row, and `ai_shutdown_switches` grants nothing to
+    `authenticated`.
+
+    Pointing both at the request role made every workflow run fail with
+    `permission denied for table ai_shutdown_switches` -- a fixture defect that
+    only CI could reveal, because the live-database probe reads a real
+    privileged `DATABASE_URL` from `.env` and therefore never exercised the
+    wrong one.
     """
 
     def settings() -> Settings:
@@ -174,7 +195,7 @@ def client(
             environment=Environment.DEVELOPMENT,
             SUPABASE_URL="https://project.test",
             SUPABASE_SECRET_KEY=SecretStr("unused"),
-            DATABASE_URL=SecretStr(request_database_url),
+            DATABASE_URL=SecretStr(migrated_database),
             REQUEST_DATABASE_URL=SecretStr(request_database_url),
             byok_encryption_key=SecretStr(TEST_BYOK_KEY),
             _env_file=None,
