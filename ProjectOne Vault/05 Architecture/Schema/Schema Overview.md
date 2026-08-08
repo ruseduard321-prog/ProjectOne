@@ -2,8 +2,8 @@
 title: Schema Overview
 category: Architecture/Schema
 status: stable
-version: "1.0"
-last_updated: 2026-08-01
+version: "1.1"
+last_updated: 2026-08-08
 tags: [database, schema, architecture]
 aliases: ["Database Schema", "Current Schema"]
 ---
@@ -16,7 +16,7 @@ If the two disagree, this note describes reality and the other describes intent 
 
 ## Current Tables
 
-As of [[STEP-18 AI Cost Governance Controls]]:
+As of [[STEP-20 Projects Schema and Lifecycle]]:
 
 | Table | Purpose | Tenant-scoped | RLS |
 |---|---|---|---|
@@ -28,6 +28,8 @@ As of [[STEP-18 AI Cost Governance Controls]]:
 | [[Table - ai_spend_records]] | The AI spend ledger — append-only | Yes | ✅ Enabled + forced (SELECT only) |
 | [[Table - ai_budgets]] | Spend ceilings, running totals and the spend breaker | Yes | ✅ Enabled + forced |
 | [[Table - ai_shutdown_switches]] | Emergency stop for AI spend, at three scopes | Yes, **except the platform row** | ✅ Enabled + forced |
+| [[Table - projects]] | A content project and its lifecycle state | Yes | ✅ Enabled + forced |
+| [[Table - assets]] | A file or document belonging to one project | Yes | ✅ Enabled + forced |
 
 Two tables deliberately break [[Table Conventions]], and in both cases the departure **is** the security property:
 
@@ -81,6 +83,9 @@ Applied in order. History is append-only: a correction is a new migration, never
 | `a3c07d5e91f4` | Create the append-only `audit_log` with its SELECT-only policy and grants | [[STEP-13 Auth Users Workspaces Endpoints]] |
 | `f1a4c8d29b57` | Create `provider_credentials` for BYOK keys, with membership-scoped reads and role-scoped writes | [[STEP-17 AI Router and Provider Abstraction]] |
 | `b2e6f0a71c94` | Create `ai_spend_records`, `ai_budgets` and `ai_shutdown_switches` — the spend ledger, the ceilings, and the emergency stop | [[STEP-18 AI Cost Governance Controls]] |
+| `c9d3b71e08af` | Replace the table-wide `UPDATE` on `ai_budgets` with a column-level grant, so `spent_usd` is not client-writable, and extend the audit action vocabulary | [[STEP-19 Settings and BYOK UI]] |
+| `d1f70a4c62be` | Drop the `deleted_at` filter from the `provider_credentials` SELECT policy, which had made revoking a key impossible for every role | [[STEP-19 Settings and BYOK UI]] |
+| `e5a91c34d7f2` | Create `projects` and `assets` with RLS enabled and forced, the lifecycle CHECK constraint, and the composite foreign key binding an asset to its project's workspace | [[STEP-20 Projects Schema and Lifecycle]] |
 
 Apply with `./scripts/migrate.sh up` (or `.\scripts\migrate.ps1 up`); see `scripts/README.md`.
 
@@ -96,6 +101,8 @@ Apply with `./scripts/migrate.sh up` (or `.\scripts\migrate.ps1 up`); see `scrip
 | `trg_provider_credentials_touch_row` | Trigger | Attaches `touch_row()` to `provider_credentials` |
 | `trg_ai_budgets_touch_row` | Trigger | Attaches `touch_row()` to `ai_budgets` |
 | `trg_ai_shutdown_switches_touch_row` | Trigger | Attaches `touch_row()` to `ai_shutdown_switches` |
+| `trg_projects_touch_row` | Trigger | Attaches `touch_row()` to `projects` |
+| `trg_assets_touch_row` | Trigger | Attaches `touch_row()` to `assets` |
 
 `ai_spend_records` deliberately has **no** `touch_row` trigger: it is append-only, so there is no UPDATE for one to fire on.
 
@@ -111,7 +118,8 @@ Apply with `./scripts/migrate.sh up` (or `.\scripts\migrate.ps1 up`); see `scrip
 
 ## Outstanding
 
-- **Roles have no meaning yet.** `workspace_members.role` fixes a vocabulary; what each role permits is [[STEP-11 Authorization and RBAC]].
+- **`projects` and `assets` have no HTTP endpoints.** [[STEP-20 Projects Schema and Lifecycle]] built the schema, repository and service; the routes that expose them arrive with [[STEP-21 Projects UI]]. The service is reachable only from inside the API today.
+- **`assets.storage_path` points at nothing.** No storage backend is chosen yet, so the column is an opaque locator a later step defines. The step that adds a backend also owes it a deletion path — [[CLAUDE|CLAUDE.md]] §16 erasure is end-to-end, and soft-deleting the row does not remove the bytes.
 - **Workspace creation has no service path.** The INSERT policies deliberately cannot bootstrap a workspace and its first membership row from a client — [[STEP-13 Auth Users Workspaces Endpoints]] owns the audited path.
 - **`supabase_admin`'s default privileges are untouched.** `postgres` cannot alter them (it is not a superuser on managed Supabase). They govern tables Supabase creates, not ProjectOne's — see [[RLS Policy Pattern#Grants Are a Second, Independent Gate]].
 - **No ORM.** Migrations are hand-written SQL through Alembic's `op` API. Adopting an ORM would be an ADR ([[08 ADR]]), not a quiet change.

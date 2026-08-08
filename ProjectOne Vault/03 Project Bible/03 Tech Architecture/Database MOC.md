@@ -2,8 +2,8 @@
 title: Database MOC
 category: MOC
 status: stable
-version: "1.0"
-last_updated: 2026-07-30
+version: "1.1"
+last_updated: 2026-08-08
 tags: [moc, database, documentation]
 aliases: ["Database Map of Content"]
 ---
@@ -33,6 +33,8 @@ What actually exists in the database, as opposed to the intended model above.
 - [[Table - ai_spend_records]] — the AI spend ledger, append-only
 - [[Table - ai_budgets]] — spend ceilings, running totals and the spend breaker
 - [[Table - ai_shutdown_switches]] — emergency stop for AI spend, at three scopes
+- [[Table - projects]] — a content project and its lifecycle state
+- [[Table - assets]] — a file or document belonging to one project
 
 ## Cross-References
 

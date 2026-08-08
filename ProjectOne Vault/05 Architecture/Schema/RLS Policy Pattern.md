@@ -2,8 +2,8 @@
 title: RLS Policy Pattern
 category: Architecture/Schema
 status: stable
-version: "1.1"
-last_updated: 2026-08-04
+version: "1.2"
+last_updated: 2026-08-08
 tags: [database, security, multi-tenancy, standards]
 aliases: ["Row Level Security Pattern", "Tenant Isolation Pattern"]
 ---
@@ -98,6 +98,8 @@ Written **per command**, never as one `FOR ALL` policy. `FOR ALL` applies a sing
 | `workspace_members` | SELECT | Same workspace — **including soft-deleted rows** ([[STEP-11a Membership Removal Policy]]) |
 | `workspace_members` | UPDATE | **Ranked removal: owner > admin > member; anyone may edit their own row, never their own `role`** |
 | `workspace_members` | INSERT | Same workspace |
+| `projects` | SELECT / INSERT / UPDATE | Live membership — **any role**, since a workspace exists so its members can make things ([[STEP-20 Projects Schema and Lifecycle]]) |
+| `assets` | SELECT / INSERT / UPDATE | Live membership — same shape as `projects` |
 
 ### The role predicate
 
@@ -136,6 +138,9 @@ Established by narrowing rather than inference, against a live database during S
 > `ai_budgets`, `ai_shutdown_switches`, `users` and `workspaces` all have a SELECT policy filtering `deleted_at IS NULL` **and** an UPDATE policy. Each becomes a live defect the moment a route soft-deletes that table over the request connection. None does today, which is why STEP-19 fixed only `provider_credentials` rather than widening its migration to tables it does not touch ([[CLAUDE|CLAUDE.md]] §29/§35) — but this is a known trap, not an unknown one, and the step that first soft-deletes any of them must fix its policy in the same change.
 >
 > Worth noting how invisible it is: `ProviderCredentialStore.erase` had been soft-deleting `provider_credentials` since STEP-17 as part of **workspace data erasure**, and was silently failing — a [[CLAUDE|CLAUDE.md]] §16 obligation broken with no test covering it, because nothing had ever revoked a key.
+
+> [!success] The rule held at creation time for the first time in [[STEP-20 Projects Schema and Lifecycle]]
+> `projects` and `assets` are both soft-deleted and **shipped without the filter in their SELECT policies**, rather than shipping the broken shape and paying for it in a later step. `test_soft_deleting_a_project_succeeds` asserts the soft delete through the service, so a future migration reintroducing the filter fails immediately rather than silently breaking an erasure path nothing covers.
 
 The fix, in both cases, is the same: the filter **moves out of the policy and into the queries**.
 

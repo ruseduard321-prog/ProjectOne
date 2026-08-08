@@ -2,8 +2,8 @@
 title: Build Plan
 category: Development
 status: stable
-version: "2.5"
-last_updated: 2026-08-04
+version: "2.6"
+last_updated: 2026-08-08
 tags: [engineering, documentation, workflow]
 aliases: ["Implementation Plan", "Build Roadmap", "Step Index"]
 ---
@@ -57,8 +57,8 @@ Status appears in two places — the step note and the row below — and they mu
 | STEP-17 | [[STEP-17 AI Router and Provider Abstraction]] | Done | full |
 | STEP-18 | [[STEP-18 AI Cost Governance Controls]] | Done | full |
 | STEP-19 | [[STEP-19 Settings and BYOK UI]] | Done | full |
-| STEP-20 | [[STEP-20 Projects Schema and Lifecycle]] | Not Started | full |
-| STEP-21 | [[STEP-21 Projects UI]] | Not Started | outline |
+| STEP-20 | [[STEP-20 Projects Schema and Lifecycle]] | Done | full |
+| STEP-21 | [[STEP-21 Projects UI]] | Not Started | full |
 | STEP-22 | [[STEP-22 Minimum Workflow Engine]] | Not Started | outline |
 | STEP-23 | [[STEP-23 AI Chat End to End]] | Not Started | outline |
 | STEP-24 | [[STEP-24 Dashboard]] | Not Started | outline |
@@ -271,6 +271,24 @@ The lesson worth carrying: **all three were invisible locally and only reachable
 **Workspace selection is a stated limitation, not a silent one.** The web application had no workspace concept at all before this step; it now resolves the caller's *first* workspace server-side (`GET /workspaces` orders by name, so "first" is stable) and **says so on screen** when the user belongs to others. A switcher is a real feature belonging with [[STEP-20 Projects Schema and Lifecycle]] onward, not scope for a settings step.
 
 **STEP-19 carries an owner approval gate** (Critical — public API contract, security controls, multi-tenancy, database schema, and the first user-facing AI path). It is `Done` and committed, but STEP-20 does not begin until the owner confirms it — including confirming the CI run, which this environment cannot observe on a private repository.
+
+**The first content tables exist, and a project's lifecycle is enforced in one place** (STEP-20). Migration `e5a91c34d7f2` creates `projects` and `assets` with RLS **enabled and forced**, per-command policies routing through `app_current_user_workspaces()`, explicit grants (no `DELETE`, no `TRUNCATE`, nothing to `anon`), partial indexes and `touch_row` triggers. `ProjectRepository` reaches both over the tenant connection; `ProjectService` owns the state machine so it holds for the non-HTTP callers later phases bring. **No HTTP routes were built** — the step's Tasks named none, and [[STEP-21 Projects UI]] now owns both the endpoints and the UI, which is why it was expanded to `full` detail with that inheritance stated.
+
+**The lifecycle gap was a decision, not an inference.** [[Projects]] gives the sequence Idea → … → Archive and never says which transitions are legal, so the question went to the project owner rather than being guessed ([[CLAUDE|CLAUDE.md]] §34). Decided on 2026-08-08: **forward one step, plus the Review → Editing loop, plus Archive from anywhere, terminal.** Recorded in [[Project Lifecycle]]. Two smaller decisions landed alongside it: `assets.project_id` is `NOT NULL`, and this step ships schema and service only.
+
+**The transition map is derived from three rules rather than written out**, and the tests invert that — the specification is written as data and asserted against the derivation across **all 81 ordered pairs, in both directions**. Asserting the legal moves proves the map has entries; asserting every pair proves it has no *extra* ones, which is what a state machine exists for. A permissive bug passes every "the legal move works" test ever written.
+
+**The denormalized `workspace_id` on `assets` needed a second mechanism, and this is the step's most interesting design.** Storing it buys a policy identical in shape to every other tenant table's, instead of one joining through `projects` — but it opens a hole **RLS structurally cannot see**: an INSERT naming the caller's *own* workspace satisfies the policy while pointing `project_id` at another tenant's project. A composite foreign key to `projects (id, workspace_id)` refuses it, failing with `ForeignKeyViolation` rather than an RLS error, which is exactly the point.
+
+**The twice-paid `deleted_at` defect did not recur.** Both tables are soft-deleted and shipped **without** the filter in their SELECT policies — the first time that rule has been followed at creation rather than paid for in a later step. Both stores were registered in `REGISTERED_STORES` and both tables in `_WORKSPACE_DEPENDANTS` in the same change, rather than in the step that discovers the omission.
+
+**No defect was found in the implementation, and the evidence is a live database plus a negative control.** The pytest harness still cannot reach the development database (STEP-19's unfixed username/pooler defect) and this machine has no local PostgreSQL or Docker, so the 21 database-backed tests **first execute in CI**. The same properties were therefore driven in-process over the real `RequestSessionFactory`: **43 checks passed**, including the soft delete succeeding through the service, cross-tenant read/update/insert/delete each refused, `WITH CHECK` blocking a workspace move, an illegal transition refused *and writing nothing*, all nine statuses accepted and a tenth refused, both stores exporting and erasing non-zero counts, and **RLS disabled mid-test to observe the breach directly** before restoring it. The migration was applied, **downgraded and re-applied** to verify the rollback path. `apps/api` grew from 325 tests to **343**; `apps/web` is untouched at 97.
+
+**One probe run crashed before its cleanup**, leaving 11 projects, 1 asset and 2 seeded tenants in the development database. Found immediately, removed by a marker-keyed cleanup script, and both tables verified empty. Recorded rather than omitted — a validation script that leaves state behind is a defect in the validation even when the code under test is correct.
+
+**[[Schema Overview]] was two migrations out of date** (`c9d3b71e08af` and `d1f70a4c62be`, both from STEP-19, absent from a table claiming to be the full history) and is corrected. One stale line in it — *"Roles have no meaning yet"*, untrue since STEP-11 — is left as found and flagged rather than fixed silently ([[CLAUDE|CLAUDE.md]] §29).
+
+**STEP-20 carries an owner approval gate** (Critical — database schema, multi-tenancy/RLS). It is `Done` and committed, but STEP-21 does not begin until the owner confirms it — including confirming the CI run, which this environment cannot observe on a private repository.
 
 **A long-term UI vision now exists, and it changes nothing in this plan** (2026-08-03). The project owner supplied [[Design Backlog and UI Vision]] — a premium-AI-OS design direction plus a Dashboard concept mockup. It is filed as **informational only** by explicit owner instruction: **not a step, not a roadmap change, not an architecture change, and overriding no engineering document.** No step was added, renumbered or rescheduled, and the [[Roadmap]] is untouched.
 

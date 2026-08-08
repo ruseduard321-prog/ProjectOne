@@ -347,6 +347,124 @@ class AISpendRecordStore:
         return 0
 
 
+class ProjectStore:
+    """A workspace's projects: exportable and erasable.
+
+    Registered by [[STEP-20 Projects Schema and Lifecycle]] in the same change
+    that creates the table, rather than afterwards. Both preceding content
+    tables were registered late -- `provider_credentials` by STEP-18 and its
+    erase path fixed again by STEP-19 -- and in each case the gap was a
+    CLAUDE.md §16 obligation silently broken with nothing covering it.
+
+    A project is the most obviously user-owned data in the system: it is what
+    the customer came here to make. An erasure that left projects behind would
+    be the clearest possible failure of "users retain ownership of their data".
+    """
+
+    name = "projects"
+
+    def export(
+        self, connection: psycopg.Connection, workspace_id: uuid.UUID
+    ) -> list[ExportedRecord]:
+        """Return every live project in a workspace."""
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT id, name, description, status, created_at "
+                "FROM public.projects "
+                "WHERE workspace_id = %s AND deleted_at IS NULL ORDER BY created_at",
+                (workspace_id,),
+            )
+
+            return [
+                {
+                    "id": str(row[0]),
+                    "name": row[1],
+                    "description": row[2],
+                    "status": row[3],
+                    "created_at": row[4].isoformat(),
+                }
+                for row in cursor
+            ]
+
+    def erase(self, connection: psycopg.Connection, workspace_id: uuid.UUID) -> int:
+        """Soft-delete every project in a workspace.
+
+        An `UPDATE`, never a `DELETE` -- the table has no DELETE policy and
+        `authenticated` holds no DELETE grant, both deliberately
+        ([[RLS Policy Pattern]]).
+
+        This works because `projects_select_same_workspace` does **not** filter
+        `deleted_at IS NULL`. Had it done so, this would silently affect zero
+        rows -- exactly the defect STEP-19 found on `provider_credentials` after
+        it had been failing unnoticed since STEP-17.
+
+        Note it does not need to erase assets first: `assets.project_id` is a
+        foreign key to a row that still exists after a soft delete, so nothing
+        is orphaned. `AssetStore` erases them independently.
+        """
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE public.projects SET deleted_at = now() "
+                "WHERE workspace_id = %s AND deleted_at IS NULL",
+                (workspace_id,),
+            )
+
+            return cursor.rowcount
+
+
+class AssetStore:
+    """A workspace's project assets: exportable and erasable.
+
+    Separate from `ProjectStore` rather than nested inside its export, because
+    the registry's per-store counts are what make an erasure auditable. An
+    erasure reporting `"projects": 3` while silently having removed forty assets
+    tells the reader less than two honest numbers do.
+
+    **The export carries the storage path but not the content.** The bytes live
+    outside PostgreSQL and no storage backend exists yet (STEP-20 Scope); when
+    one does, the step that adds it is responsible for erasing from it too --
+    which is the same end-to-end obligation this registry exists to make
+    visible.
+    """
+
+    name = "assets"
+
+    def export(
+        self, connection: psycopg.Connection, workspace_id: uuid.UUID
+    ) -> list[ExportedRecord]:
+        """Return every live asset in a workspace."""
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT id, project_id, name, kind, storage_path, created_at "
+                "FROM public.assets "
+                "WHERE workspace_id = %s AND deleted_at IS NULL ORDER BY created_at",
+                (workspace_id,),
+            )
+
+            return [
+                {
+                    "id": str(row[0]),
+                    "project_id": str(row[1]),
+                    "name": row[2],
+                    "kind": row[3],
+                    "storage_path": row[4],
+                    "created_at": row[5].isoformat(),
+                }
+                for row in cursor
+            ]
+
+    def erase(self, connection: psycopg.Connection, workspace_id: uuid.UUID) -> int:
+        """Soft-delete every asset in a workspace."""
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE public.assets SET deleted_at = now() "
+                "WHERE workspace_id = %s AND deleted_at IS NULL",
+                (workspace_id,),
+            )
+
+            return cursor.rowcount
+
+
 class DataOwnershipService:
     """Exports and erases everything a workspace owns."""
 
@@ -427,4 +545,6 @@ REGISTERED_STORES: tuple[ExportableStore, ...] = (
     AuditLogStore(),
     ProviderCredentialStore(),
     AISpendRecordStore(),
+    ProjectStore(),
+    AssetStore(),
 )

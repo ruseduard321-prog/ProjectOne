@@ -2,8 +2,8 @@
 title: Table Conventions
 category: Architecture/Schema
 status: stable
-version: "1.2"
-last_updated: 2026-08-04
+version: "1.3"
+last_updated: 2026-08-08
 tags: [database, architecture, standards]
 aliases: ["Column Conventions", "Standard Columns"]
 ---
@@ -114,7 +114,9 @@ The protection has a cost that must be paid in the same change, and forgetting i
 
 The shared fixture in `apps/api/tests/conftest.py` seeds a workspace for most database-backed tests and deletes it during teardown. Because every dependant listed above is `RESTRICT`, PostgreSQL refuses that delete while any dependent row survives — so **every new table taking a foreign key to `workspaces` must be added to `_WORKSPACE_DEPENDANTS` in the same change that creates it.**
 
-This has already been missed twice. [[STEP-17 AI Router and Provider Abstraction]] added `provider_credentials` and [[STEP-18 AI Cost Governance Controls]] added three more tables, none registered; CI failed with `ForeignKeyViolation: fk_ai_spend_records_workspace_id_workspaces`. The failure surfaces **in teardown**, so it appears in whichever database test happened to run last rather than in anything related to the new table — which is a slow way to find a one-line omission.
+This has already been missed twice. [[STEP-17 AI Router and Provider Abstraction]] added `provider_credentials` and [[STEP-18 AI Cost Governance Controls]] added three more tables, none registered; CI failed with `ForeignKeyViolation: fk_ai_spend_records_workspace_id_workspaces`. [[STEP-20 Projects Schema and Lifecycle]] registered `projects` and `assets` in the same change that created them, which is the intended shape.
+
+One ordering constraint applies to `assets` and is worth stating, since the list's comment otherwise says order is unconstrained: `assets` references `projects` as well as `workspaces`, so it must be cleared before `projects`. Alphabetical order happens to satisfy that — luck rather than design, so a future alphabetical insertion should not be assumed safe on that basis. The failure surfaces **in teardown**, so it appears in whichever database test happened to run last rather than in anything related to the new table — which is a slow way to find a one-line omission.
 
 `tests/test_teardown_completeness.py` now closes it: it queries the catalog for every table referencing `workspaces` and asserts the teardown list matches exactly, in both directions. A new unregistered table fails *there*, naming the table and the fix, instead of failing somewhere unrelated. A second test asserts those foreign keys are still `RESTRICT`, so the production guarantee cannot be quietly downgraded to `CASCADE` to make the error go away.
 

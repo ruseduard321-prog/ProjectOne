@@ -170,11 +170,18 @@ TEST_BYOK_KEY = "dGVzdC1ieW9rLWtleS0zMi1ieXRlcy1sb25nLXh4eHg="  # noqa: S105 - f
 #
 # Order within the list is unconstrained: none of these reference each other,
 # only `workspaces`. It is alphabetical for readability, not for correctness.
+# One ordering constraint does exist despite the note above: `assets` holds a
+# foreign key to `projects` as well as to `workspaces`, so it must be cleared
+# before `projects` is. Alphabetical order happens to satisfy that, which is
+# luck rather than design -- it is stated here so a future alphabetical
+# insertion is not assumed to be safe on that basis alone.
 _WORKSPACE_DEPENDANTS = (
     "ai_budgets",
     "ai_shutdown_switches",
     "ai_spend_records",
+    "assets",
     "audit_log",
+    "projects",
     "provider_credentials",
     "workspace_members",
 )
