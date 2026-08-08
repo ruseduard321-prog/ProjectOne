@@ -102,31 +102,27 @@ export function ProviderKeyForm({
           hidden={hidden}
           disabledReason={disabledReason}
         >
-          {(state, pending) => (
-            <FormField
-              id={`${provider}-api-key`}
-              name="api_key"
-              label={`${label} API key`}
-              /*
+          <FormField
+            id={`${provider}-api-key`}
+            name="api_key"
+            label={`${label} API key`}
+            /*
                * `password`, so the browser masks it. Not because it is a
-               * password, but because everything that treatment buys — masking,
-               * exclusion from autofill history, no plaintext in a screen share
-               * — is exactly what a provider key needs.
-               */
-              type="password"
-              /*
-               * `off`, deliberately. Letting a password manager save a provider
-               * key under this origin puts a credential somewhere the user did
-               * not choose to put it, and offering to autofill it later is how
-               * one workspace's key ends up pasted into another's form.
-               */
-              autoComplete="off"
-              placeholder="sk-…"
-              error={state.fieldErrors.api_key}
-              hint="Pasted once and encrypted. It is never shown again — replace it if you lose it."
-              disabled={pending}
-            />
-          )}
+             * password, but because everything that treatment buys — masking,
+             * exclusion from autofill history, no plaintext in a screen share
+             * — is exactly what a provider key needs.
+             */
+            type="password"
+            /*
+             * `off`, deliberately. Letting a password manager save a provider
+             * key under this origin puts a credential somewhere the user did
+             * not choose to put it, and offering to autofill it later is how
+             * one workspace's key ends up pasted into another's form.
+             */
+            autoComplete="off"
+            placeholder="sk-…"
+            hint="Pasted once and encrypted. It is never shown again — replace it if you lose it."
+          />
         </SettingsForm>
       ) : null}
 
@@ -139,11 +135,9 @@ export function ProviderKeyForm({
           hidden={hidden}
           intent="danger"
         >
-          {() => (
-            <p className="text-sm text-text-muted">
-              Removing this key stops AI features that use {label}.
-            </p>
-          )}
+          <p className="text-sm text-text-muted">
+            Removing this key stops AI features that use {label}.
+          </p>
         </SettingsForm>
       ) : null}
     </div>

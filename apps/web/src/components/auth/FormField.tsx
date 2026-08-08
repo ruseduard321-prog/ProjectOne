@@ -1,9 +1,20 @@
+"use client";
+
 /**
  * A labelled text input with its validation message.
  *
- * A Server Component — it renders markup and holds no state. The interactivity
- * lives in the form around it, which keeps this out of the client bundle
- * entirely (CLAUDE.md §11).
+ * ## Why this is a Client Component
+ *
+ * Every field is rendered inside a client form (`SettingsForm`,
+ * `CredentialsForm`), so it was already client-rendered in practice — a Server
+ * Component nested inside a Client Component is serialized *by* that client
+ * tree, it does not create a server island. Marking it explicitly costs no
+ * additional bundle and lets it read its own error and disabled state from
+ * `form-context.ts` instead of receiving them through a render prop, which a
+ * Server Component page cannot pass (CLAUDE.md §11).
+ *
+ * Both remain overridable as props: `CredentialsForm` supplies them directly and
+ * has no settings-form context around it.
  *
  * Accessibility is the reason this is a component rather than repeated JSX.
  * Three things must stay wired together on every field, and doing it by hand
@@ -21,6 +32,8 @@
  * whose edge is invisible is a control some users cannot find (§6.2).
  */
 
+import { useSettingsFormContext } from "@/components/settings/form-context";
+
 export interface FormFieldProps {
   readonly id: string;
   readonly name: string;
@@ -35,10 +48,18 @@ export interface FormFieldProps {
    */
   readonly type: "email" | "password" | "text" | "number";
   readonly autoComplete: string;
+  /**
+   * The validation message.
+   *
+   * Omitted inside a `SettingsForm`, where it is read from the form's context
+   * keyed on {@link FormFieldProps.name}. Supplied explicitly by callers that
+   * have no such context, which is what `CredentialsForm` does.
+   */
   readonly error?: string;
   /** Hint rendered under the field when there is no error. */
   readonly hint?: string;
   readonly defaultValue?: string;
+  /** Omitted inside a `SettingsForm`, which disables its fields while pending. */
   readonly disabled?: boolean;
   /** Placeholder text. Never a substitute for the label, which is always shown. */
   readonly placeholder?: string;
@@ -53,14 +74,23 @@ export function FormField({
   label,
   type,
   autoComplete,
-  error,
+  error: errorProp,
   hint,
   defaultValue,
-  disabled,
+  disabled: disabledProp,
   placeholder,
   required,
   inputMode,
 }: FormFieldProps) {
+  /*
+   * The form's state, when there is a form. An explicit prop always wins, so a
+   * caller outside a settings form behaves exactly as it did before.
+   */
+  const form = useSettingsFormContext();
+
+  const error = errorProp ?? form.state.fieldErrors[name];
+  const disabled = disabledProp ?? form.pending;
+
   const errorId = `${id}-error`;
   const hintId = `${id}-hint`;
 

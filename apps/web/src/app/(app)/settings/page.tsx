@@ -189,32 +189,28 @@ function SettingsScreen({
           submitLabel="Save profile"
           pendingLabel="Saving…"
         >
-          {(state, pending) => (
-            <div className="flex flex-col gap-4">
-              <FormField
-                id="profile-display-name"
-                name="display_name"
-                label="Display name"
-                type="text"
-                autoComplete="name"
-                defaultValue={displayName ?? ""}
-                error={state.fieldErrors.display_name}
-                disabled={pending}
-              />
+          <div className="flex flex-col gap-4">
+            <FormField
+              id="profile-display-name"
+              name="display_name"
+              label="Display name"
+              type="text"
+              autoComplete="name"
+              defaultValue={displayName ?? ""}
+            />
 
-              {/*
+            {/*
                * Email is shown as text rather than a disabled input. A disabled
                * field suggests the value is editable under some condition; it
                * is not editable here at all, because the address is
                * authoritative in the identity provider and a write would be
-               * reconciled away on the next request.
-               */}
-              <div className="flex flex-col gap-1">
-                <p className="text-sm font-medium text-text">Email</p>
-                <p className="text-sm text-text-muted">{email}</p>
-              </div>
+             * reconciled away on the next request.
+             */}
+            <div className="flex flex-col gap-1">
+              <p className="text-sm font-medium text-text">Email</p>
+              <p className="text-sm text-text-muted">{email}</p>
             </div>
-          )}
+          </div>
         </SettingsForm>
       </SettingsSection>
 
@@ -234,18 +230,14 @@ function SettingsScreen({
           hidden={{ workspace_id: workspaceId }}
           disabledReason={writeRefusal}
         >
-          {(state, pending) => (
-            <FormField
-              id="workspace-name"
-              name="name"
-              label="Workspace name"
-              type="text"
-              autoComplete="off"
-              defaultValue={workspaceName}
-              error={state.fieldErrors.name}
-              disabled={pending}
-            />
-          )}
+          <FormField
+            id="workspace-name"
+            name="name"
+            label="Workspace name"
+            type="text"
+            autoComplete="off"
+            defaultValue={workspaceName}
+          />
         </SettingsForm>
       </SettingsSection>
 
@@ -283,42 +275,36 @@ function SettingsScreen({
             hidden={{ workspace_id: workspaceId }}
             disabledReason={writeRefusal}
           >
-            {(state, pending) => (
-              <div className="flex flex-col gap-4 sm:flex-row sm:gap-4">
-                <div className="flex-1">
-                  <FormField
-                    id="budget-limit"
-                    name="limit_usd"
-                    label="Spending limit (USD)"
-                    type="text"
-                    autoComplete="off"
-                    inputMode="decimal"
-                    placeholder="50.00"
-                    defaultValue={workspaceBudget?.limit_usd ?? ""}
-                    error={state.fieldErrors.limit_usd}
-                    disabled={pending}
-                  />
-                </div>
-
-                <div className="flex-1">
-                  <FormField
-                    id="budget-period"
-                    name="period_days"
-                    label="Period (days)"
-                    type="text"
-                    autoComplete="off"
-                    inputMode="numeric"
-                    placeholder="30"
-                    defaultValue={
-                      workspaceBudget === undefined ? "" : String(workspaceBudget.period_days)
-                    }
-                    hint="Leave blank to keep the current period."
-                    error={state.fieldErrors.period_days}
-                    disabled={pending}
-                  />
-                </div>
+            <div className="flex flex-col gap-4 sm:flex-row sm:gap-4">
+              <div className="flex-1">
+                <FormField
+                  id="budget-limit"
+                  name="limit_usd"
+                  label="Spending limit (USD)"
+                  type="text"
+                  autoComplete="off"
+                  inputMode="decimal"
+                  placeholder="50.00"
+                  defaultValue={workspaceBudget?.limit_usd ?? ""}
+                />
               </div>
-            )}
+
+              <div className="flex-1">
+                <FormField
+                  id="budget-period"
+                  name="period_days"
+                  label="Period (days)"
+                  type="text"
+                  autoComplete="off"
+                  inputMode="numeric"
+                  placeholder="30"
+                  defaultValue={
+                    workspaceBudget === undefined ? "" : String(workspaceBudget.period_days)
+                  }
+                  hint="Leave blank to keep the current period."
+                />
+              </div>
+            </div>
           </SettingsForm>
         </div>
       </SettingsSection>

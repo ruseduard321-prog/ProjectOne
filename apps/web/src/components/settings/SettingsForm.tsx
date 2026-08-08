@@ -21,10 +21,16 @@
  * they differ entirely between a display name and a spend ceiling — and a
  * component that tried to own both would be a schema-driven form builder, which
  * is a great deal more machinery than four forms justify.
+ *
+ * The fields arrive as plain JSX and read their error and disabled state from
+ * `form-context.ts`. They cannot be handed down as a render prop, because every
+ * page that renders one of these forms is a Server Component and a function
+ * cannot cross that boundary.
  */
 
 import { type ReactNode, useActionState, useEffect, useRef } from "react";
 
+import { SettingsFormProvider } from "@/components/settings/form-context";
 import { EMPTY_FORM_STATE, type FormState } from "@/lib/form-state";
 
 export interface SettingsFormProps {
@@ -55,10 +61,12 @@ export interface SettingsFormProps {
   /**
    * The fields.
    *
-   * Given the current state so a caller can render per-field errors and disable
-   * inputs while a submission is in flight.
+   * Plain JSX rather than a render prop, so a **Server Component** can pass it:
+   * a function child is not serializable across the server/client boundary and
+   * React rejects it outright. Fields read the current state and pending flag
+   * from {@link SettingsFormProvider} instead — see `form-context.ts`.
    */
-  readonly children: (state: FormState, pending: boolean) => ReactNode;
+  readonly children: ReactNode;
 }
 
 export function SettingsForm({
@@ -112,7 +120,9 @@ export function SettingsForm({
         </div>
       ) : null}
 
-      {children(state, pending || locked)}
+      <SettingsFormProvider value={{ state, pending: pending || locked }}>
+        {children}
+      </SettingsFormProvider>
 
       <div className="flex flex-wrap items-center gap-3">
         <button

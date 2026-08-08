@@ -1,3 +1,6 @@
+"use client";
+
+import { useSettingsFormContext } from "@/components/settings/form-context";
 import { ASSET_KINDS, assetKindLabel } from "@/lib/projects";
 
 /**
@@ -15,7 +18,9 @@ import { ASSET_KINDS, assetKindLabel } from "@/lib/projects";
  * `htmlFor`/`id`, `aria-describedby`, `aria-invalid` — which is the part that
  * must not drift.
  *
- * A Server Component: the enclosing form owns the interactivity.
+ * A Client Component, for the reason `FormField` gives: it is only ever rendered
+ * inside a client form, and reading its error and disabled state from that
+ * form's context is what lets the *page* stay on the server.
  */
 export interface AssetKindFieldProps {
   readonly id: string;
@@ -31,9 +36,15 @@ export function AssetKindField({
   name,
   label,
   hint,
-  error,
-  disabled,
+  error: errorProp,
+  disabled: disabledProp,
 }: AssetKindFieldProps) {
+  // Same contract as `FormField`: read from the enclosing form, prop overrides.
+  const form = useSettingsFormContext();
+
+  const error = errorProp ?? form.state.fieldErrors[name];
+  const disabled = disabledProp ?? form.pending;
+
   const errorId = `${id}-error`;
   const hintId = `${id}-hint`;
 

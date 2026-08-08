@@ -120,32 +120,26 @@ export default async function ProjectDetailPage({
           pendingLabel="Saving…"
           hidden={{ workspace_id: workspaceId, project_id: project.id }}
         >
-          {(state, pending) => (
-            <div className="flex flex-col gap-4">
-              <FormField
-                id="project-name"
-                name="name"
-                label="Name"
-                type="text"
-                autoComplete="off"
-                defaultValue={project.name}
-                error={state.fieldErrors.name}
-                disabled={pending}
-              />
+          <div className="flex flex-col gap-4">
+            <FormField
+              id="project-name"
+              name="name"
+              label="Name"
+              type="text"
+              autoComplete="off"
+              defaultValue={project.name}
+            />
 
-              <FormField
-                id="project-description"
-                name="description"
-                label="Description"
-                type="text"
-                autoComplete="off"
-                defaultValue={project.description ?? ""}
-                hint="Leave blank to clear it."
-                error={state.fieldErrors.description}
-                disabled={pending}
-              />
-            </div>
-          )}
+            <FormField
+              id="project-description"
+              name="description"
+              label="Description"
+              type="text"
+              autoComplete="off"
+              defaultValue={project.description ?? ""}
+              hint="Leave blank to clear it."
+            />
+          </div>
         </SettingsForm>
       </SettingsSection>
 
@@ -185,7 +179,8 @@ export default async function ProjectDetailPage({
                       asset_id: asset.id,
                     }}
                   >
-                    {() => null}
+                    {/* No fields: the hidden inputs above carry the whole payload. */}
+                    {null}
                   </SettingsForm>
                 </li>
               ))}
@@ -199,38 +194,32 @@ export default async function ProjectDetailPage({
             savedLabel="Added"
             hidden={{ workspace_id: workspaceId, project_id: project.id }}
           >
-            {(state, pending) => (
-              <div className="flex flex-col gap-4 sm:flex-row sm:gap-4">
-                <div className="flex-1">
-                  <FormField
-                    id="asset-name"
-                    name="name"
-                    label="Asset name"
-                    type="text"
-                    autoComplete="off"
-                    placeholder="Opening script"
-                    error={state.fieldErrors.name}
-                    disabled={pending}
-                  />
-                </div>
-
-                <div className="flex-1">
-                  <AssetKindField
-                    id="asset-kind"
-                    name="kind"
-                    label="Kind"
-                    /*
-                     * Stated plainly rather than discovered: this records that an
-                     * asset exists, it does not store a file. No storage backend
-                     * is chosen yet — that needs an ADR (CLAUDE.md §10/§28).
-                     */
-                    hint="Records the asset. File upload is not available yet."
-                    error={state.fieldErrors.kind}
-                    disabled={pending}
-                  />
-                </div>
+            <div className="flex flex-col gap-4 sm:flex-row sm:gap-4">
+              <div className="flex-1">
+                <FormField
+                  id="asset-name"
+                  name="name"
+                  label="Asset name"
+                  type="text"
+                  autoComplete="off"
+                  placeholder="Opening script"
+                />
               </div>
-            )}
+
+              <div className="flex-1">
+                <AssetKindField
+                  id="asset-kind"
+                  name="kind"
+                  label="Kind"
+                  /*
+                   * Stated plainly rather than discovered: this records that an
+                   * asset exists, it does not store a file. No storage backend
+                   * is chosen yet — that needs an ADR (CLAUDE.md §10/§28).
+                   */
+                  hint="Records the asset. File upload is not available yet."
+                />
+              </div>
+            </div>
           </SettingsForm>
         </div>
       </SettingsSection>
@@ -247,7 +236,8 @@ export default async function ProjectDetailPage({
           intent="danger"
           hidden={{ workspace_id: workspaceId, project_id: project.id }}
         >
-          {() => null}
+          {/* No fields: the hidden inputs above carry the whole payload. */}
+          {null}
         </SettingsForm>
       </SettingsSection>
     </div>

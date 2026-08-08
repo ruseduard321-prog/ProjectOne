@@ -113,32 +113,26 @@ function ProjectsScreen({
           savedLabel="Created"
           hidden={{ workspace_id: workspaceId }}
         >
-          {(state, pending) => (
-            <div className="flex flex-col gap-4">
-              <FormField
-                id="project-name"
-                name="name"
-                label="Name"
-                type="text"
-                autoComplete="off"
-                placeholder="Spring campaign"
-                error={state.fieldErrors.name}
-                disabled={pending}
-              />
+          <div className="flex flex-col gap-4">
+            <FormField
+              id="project-name"
+              name="name"
+              label="Name"
+              type="text"
+              autoComplete="off"
+              placeholder="Spring campaign"
+            />
 
-              <FormField
-                id="project-description"
-                name="description"
-                label="Description"
-                type="text"
-                autoComplete="off"
-                placeholder="What this project is for"
-                hint="Optional."
-                error={state.fieldErrors.description}
-                disabled={pending}
-              />
-            </div>
-          )}
+            <FormField
+              id="project-description"
+              name="description"
+              label="Description"
+              type="text"
+              autoComplete="off"
+              placeholder="What this project is for"
+              hint="Optional."
+            />
+          </div>
         </SettingsForm>
       </SettingsSection>
 
