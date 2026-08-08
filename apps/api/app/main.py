@@ -17,7 +17,7 @@ from app.core.config import get_settings
 from app.core.errors import EXCEPTION_HANDLERS
 from app.core.logging import configure_logging
 from app.core.middleware import RateLimitMiddleware, RateLimitRule, RequestContextMiddleware
-from app.routers import ai_settings, auth, health, workspaces
+from app.routers import ai_settings, auth, health, projects, workspaces
 
 #: Rate limits, keyed by full request path.
 #:
@@ -94,6 +94,10 @@ def create_app() -> FastAPI:
     # registration order. `workspaces` owns the shorter, more specific paths, so
     # registering it first keeps `/workspaces/{id}/audit` from being shadowed.
     app.include_router(ai_settings.router, prefix=API_PREFIX)
+
+    # Same reasoning: `projects` also nests under `/workspaces/{workspace_id}`,
+    # so it is registered after the router owning the shorter paths.
+    app.include_router(projects.router, prefix=API_PREFIX)
 
     return app
 

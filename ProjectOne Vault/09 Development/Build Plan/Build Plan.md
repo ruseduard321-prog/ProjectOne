@@ -2,7 +2,7 @@
 title: Build Plan
 category: Development
 status: stable
-version: "2.6"
+version: "2.7"
 last_updated: 2026-08-08
 tags: [engineering, documentation, workflow]
 aliases: ["Implementation Plan", "Build Roadmap", "Step Index"]
@@ -58,8 +58,8 @@ Status appears in two places — the step note and the row below — and they mu
 | STEP-18 | [[STEP-18 AI Cost Governance Controls]] | Done | full |
 | STEP-19 | [[STEP-19 Settings and BYOK UI]] | Done | full |
 | STEP-20 | [[STEP-20 Projects Schema and Lifecycle]] | Done | full |
-| STEP-21 | [[STEP-21 Projects UI]] | Not Started | full |
-| STEP-22 | [[STEP-22 Minimum Workflow Engine]] | Not Started | outline |
+| STEP-21 | [[STEP-21 Projects UI]] | Done | full |
+| STEP-22 | [[STEP-22 Minimum Workflow Engine]] | Not Started | full |
 | STEP-23 | [[STEP-23 AI Chat End to End]] | Not Started | outline |
 | STEP-24 | [[STEP-24 Dashboard]] | Not Started | outline |
 | STEP-25 | [[STEP-25 Launch Readiness Criteria]] | Not Started | outline |
@@ -291,6 +291,22 @@ The lesson worth carrying: **all three were invisible locally and only reachable
 **[[Schema Overview]] was two migrations out of date** (`c9d3b71e08af` and `d1f70a4c62be`, both from STEP-19, absent from a table claiming to be the full history) and is corrected. One stale line in it — *"Roles have no meaning yet"*, untrue since STEP-11 — is left as found and flagged rather than fixed silently ([[CLAUDE|CLAUDE.md]] §29).
 
 **STEP-20 carries an owner approval gate** (Critical — database schema, multi-tenancy/RLS). It is `Done` and committed, but STEP-21 does not begin until the owner confirms it — including confirming the CI run, which this environment cannot observe on a private repository.
+
+**[[STEP-21 Projects UI]] made projects reachable end to end** — nine routes, six Server Actions, three screens, 50 new tests. A real user creates a project, moves it through the lifecycle, attaches assets and deletes it, and no route can return another tenant's work. [[STEP-20 Projects Schema and Lifecycle]] deliberately built no HTTP layer, so `/api/v1/workspaces/{id}/projects` is this step's work rather than inherited.
+
+**The load-bearing decision is that `legal_transitions` is a response field.** Every project response carries exactly the states that project can move to next, derived server-side from `legal_transitions_from`. **The frontend therefore holds no transition map at all** — a Vitest case scans `lib/projects.ts`'s exports and fails if any of them maps a status to a *collection* of statuses, which is the shape a second state machine would take. The consequence: a change to the lifecycle rules reaches every client with no frontend deploy, and a screen structurally cannot offer a move the server would refuse. This is the outcome the step note demanded, and it is asserted rather than intended.
+
+**Two refusals were kept distinct, deliberately.** A status outside the nine-state vocabulary is a **422** (refused by the schema before any service code runs); a valid status the machine will not accept from here is a **409**. Collapsing them would send a client debugging a typo through a lifecycle diagram. A third asymmetry is now recorded in [[API Conventions]] as a general rule: a **workspace** id answers 403 whether the caller is a non-member or under-privileged, while a **project** id inside a workspace they do belong to answers 404 — one answer per question, regardless of cause. `test_a_project_id_is_not_an_existence_oracle` asserts a hidden project and an invented id are indistinguishable in status *and* body.
+
+**One genuine defect was found, and only a live database could have found it.** `AssetKind` was written as bounded free text on the reasoning that asset kinds were unsettled — but `ck_assets_kind_valid` permits exactly `document`, `image`, `video`, `audio`. So the API accepted `kind: "script"`, validation passed, and PostgreSQL raised `CheckViolation`: **a client's malformed request reported as a 500**, with a constraint name in the log instead of a usable message. Fixed by typing it as a `StrEnum` mirroring the constraint, propagating a closed union to the frontend, and rendering a `<select>` rather than a text input — an interface offering a value the database refuses teaches the user to guess. Three tests now guard it, one of which reads `pg_constraint` and compares in both directions. The generalizable rule is recorded in [[Table - assets]]: **wherever the database constrains a value to a set, the outermost schema enumerates that same set** — a constraint the edge does not know about is a 500 waiting for its first user.
+
+**Validation was 68/68 against the live development database**, driving the real routes in-process through `TestClient`, with every seeded row removed afterwards and verified to zero across all four tables. The 34 database-backed API tests still **skip locally** (STEP-19's unfixed pooler mismatch, no local PostgreSQL), which is precisely why the probe exists — CI would otherwise be the first place they ran, which is what made STEP-20 go red. `apps/api` grew from 553 collected tests to 587; `apps/web` from 97 to 113.
+
+**Four limitations are stated rather than discovered.** No workspace switcher (inherited from STEP-19, and now more pressing because it bounds a user's actual work rather than only their settings); no asset upload (`storage_path` is null on everything these routes create — a storage backend is an ADR, and the step adding one owes it a deletion path); no idempotency keys (a retried creation makes a second project — bounded, but it should be one decision taken once across the API); and `GET /projects` is unpaginated, now named in [[API Endpoints]] as **where the pagination convention should be settled**, since [[Workflow Engine]] will let a workspace create projects programmatically.
+
+**No project-specific permission was added**, deliberately. Every live member may create, edit, transition and delete any project in their workspace — unlike AI settings, projects are the workspace's shared work. A finer model's first question is "may I delete someone else's project?", which [[Projects]] does not answer, so it is a decision to raise rather than a detail to invent.
+
+**STEP-21 carries an owner approval gate** (Critical — public API contract, multi-tenancy). It is `Done` and committed, but STEP-22 does not begin until the owner confirms it, including confirming the CI run.
 
 **A long-term UI vision now exists, and it changes nothing in this plan** (2026-08-03). The project owner supplied [[Design Backlog and UI Vision]] — a premium-AI-OS design direction plus a Dashboard concept mockup. It is filed as **informational only** by explicit owner instruction: **not a step, not a roadmap change, not an architecture change, and overriding no engineering document.** No step was added, renumbered or rescheduled, and the [[Roadmap]] is untouched.
 

@@ -2,7 +2,7 @@
 title: Project Lifecycle
 category: Architecture
 status: stable
-version: "1.0"
+version: "1.1"
 last_updated: 2026-08-08
 tags: [architecture, projects, backend, standards]
 aliases: ["Project State Machine", "Lifecycle Transitions"]
@@ -89,7 +89,20 @@ The test suite inverts that: `test_project_lifecycle.py` writes the specificatio
 
 `legal_transitions_from(status)` returns exactly the states reachable in one step. [[STEP-21 Projects UI]] consumes it rather than reimplementing the rules in TypeScript — a screen offering a transition that will be refused wastes the user's time, and two copies of a state machine diverge.
 
+**How that consumption actually works**, as built:
+
+1. **Every project response carries `legal_transitions`** — the server's own answer for that project in that state, derived at render time. See [[API Endpoints#The API owns the lifecycle rules; clients never copy them]].
+2. **The UI renders one control per entry** and nothing else (`components/projects/TransitionControls.tsx`). An archived project yields an empty list, which the component renders as an explicit statement rather than as an empty region.
+3. **The frontend holds no transition map at all.** `lib/projects.ts` carries the *vocabulary* and the *labels* — which states exist and how each is written — and deliberately nothing about movement.
+
+The third point is guarded rather than trusted: a Vitest case scans the module's exports and fails if any of them maps a status to a collection of statuses, which is the shape a transition map would take. The consequence worth stating: **a change to these rules reaches every client with no frontend deploy.**
+
 An illegal transition raises `IllegalTransitionError`, whose message **names both states**. That is safe and useful: the caller already knows the current status, since they read the project to attempt the move, so telling them why is actionable rather than a disclosure ([[CLAUDE|CLAUDE.md]] §24). Contrast `ProjectNotFoundError`, which deliberately conflates "does not exist" with "RLS hid it".
+
+Over HTTP the two become **409** and **404** respectively, translated in `app/core/errors.py` rather than in any router. A third refusal sits alongside them: a status outside the nine-state vocabulary is a **422**, refused by the schema before the service runs. The 409/422 split matters — one says *"that is a state, but not from here"*, the other *"that is not a state"* — and collapsing them would send a client debugging a typo through this diagram.
+
+> [!warning] A router must never re-decide legality
+> The routes read the machine (to populate `legal_transitions`) and call `transition`. They do not check anything themselves. A route that also validated the move would be the second copy this note exists to prevent, and it would be the copy that drifts — routers are added far more often than state machines are edited.
 
 ---
 

@@ -36,7 +36,9 @@ makes a user-reported failure findable without weakening either property.
 | `AuthError`            | 401    | Identity is unknown or unverifiable.        |
 | `IdentityProviderError`| 503    | Ours, not the caller's — see below.         |
 | `AuthorizationError`   | 403    | Identity is known; the answer is still no.  |
+| `ProjectNotFoundError` | 404    | No such resource, or RLS hid it — one answer.|
 | `LastOwnerError`       | 409    | Permission held; workspace state refuses.   |
+| `IllegalTransitionError`| 409   | Permission held; resource state refuses.    |
 | Validation             | 422    | The request never formed a valid operation. |
 
 The 401/403 split is deliberate and must not be collapsed: `AuthorizationError`
@@ -74,6 +76,14 @@ from app.core.security import (
     LastOwnerError,
     RateLimitExceededError,
 )
+
+# The same reasoning as the `app.ai.governance` import above, and it applies
+# unchanged: this module is the application's error *contract*, so it must name
+# every error type the application can raise. `app.services.project_service`
+# imports only `app.core.logging` and `app.repositories.projects`, so there is
+# no cycle -- asserted by `test_no_import_cycle_reaches_the_error_contract`
+# rather than left to be discovered at startup.
+from app.services.project_service import IllegalTransitionError, ProjectNotFoundError
 
 logger = get_logger(__name__)
 
@@ -165,6 +175,56 @@ def _last_owner_conflict(_request: Request, exception: Exception) -> JSONRespons
     Unlike the authorization messages, this body is deliberately specific: it
     names transferring ownership as the remedy. It leaks nothing an owner does
     not already know, and withholding it would leave them stuck.
+    """
+    message = getattr(exception, "public_message", "Conflict")
+
+    return error_response(status.HTTP_409_CONFLICT, message)
+
+
+def _resource_not_found(_request: Request, exception: Exception) -> JSONResponse:
+    """Translate a missing project or asset into a 404.
+
+    **404, and deliberately the same 404 for "absent" and "hidden by RLS".**
+    `ProjectNotFoundError` conflates the two at the point it is raised
+    (`app.services.project_service`), so there is nothing here to distinguish
+    even if this handler wanted to -- which is the property that stops a project
+    id becoming an existence oracle across tenants.
+
+    Worth reading against `_authorization_denied`, because the two look
+    inconsistent and are not. A **workspace** id answers 403 whether the caller
+    is a non-member or merely under-privileged, because the caller supplied that
+    id as the thing they claim access to and 404 there would confirm which
+    workspace ids exist. A **project** id inside a workspace the caller does
+    belong to answers 404, because from the caller's side an invisible project
+    and an absent one are the same fact, and the workspace-level check has
+    already refused anyone who does not belong.
+
+    The rule underneath both: **one answer per question, regardless of cause.**
+    """
+    message = getattr(exception, "public_message", "Not found")
+
+    return error_response(status.HTTP_404_NOT_FOUND, message)
+
+
+def _illegal_transition(_request: Request, exception: Exception) -> JSONResponse:
+    """Translate a refused lifecycle move into a 409.
+
+    **409, not 422.** The request was well-formed and the status was in the
+    vocabulary -- `ProjectTransitionRequest` typed it as `ProjectStatus`, so
+    anything outside the vocabulary was already a 422 before this could be
+    reached. What refuses the caller is the *current state of the resource*,
+    which is precisely what 409 means, and it is the same distinction
+    `LastOwnerError` draws: permission held, state says no.
+
+    422 here would send a client checking their serialization for a problem that
+    does not exist. 403 would send them to the permission model, which is also
+    not it.
+
+    The message names both states, unlike the authorization and authentication
+    messages. That is safe and useful: the caller already knows the current
+    status -- they read the project to attempt this -- and telling them why the
+    move was refused is the difference between an actionable error and a mystery
+    (CLAUDE.md §24).
     """
     message = getattr(exception, "public_message", "Conflict")
 
@@ -323,6 +383,8 @@ _GOVERNANCE_RETRY_AFTER_SECONDS = 300
 EXCEPTION_HANDLERS: tuple[tuple[type[Exception] | int, Any], ...] = (
     (AuthError, _authentication_failed),
     (AuthorizationError, _authorization_denied),
+    (ProjectNotFoundError, _resource_not_found),
+    (IllegalTransitionError, _illegal_transition),
     (LastOwnerError, _last_owner_conflict),
     (RateLimitExceededError, _rate_limit_exceeded),
     (GovernanceError, _governance_refusal),

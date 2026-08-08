@@ -1,18 +1,18 @@
 ---
 title: STEP-21 Projects UI
 category: Development/Build Step
-status: draft
-version: "2.0"
+status: stable
+version: "3.0"
 last_updated: 2026-08-08
 tags: [engineering, workflow, build-step, frontend, backend]
 step_id: STEP-21
-step_status: Not Started
+step_status: Done
 detail_level: full
 ---
 
 # STEP-21 — Projects UI
 
-**Status:** Not Started
+**Status:** Done
 **Detail level:** full — expanded by [[STEP-20 Projects Schema and Lifecycle]], per [[Execution Protocol]].
 
 ## Goal
@@ -77,6 +77,56 @@ Recorded during expansion, while the context was loaded. These are the load-bear
 Projects and assets are reachable over HTTP and manageable from the UI, lifecycle transitions are enforced end to end with an illegal one refused as 409, isolation is proven through the route layer, and every new screen defines loading, empty and error states.
 
 **This is a Critical change** ([[CLAUDE|CLAUDE.md]] §21 — public API contract, multi-tenancy) and carries an **owner approval gate**.
+
+---
+
+## Outcome
+
+Nine routes, six Server Actions, three screens and 50 new tests (34 API, 16 web). Projects are reachable end to end: a real user creates one, moves it through the lifecycle, attaches assets and deletes it, and no route can return another tenant's work.
+
+### What was built
+
+**API** — `app/schemas/project.py`, `app/routers/projects.py`, plus `ProjectRepository`/`ProjectService` wiring in `app/core/dependencies.py` and two new handlers in `app/core/errors.py`. The router is thin by construction: it validates, calls the service, and renders. It re-decides nothing.
+
+**Web** — a projects list with a create form, a project detail screen (lifecycle, details, assets, delete), loading skeletons and a route-scoped error boundary for both. `lib/api.ts` gained nine client functions, `lib/projects.ts` the vocabulary and labels, and `components/projects/` three components.
+
+### Architecture decisions
+
+**`legal_transitions` is a response field.** The single most consequential decision, and the one the step note demanded. Every project response carries exactly the states that project can move to, derived server-side. The frontend therefore holds *no* transition map — a Vitest case scans `lib/projects.ts`'s exports and fails if any of them maps a status to a collection of statuses, which is the shape a second state machine would take. A rules change now reaches every client with no frontend deploy.
+
+**A transition is a `POST` to a sub-resource, not a `PATCH` of `status`.** A `PATCH` presents the status as a field a client may set. It is not: the server decides whether the move is coherent and refuses most of them. `POST /transitions` says that in the URL.
+
+**404 for a project, 403 for a workspace.** Deliberately asymmetric, and both are "one answer per question, regardless of cause". A workspace id the caller supplied answers 403 either way, so it cannot be used to test which workspaces exist. A project id inside a workspace they do belong to answers 404, because invisible and absent are the same fact from their side. Recorded in [[API Conventions]] as a general rule rather than only here.
+
+**Every live member writes.** No owner/admin asymmetry, unlike AI settings — projects are the workspace's shared work, and a member who cannot create one cannot use the product. **No project-specific permission was added**: that is a decision about the role model, and the first question it must answer ("may I delete someone else's project?") is one [[Projects]] does not.
+
+**The state machine was not touched.** `ProjectService` was consumed exactly as [[STEP-20 Projects Schema and Lifecycle]] left it. The only change to the domain model was the asset-kind defect below, which was a schema error rather than a model change.
+
+### Defects found and fixed
+
+**`AssetKind` was free text, and the database refuses free text.** The API's `kind` was written as a bounded string on the reasoning that asset kinds were not settled. `ck_assets_kind_valid` permits exactly `document`, `image`, `video`, `audio`. So the API accepted `kind: "script"`, validation passed, and PostgreSQL raised `CheckViolation` — **a client's malformed request reported as a 500**, with a constraint name in the log instead of a usable message.
+
+Fixed by typing `AssetKind` as a `StrEnum` mirroring the constraint, propagated to the frontend as a closed union, and surfaced in the UI as a `<select>` rather than a text input — an interface offering a value the database refuses teaches the user to guess. Three tests now guard it: one reads `pg_constraint` and compares in both directions, one posts an asset of every kind through the real route, and one asserts an invalid kind is 422 rather than 500.
+
+**Only a live database could have found it.** The generalizable rule is recorded in [[Table - assets#`kind` is a closed vocabulary, and the API must mirror it exactly]]: *wherever the database constrains a value to a set, the outermost schema enumerates that same set.* A constraint the edge does not know about is a 500 waiting for its first user.
+
+**Two smaller ones, both caught before commit.** A `surface-hover` Tailwind class that does not exist in the design tokens (the real token is `surface-raised`) — invented rather than checked, which is exactly what the Design Rules forbid. And an `isProjectStatus` guard first written inside the `"use server"` actions module, where only async functions may be exported; it moved to `lib/projects.ts` alongside the same constraint `lib/form-state.ts` already records.
+
+### Validation
+
+- **68/68 checks against the live development database**, driving the real routes in-process through `TestClient`. Every seeded row removed afterwards and verified to zero across all four tables.
+- The four Validation items specifically: an illegal transition **is** 409 through HTTP and a legal one returns the updated project; another tenant's project **is** 404 and is indistinguishable from an invented id; `legal_transitions` **matches** `legal_transitions_from` in all nine states, walked through real transitions; **no route** returns another tenant's project, asserted across all six routes taking a project id, with the project confirmed untouched afterwards.
+- API: ruff, ruff format, `mypy app` (60 files), 343 passed.
+- Web: typecheck, lint, 113 tests, production build with both routes correctly dynamic.
+
+**The 34 database-backed API tests skip locally** — the pytest harness still cannot reach a test database (STEP-19's unfixed pooler username mismatch, and no local PostgreSQL). The probe above exists precisely because CI would otherwise be the first place they ran, which is what made STEP-20 go red.
+
+### Limitations, stated rather than discovered
+
+- **No workspace switcher.** Inherited from STEP-19 and now more pressing: the constraint bounds a user's actual work, not only their settings. Disclosed on screen.
+- **No asset upload.** `storage_path` is null on everything these routes create. Choosing a backend is an ADR, and the step that adds one owes it a deletion path ([[CLAUDE|CLAUDE.md]] §16).
+- **No idempotency keys.** A retried creation makes a second project. Bounded — a duplicate a user can delete, not a duplicate charge — and it should be one decision taken once across the API.
+- **`GET /projects` is unpaginated**, and is the first genuinely unbounded collection. [[API Endpoints]] now names it as where the pagination convention should be settled.
 
 ---
 

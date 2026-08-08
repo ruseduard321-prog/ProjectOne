@@ -392,6 +392,196 @@ export function updateBudget(
   });
 }
 
+/**
+ * A project's position in its lifecycle.
+ *
+ * The values match the API's `ProjectStatus` and the database's
+ * `ck_projects_status_valid` check constraint. A union rather than a string so a
+ * typo in a component is a compile error rather than a status that silently
+ * never matches.
+ *
+ * **The order of transitions is deliberately not encoded here.** Which moves are
+ * legal comes from the server, per project, in `legal_transitions` — see
+ * [[Project Lifecycle]]. A second copy of the state machine in TypeScript is
+ * exactly what STEP-21 was told not to build, because two copies diverge.
+ */
+export type ApiProjectStatus =
+  | "idea"
+  | "planning"
+  | "generation"
+  | "review"
+  | "editing"
+  | "approval"
+  | "publishing"
+  | "analytics"
+  | "archive";
+
+/** One project, from `GET /workspaces/{id}/projects`. */
+export interface ApiProject {
+  readonly id: string;
+  readonly workspace_id: string;
+  readonly name: string;
+  readonly description: string | null;
+  readonly status: ApiProjectStatus;
+  /**
+   * Every state this project can move to in one step, decided by the server.
+   *
+   * Rendered directly as the available actions. Empty for an archived project,
+   * which is the terminal state saying so.
+   */
+  readonly legal_transitions: readonly ApiProjectStatus[];
+  readonly created_by: string;
+  readonly created_at: string;
+  readonly updated_at: string;
+  readonly version: number;
+}
+
+/**
+ * What an asset is.
+ *
+ * A closed vocabulary, matching the API's `AssetKind` and the database's
+ * `ck_assets_kind_valid`. Not free text: the constraint refuses anything else,
+ * so a client offering an arbitrary string would be offering a request that
+ * cannot succeed.
+ */
+export type ApiAssetKind = "document" | "image" | "video" | "audio";
+
+/** One asset attached to a project. */
+export interface ApiAsset {
+  readonly id: string;
+  readonly project_id: string;
+  readonly name: string;
+  readonly kind: ApiAssetKind;
+  /** Always null today — no storage backend exists. See `app/schemas/project.py`. */
+  readonly storage_path: string | null;
+  readonly created_by: string;
+  readonly created_at: string;
+}
+
+export function listProjects(accessToken: string, workspaceId: string): Promise<ApiProject[]> {
+  return apiRequest<ApiProject[]>({
+    path: `/workspaces/${workspaceId}/projects`,
+    method: "GET",
+    accessToken,
+  });
+}
+
+export function readProject(
+  accessToken: string,
+  workspaceId: string,
+  projectId: string,
+): Promise<ApiProject> {
+  return apiRequest<ApiProject>({
+    path: `/workspaces/${workspaceId}/projects/${projectId}`,
+    method: "GET",
+    accessToken,
+  });
+}
+
+export function createProject(
+  accessToken: string,
+  workspaceId: string,
+  name: string,
+  description?: string,
+): Promise<ApiProject> {
+  return apiRequest<ApiProject>({
+    path: `/workspaces/${workspaceId}/projects`,
+    method: "POST",
+    // `status` is deliberately absent — a project always starts in `idea`, and
+    // the API would answer 422 for an unexpected field.
+    body: description === undefined ? { name } : { name, description },
+    accessToken,
+  });
+}
+
+export function renameProject(
+  accessToken: string,
+  workspaceId: string,
+  projectId: string,
+  name: string,
+  description: string | null,
+): Promise<ApiProject> {
+  return apiRequest<ApiProject>({
+    path: `/workspaces/${workspaceId}/projects/${projectId}`,
+    method: "PATCH",
+    body: { name, description },
+    accessToken,
+  });
+}
+
+/**
+ * Move a project to a new lifecycle state.
+ *
+ * A refused move answers 409 and surfaces as an {@link ApiError}. The UI offers
+ * only `legal_transitions`, so a 409 here means the project changed underneath
+ * the page — which is worth reporting rather than hiding.
+ */
+export function transitionProject(
+  accessToken: string,
+  workspaceId: string,
+  projectId: string,
+  status: ApiProjectStatus,
+): Promise<ApiProject> {
+  return apiRequest<ApiProject>({
+    path: `/workspaces/${workspaceId}/projects/${projectId}/transitions`,
+    method: "POST",
+    body: { status },
+    accessToken,
+  });
+}
+
+export function deleteProject(
+  accessToken: string,
+  workspaceId: string,
+  projectId: string,
+): Promise<void> {
+  return apiRequest<void>({
+    path: `/workspaces/${workspaceId}/projects/${projectId}`,
+    method: "DELETE",
+    accessToken,
+  });
+}
+
+export function listAssets(
+  accessToken: string,
+  workspaceId: string,
+  projectId: string,
+): Promise<ApiAsset[]> {
+  return apiRequest<ApiAsset[]>({
+    path: `/workspaces/${workspaceId}/projects/${projectId}/assets`,
+    method: "GET",
+    accessToken,
+  });
+}
+
+export function createAsset(
+  accessToken: string,
+  workspaceId: string,
+  projectId: string,
+  name: string,
+  kind: ApiAssetKind,
+): Promise<ApiAsset> {
+  return apiRequest<ApiAsset>({
+    path: `/workspaces/${workspaceId}/projects/${projectId}/assets`,
+    method: "POST",
+    body: { name, kind },
+    accessToken,
+  });
+}
+
+export function deleteAsset(
+  accessToken: string,
+  workspaceId: string,
+  projectId: string,
+  assetId: string,
+): Promise<void> {
+  return apiRequest<void>({
+    path: `/workspaces/${workspaceId}/projects/${projectId}/assets/${assetId}`,
+    method: "DELETE",
+    accessToken,
+  });
+}
+
 /** One entry from a workspace's AI spend history. */
 export interface ApiSpendRecord {
   readonly created_at: string;

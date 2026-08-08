@@ -2,15 +2,15 @@
 title: API Endpoints
 category: Architecture
 status: stable
-version: "1.1"
-last_updated: 2026-08-04
+version: "1.2"
+last_updated: 2026-08-08
 tags: [backend, api, standards, documentation]
 aliases: ["Endpoint Reference", "API Reference"]
 ---
 
 # API Endpoints
 
-**Every endpoint ProjectOne serves**, as of [[STEP-13 Auth Users Workspaces Endpoints]]. This is the contract the frontend consumes from [[STEP-16 Sign Up and Sign In UI]] onward.
+**Every endpoint ProjectOne serves**, as of [[STEP-21 Projects UI]]. This is the contract the frontend consumes from [[STEP-16 Sign Up and Sign In UI]] onward.
 
 Each entry documents only what is **specific to that endpoint**, exactly as [[API Endpoint Template]] instructs. The shared contract — the `/api/v1` prefix, the `{"detail", "request_id"}` error envelope, the correlation id, the generic 401/403/422 behaviour — is [[API Conventions]] and is deliberately not restated fourteen times. A reader needing it goes there once.
 
@@ -137,16 +137,79 @@ The third exists because it is the one that holds when a future route forgets. T
 
 Routes raise; they do not map. A ceiling or execution limit reaches the client as **402**, a shutdown or tripped breaker as **503** with `Retry-After`, through the handler table in `app/core/errors.py`.
 
+## Projects and assets
+
+Added by [[STEP-21 Projects UI]], over the schema and lifecycle [[STEP-20 Projects Schema and Lifecycle]] built. **The first routes reaching a workspace's actual work** rather than its configuration, and the first where every live member writes.
+
+| Endpoint | Auth | Permission | Notes |
+|---|---|---|---|
+| `GET /api/v1/workspaces/{id}/projects` | Bearer | `VIEW_WORKSPACE` | Live projects, newest first. **Archived projects are included** — archive is a lifecycle state, not a deletion. Unpaginated (see [[#Not Built Yet]]). |
+| `POST /api/v1/workspaces/{id}/projects` | Bearer | `VIEW_WORKSPACE` | **201.** Body: `{"name", "description"?}`. Always created in `idea` — **`status` is not accepted** and sending it is a 422. Rate limited **30/min** per user. |
+| `GET /api/v1/workspaces/{id}/projects/{project_id}` | Bearer | `VIEW_WORKSPACE` | One project, with its `legal_transitions`. **404** when absent *or* hidden by RLS — deliberately one answer ([[#Why a project is 404 where a workspace is 403]]). |
+| `PATCH /api/v1/workspaces/{id}/projects/{project_id}` | Bearer | `VIEW_WORKSPACE` | Name and description. **Cannot change status** — no such field, and sending one is a 422. An explicit `null` description clears it. |
+| `POST /api/v1/workspaces/{id}/projects/{project_id}/transitions` | Bearer | `VIEW_WORKSPACE` | Body: `{"status"}`. **409** when the lifecycle refuses the move, **422** when the value is not a state at all. Returns the updated project, whose `legal_transitions` now describe the new state. |
+| `DELETE /api/v1/workspaces/{id}/projects/{project_id}` | Bearer | `VIEW_WORKSPACE` | **204.** Soft-deletes. **Not the same as archiving.** **404** on a second call — a false confirmation would claim something happened that did not. |
+| `GET /api/v1/workspaces/{id}/projects/{project_id}/assets` | Bearer | `VIEW_WORKSPACE` | Live assets, **oldest first** — creation order is the order the work happened in. |
+| `POST /api/v1/workspaces/{id}/projects/{project_id}/assets` | Bearer | `VIEW_WORKSPACE` | **201.** Body: `{"name", "kind"}`. `kind` is a closed vocabulary: `document`, `image`, `video`, `audio`. **Records an asset; uploads nothing.** Rate limited **60/min** per user. |
+| `DELETE /api/v1/workspaces/{id}/projects/{project_id}/assets/{asset_id}` | Bearer | `VIEW_WORKSPACE` | **204.** **404** when the asset is not attached to *that* project — every path segment is enforced, not just the ones the query uses. |
+
+### Every live member writes here
+
+Unlike AI settings, there is **no owner/admin asymmetry**. Projects are the workspace's shared work: a member who cannot create or advance one cannot use the product. `requires(VIEW_WORKSPACE)` therefore gates every route, and its job is the *tenant* boundary rather than a role distinction.
+
+**There is no project-specific permission**, deliberately. Adding one to [[Authorization Model]] is a decision about the role model rather than a detail of a UI step, and the permission that would be needed first — "may delete someone else's project" — is a question [[Projects]] does not answer yet.
+
+### The API owns the lifecycle rules; clients never copy them
+
+Every project response carries **`legal_transitions`**: exactly the states that project can move to next, derived server-side from `legal_transitions_from` ([[Project Lifecycle]]).
+
+This field exists so a UI never needs its own state machine. Two copies of a state machine diverge the first time the rules change, and the divergence shows up as a button producing a 409 — or worse, a legal move no screen offers. Because the list is per project and per state, a rules change reaches every client with no frontend deploy.
+
+`test_legal_transitions_match_the_service_in_every_state` walks a project through all nine states and compares the field against the service at each one; `test_offering_only_legal_transitions_would_never_produce_a_409` submits every advertised move and asserts each succeeds.
+
+### 409 and 422 are different refusals
+
+- **422** — the value is not a lifecycle state. `ProjectTransitionRequest` types it as an enum, so this is refused before any service code runs.
+- **409** — the value *is* a state, but not reachable from the current one. The message names both states, which is safe (the caller already knows the current status) and is the difference between an actionable error and a mystery.
+
+Collapsing them would send a client debugging a typo through a lifecycle diagram.
+
+### Why a project is 404 where a workspace is 403
+
+The two look inconsistent and are not:
+
+- A **workspace** id answers **403** whether the caller is a non-member or under-privileged. The caller supplied that id as the thing they claim access to, so a 404 would confirm which workspace ids exist.
+- A **project** id inside a workspace they *do* belong to answers **404**, because an invisible project and an absent one are the same fact from their side — and the workspace gate has already refused anyone who does not belong.
+
+The rule underneath both: **one answer per question, regardless of cause.** `test_a_project_id_is_not_an_existence_oracle` asserts a hidden project and an invented id are indistinguishable in both status and body.
+
+### Archive is a state; delete removes
+
+They are separate operations with separate routes, and the API keeps them separate because presenting one as the other would misrepresent what a user just did:
+
+- **Archive** (`POST /transitions` with `archive`) is terminal but keeps the project in the workspace, in the listing, with its assets, as a record of finished or abandoned work.
+- **Delete** removes it from the listing. Soft, so the row survives with `deleted_at` set.
+
+Deletion is permitted from any state, archived included — requiring archive first would be ceremony, not a safeguard, since the deletion is soft either way. See [[Project Lifecycle#Archive Is Not Deletion]].
+
+### Assets are recorded, not uploaded
+
+`storage_path` is null on everything these routes create and **no bytes cross the API**. No storage backend is chosen, and choosing one is an ADR ([[CLAUDE|CLAUDE.md]] §10/§28) — the step that adds it also owes it a deletion path (§16). The field is present rather than hidden so a client can render "no file attached" honestly rather than being unable to tell an unbuilt feature from an empty one.
+
+`kind` is a **closed vocabulary** enforced by `ck_assets_kind_valid`. It was first written as free text, and driving the routes against a real database found the consequence immediately: the API accepted `kind: "script"` and PostgreSQL refused it, turning a client error into a 500. Typing it makes the same request a 422 naming the four valid values.
+
 ## Not Built Yet
 
 Recorded so the next reader does not assume otherwise:
 
 - **User-facing endpoints beyond `/auth/me`.** `PATCH /api/v1/auth/me` now sets a display name ([[STEP-19 Settings and BYOK UI]]); nothing else about a user is editable, and changing an email address remains unbuilt.
-- **Workspace switching.** A user belonging to several workspaces can currently only configure the first — the web application resolves one server-side and discloses the limitation on screen. A switcher belongs with [[STEP-20 Projects Schema and Lifecycle]] onward.
+- **Workspace switching.** A user belonging to several workspaces can currently only configure the first — the web application resolves one server-side and discloses the limitation on screen. **[[STEP-21 Projects UI]] inherits this rather than resolving it**: a projects list is workspace-scoped, so the constraint now bounds a user's actual work and not only their settings. That makes it more pressing than it was, and it remains unscheduled.
+- **Asset upload.** `POST /projects/{id}/assets` records that an asset exists; no storage backend is chosen and no route serves bytes. Needs an ADR, and the step that adds it owes it a deletion path ([[CLAUDE|CLAUDE.md]] §16).
+- **Project-level permissions.** Every live member may create, edit, transition and delete any project in their workspace. "May delete someone else's project" is the first question a finer model would have to answer, and [[Projects]] does not answer it.
 - **Workspace deletion itself.** `DELETE /workspaces/{id}/data` erases contents; the workspace row remains. Deleting the workspace itself needs the last-owner and orphaning questions answered deliberately.
 - **Invitation of non-users.** See above.
-- **Idempotency keys.** `POST /workspaces` is the first endpoint creating a resource from a client-supplied request, so it is the first that could benefit. [[API Architecture]] calls for idempotency where appropriate; a retried creation currently makes a second workspace.
-- **Pagination.** Every collection here is bounded by construction — a caller's workspaces, a workspace's members. The audit trail takes a bounded `limit` rather than a cursor. The first genuinely unbounded collection is where a pagination convention should be settled.
+- **Idempotency keys.** `POST /workspaces` was the first endpoint creating a resource from a client-supplied request; `POST /projects` and `POST /assets` are now the second and third. [[API Architecture]] calls for idempotency where appropriate; a retried creation currently makes a second project. The consequence is bounded — a duplicate a user can delete, not a duplicate charge — but it should be **one decision taken once** across the API rather than invented per route.
+- **Pagination.** `GET /projects` is the first genuinely unbounded collection: a workspace's project count is bounded only by human effort today, but [[Workflow Engine]] will let a workspace create projects programmatically. The repository's stable `created_at DESC, id DESC` ordering is what makes adding keyset pagination later a change to one query rather than a redesign. **This is where the pagination convention should now be settled.**
 
 ---
 

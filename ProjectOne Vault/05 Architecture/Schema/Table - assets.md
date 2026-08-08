@@ -2,7 +2,7 @@
 title: Table - assets
 category: Architecture/Schema
 status: stable
-version: "1.0"
+version: "1.1"
 last_updated: 2026-08-08
 tags: [database, schema, multi-tenancy, projects]
 aliases: ["assets", "Assets Table"]
@@ -29,6 +29,18 @@ aliases: ["assets", "Assets Table"]
 | `created_by` | `uuid` NOT NULL | **Not** an FK |
 
 Follows [[Table Conventions]] in full.
+
+## `kind` is a closed vocabulary, and the API must mirror it exactly
+
+`ck_assets_kind_valid` permits `document`, `image`, `video`, `audio` and nothing else. **The HTTP schema must enumerate the same four values** — `AssetKind` in `app/schemas/project.py` — and so must the frontend's `ASSET_KINDS`.
+
+This is not a stylistic preference. [[STEP-21 Projects UI]] first typed the API's `kind` as bounded free text, on the reasoning that the asset kinds a content business needs were not settled. Driving the routes against a real database found the consequence in one request: the API accepted `kind: "script"`, validation passed, and PostgreSQL refused the INSERT with a `CheckViolation`. That surfaces as a **500** — a client's malformed request reported as a server fault, with a constraint name in the log instead of a usable message.
+
+**A constraint the edge does not know about is a 500 waiting for its first user.** The general rule this instance teaches: wherever the database constrains a value to a set, the outermost schema enumerates that same set, so the refusal happens at the edge as a 422 naming the valid options.
+
+Three copies now exist — the constraint, the API enum, the frontend union — and each is asserted rather than trusted. `test_asset_kind_vocabulary_matches_the_database` reads `pg_constraint` and compares in both directions; `test_every_accepted_asset_kind_is_actually_storable` posts one asset of each kind through the real route, which is the assertion that would have caught the original defect.
+
+Extending the vocabulary is **one migration plus both enums, in one change** — which is exactly why the column is `text` with a CHECK rather than a PostgreSQL `ENUM` ([[Table Conventions#Enumerated Values]]).
 
 ## `workspace_id` is denormalized, and constrained rather than trusted
 

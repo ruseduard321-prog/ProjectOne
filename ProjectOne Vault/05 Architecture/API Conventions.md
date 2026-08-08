@@ -2,8 +2,8 @@
 title: API Conventions
 category: Architecture
 status: stable
-version: "1.1"
-last_updated: 2026-08-03
+version: "1.2"
+last_updated: 2026-08-08
 tags: [backend, api, standards, security, observability]
 aliases: ["API Contract", "Error Envelope", "API Middleware"]
 ---
@@ -53,7 +53,9 @@ A 422 carries a third key, `errors`, listing `field` / `message` / `type`. Field
 | `AuthError` and subclasses | 401 | Identity unknown or unverifiable. |
 | `IdentityProviderError` | 503 | Ours, not the caller's — Supabase was unreachable, so the credentials were never judged. |
 | `AuthorizationError` / `WorkspaceAccessError` | 403 | Identity known; the answer is still no. |
+| `ProjectNotFoundError` | **404** | The named resource is absent *or* hidden by RLS — deliberately one answer. |
 | `LastOwnerError` | 409 | Permission held; the workspace's *state* refuses. |
+| `IllegalTransitionError` | **409** | Permission held; the *resource's* state refuses. |
 | `BudgetExceededError` / `ExecutionLimitExceededError` | **402** | Well-formed and authorized; the workspace has spent its allowance. |
 | `AIShutdownError` / `SpendBreakerOpenError` | **503** + `Retry-After` | Operational and temporary; nothing about the caller is at fault. |
 | Validation failure | 422 | The request never formed a valid operation. |
@@ -64,6 +66,10 @@ The 401/403 split must never be collapsed. `AuthorizationError` is deliberately 
 **402 rather than 403 for a spend ceiling**, and the distinction matters to the reader of the response: 403 says *"you may never do this"* and sends someone to the permission model, while a budget refusal succeeds again next period or once the limit is raised. See [[AI Cost Governance]].
 
 Registered by [[STEP-18 AI Cost Governance Controls]] **before any route can raise one**. Without the handler a deliberate, correct cost control would reach the client as a **500** — a control reported as a crash, sending a user to support and an engineer to a stack trace that does not exist. `ExecutionLimitExceededError` shares the 402 with the budget deliberately: from the caller's side both mean "this workflow consumed its allowance", and splitting them would leak how runs are bounded internally.
+
+**404 for a resource, 403 for a tenant** ([[STEP-21 Projects UI]]), and the two look inconsistent until the question each answers is named. A **workspace** id answers 403 whether the caller is a non-member or under-privileged, because they supplied that id as the thing they claim access to and a 404 would confirm which ids exist. A resource id *inside* a workspace they do belong to answers 404, because an invisible resource and an absent one are the same fact from their side and the tenant gate has already refused outsiders. The rule underneath both: **one answer per question, regardless of cause.**
+
+**409 and 422 are different refusals**, and the projects lifecycle is where the distinction first becomes routine. 422 says *the value is not a member of the vocabulary*; 409 says *the value is valid but the resource's current state refuses it*. `LastOwnerError` and `IllegalTransitionError` are the same shape — permission held, state says no — differing only in whose state refuses. Collapsing either into 422 would send a client debugging a typo through a state diagram; collapsing into 403 would send them to the permission model.
 
 ### Translation lives in handlers, not routers
 

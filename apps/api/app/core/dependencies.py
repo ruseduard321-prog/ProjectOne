@@ -33,6 +33,7 @@ from app.repositories.ai_spend import AISpendRepository
 from app.repositories.audit import AuditRepository
 from app.repositories.database import DatabaseRepository
 from app.repositories.memberships import MembershipRepository
+from app.repositories.projects import ProjectRepository
 from app.repositories.provider_credentials import ProviderCredentialRepository
 from app.repositories.session import RequestSessionFactory
 from app.repositories.supabase_auth import SupabaseAuthRepository
@@ -45,6 +46,7 @@ from app.services.authorization_service import AuthorizationService
 from app.services.data_ownership_service import REGISTERED_STORES, DataOwnershipService
 from app.services.health_service import HealthService
 from app.services.membership_service import MembershipService
+from app.services.project_service import ProjectService
 from app.services.provider_credential_service import ProviderCredentialService
 from app.services.token_service import AuthenticatedUser, TokenService, build_jwk_client
 from app.services.workspace_service import WorkspaceService
@@ -431,6 +433,29 @@ def get_provider_credential_service(
 ProviderCredentialServiceDep = Annotated[
     ProviderCredentialService, Depends(get_provider_credential_service)
 ]
+
+
+def get_project_repository(connection: TenantConnectionDep) -> ProjectRepository:
+    """Construct the project repository over the request's tenant connection.
+
+    `TenantConnectionDep`, never the privileged one -- a project and its assets
+    are tenant data, so RLS is what keeps one workspace's work away from
+    another. Reaching these tables over the privileged connection would look
+    identical at the call site and have no isolation at all ([[RLS Policy
+    Pattern]] -- "The Two Connections").
+    """
+    return ProjectRepository(connection)
+
+
+ProjectRepositoryDep = Annotated[ProjectRepository, Depends(get_project_repository)]
+
+
+def get_project_service(repository: ProjectRepositoryDep) -> ProjectService:
+    """Construct the project lifecycle service."""
+    return ProjectService(repository)
+
+
+ProjectServiceDep = Annotated[ProjectService, Depends(get_project_service)]
 
 
 def get_ai_spend_repository(settings: SettingsDep) -> AISpendRepository:
