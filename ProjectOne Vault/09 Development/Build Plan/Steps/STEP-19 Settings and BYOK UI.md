@@ -2,8 +2,8 @@
 title: STEP-19 Settings and BYOK UI
 category: Development/Build Step
 status: draft
-version: "2.2"
-last_updated: 2026-08-05
+version: "2.3"
+last_updated: 2026-08-08
 tags: [engineering, workflow, build-step, frontend,security,ai]
 step_id: STEP-19
 step_status: Done
@@ -161,6 +161,21 @@ All three were **defects in the tests, not in the application** — which is why
 1. **`permission denied for table ai_budgets`** (8 tests). The `client` fixture set `DATABASE_URL` — the *privileged* DSN — to `request_database_url`, the unprivileged `projectone_api` role. `AISpendRepository.upsert_budget` correctly opens a privileged connection, which was therefore refused by the `c9d3b71e08af` column grant that is only meant to constrain the *tenant* connection. The fixture's docstring had argued for this deliberately, to make the `spent_usd` refusal demonstrable; the reasoning was wrong, because the two grant tests open their own `request_database_url` connections and never needed the fixture's. **Fixed by giving the two DSNs different roles, as production and the CI workflow do.**
 2. **`test_the_audit_trail_does_not_record_the_key_or_its_last_four`** — a *downstream* effect of the same defect, not an independent one. The budget write failed, and `AuditService.record` swallows every exception by design, so the route returned 200 with no audit row. Fixing the DSN fixed this test with no change to it. **Worth noting for a later step:** an audit write that fails silently is correct for availability and dangerous for forensics; that trade-off is recorded, not changed here.
 3. **`test_a_soft_deleted_credential_is_invisible`** — the test encoded STEP-17's assumption that the SELECT policy filters `deleted_at`. Migration `d1f70a4c62be` deliberately removed that filter *in this same step*, because it made revocation impossible for every role. The assertion could only have passed while revocation was broken. **Fixed by asserting the guarantee at the layer that now owns it** — all three repository read methods — and adding `test_a_soft_deleted_credential_stays_within_its_tenant` to pin what the policy still owns. Verified load-bearing: 0 rows with RLS on, 1 with RLS off.
+
+### A fourth failure, which was not a defect in this step
+
+Run **#28** (`71da7da`) failed in **"Initialize containers"** after 55s — the `postgres:17` service never became healthy, so checkout, install, lint, type-check and the entire suite were skipped. No test ran and no artifact was produced.
+
+**That commit touched two test files and three vault notes and nothing else** — no workflow, no infrastructure, no dependency. Run #27 started the same image successfully 23s earlier on the preceding commit. The failure was environmental, not caused by the change.
+
+Two things were nevertheless wrong with the pipeline, and both are fixed rather than waited out:
+
+- **The health check had no `--health-start-period`**, so its 50s allowance (5 x 10s) had to cover image pull *and* `initdb` *and* readiness. `postgres:17` runs `initdb` on first boot, which on a cold runner consumes most of that. Startup now gets 30s that does not count against the retries, and the retries go to 10. The health command, interval and timeout are unchanged — a server that never becomes ready still fails the job.
+- **A pre-pytest failure produced no diagnostics at all.** `Report test failures` and `Upload test output` both fire `if: failure()` but assume `pytest-output.txt` exists, so on a container failure the reporting step *itself* failed and pointed at nothing. It now says plainly that the suite never ran and names the steps to check.
+
+A **`Verify the database service is reachable`** step was added between install and lint. It connects, prints the server version, and exits 1 naming the error if it cannot — turning an opaque "Initialize containers failed" into a line that identifies the problem. It is a diagnostic and gates nothing: the tests still fail on their own, and `PROJECTONE_REQUIRE_DATABASE_TESTS` still converts a skip into a failure.
+
+**Verified in both directions before pushing** — the probe prints the version and exits 0 against a healthy server, and reports `ConnectionTimeout` and exits 1 against a dead port.
 
 ### Decisions made
 

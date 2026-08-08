@@ -94,11 +94,28 @@ jobs:
         # Without this the job races the container: the first connection can
         # arrive before the server accepts them, which fails intermittently —
         # the worst kind of CI failure to diagnose.
+        #
+        # `--health-start-period` was added after run #28 failed in "Initialize
+        # containers" after 55s on a commit that touched only test files and
+        # documentation — it changed nothing the container depends on, and the
+        # immediately preceding run started the same image in 23s.
+        #
+        # Without a start period the retry clock begins immediately, so the
+        # allowance is a flat 50s (5 retries x 10s) covering image pull, initdb
+        # AND readiness. `postgres:17` runs initdb on first boot, which on a cold
+        # runner is most of that budget. The start period gives initialization
+        # 30s that does not count against the retries, so a slow pull no longer
+        # consumes the health allowance.
+        #
+        # This is not a weakened check. The health command, interval and timeout
+        # are unchanged, and the job still fails if the server never becomes
+        # ready — it just no longer fails a *healthy* server for booting slowly.
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
           --health-timeout 5s
-          --health-retries 5
+          --health-retries 10
+          --health-start-period 30s
 
     # Non-secret placeholders. These are required settings, so the app refuses
     # to start without them and CI would be red on arrival (STEP-05/STEP-07).
@@ -161,6 +178,33 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -e ".[dev]"
 
+      # Run #28 failed in "Initialize containers" with no artifact and no step
+      # summary, because both of those only fire after the Test step — so a
+      # container failure produced a red run and zero diagnostics.
+      #
+      # This asserts the service is actually reachable, and prints the server
+      # version into the log if it is. It costs a second on a healthy run and
+      # turns "Initialize containers failed" into a line naming what was wrong.
+      #
+      # It is a diagnostic, not a gate that can mask anything: the tests below
+      # still fail on their own if the database misbehaves, and
+      # PROJECTONE_REQUIRE_DATABASE_TESTS still turns a skip into a failure.
+      - name: Verify the database service is reachable
+        run: |
+          python - <<'PY'
+          import os, sys, psycopg
+          dsn = os.environ["PROJECTONE_TEST_DATABASE_URL"]
+          try:
+              with psycopg.connect(dsn, connect_timeout=10) as connection:
+                  with connection.cursor() as cursor:
+                      cursor.execute("SELECT version()")
+                      row = cursor.fetchone()
+              print("database reachable:", row[0] if row else "<no row>")
+          except Exception as error:
+              print(f"database UNREACHABLE: {type(error).__name__}: {error}")
+              sys.exit(1)
+          PY
+
       - name: Lint
         run: ruff check .
 
@@ -198,13 +242,26 @@ jobs:
       #
       # `if: failure()` so a green run stays quiet, and `tail` so a large
       # failure cannot bury the summary.
+      #
+      # The file-existence branch matters: when the job fails *before* pytest
+      # runs — a failed service container, a dependency install error — this
+      # step used to `tail` a file that was never created and fail itself,
+      # adding a second red step that pointed at nothing. Run #28 failed exactly
+      # that way and produced no usable diagnostic at all. Saying plainly that
+      # the suite never ran is the more useful output.
       - name: Report test failures
         if: failure()
+        shell: bash
         run: |
           echo '## API test failures' >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          tail -c 60000 pytest-output.txt >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          if [ -f pytest-output.txt ]; then
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            tail -c 60000 pytest-output.txt >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'The test suite never ran — the job failed before pytest started.' >> "$GITHUB_STEP_SUMMARY"
+            echo 'Check the *Initialize containers* and *Verify the database service is reachable* steps.' >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       # Downloading job logs requires admin rights on this repository, but
       # artifacts do not — so the same output is also uploaded, keeping a failing
@@ -216,3 +273,8 @@ jobs:
           name: api-pytest-output
           path: apps/api/pytest-output.txt
           retention-days: 7
+          # The file is absent whenever the job failed before pytest ran. The
+          # default `warn` already tolerates that, but stating it means the
+          # absence is a deliberate, documented case rather than a warning
+          # somebody has to interpret.
+          if-no-files-found: ignore
