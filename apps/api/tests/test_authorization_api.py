@@ -27,6 +27,7 @@ from app.core.config import Environment, Settings, get_settings
 from app.core.dependencies import get_database_repository, get_token_service
 from app.core.security import InvalidTokenError
 from app.main import create_app
+from app.services.data_ownership_service import REGISTERED_STORES
 from app.services.token_service import AuthenticatedUser
 from tests.conftest import TEST_BYOK_KEY, Identity, seed_identity
 from tests.test_health import StubDatabase
@@ -162,25 +163,40 @@ def test_an_owner_is_allowed_the_same_action(client: TestClient, roles: Roles) -
 
     assert response.status_code == 200
 
-    # `audit_log` reports 0 deliberately, and its presence here is the point:
-    # STEP-13 registered it for export while making it un-erasable, because
-    # audit trails must survive the events they record (CLAUDE.md §16). Listing
-    # it with a zero count discloses that retention exception rather than
-    # hiding it -- an omitted store would be indistinguishable from a forgotten
-    # one. See `AuditLogStore`.
+    erased = response.json()["erased"]
+
+    # **Every registered store must appear**, and the assertion stays exact
+    # rather than checking a subset: a store that stops being registered is
+    # exactly the CLAUDE.md §16 defect this test exists to catch, and a subset
+    # check would pass straight through it.
     #
-    # `provider_credentials` (STEP-17) and `ai_spend_records` (STEP-18) are
-    # listed for the same reason and report 0 because this workspace never
-    # stored a key or made a call. The assertion stays exact rather than
-    # checking a subset: a store that stops being registered is exactly the
-    # CLAUDE.md §16 defect this test exists to catch, and a subset check would
-    # pass straight through it.
-    assert response.json()["erased"] == {
-        "workspace_members": 2,
-        "audit_log": 0,
-        "provider_credentials": 0,
-        "ai_spend_records": 0,
-    }
+    # The key set is derived from `REGISTERED_STORES` rather than written out.
+    # A hardcoded literal asserts two different things at once -- that the
+    # response covers every store, and that the registry currently holds these
+    # particular names -- and only the first is this test's subject. STEP-20
+    # registered `projects` and `assets` and turned the literal stale, failing
+    # here while the behaviour under test was correct. `test_teardown_completeness`
+    # is where the registry's own membership is asserted against the catalog.
+    assert set(erased) == {store.name for store in REGISTERED_STORES}
+
+    # `audit_log` reports 0 deliberately, and its presence is the point: STEP-13
+    # registered it for export while making it un-erasable, because audit trails
+    # must survive the events they record (CLAUDE.md §16). A zero count
+    # discloses that retention exception rather than hiding it -- an omitted
+    # store would be indistinguishable from a forgotten one. `ai_spend_records`
+    # is the same case for financial records. See `AuditLogStore`.
+    assert erased["audit_log"] == 0
+    assert erased["ai_spend_records"] == 0
+
+    # The counts this workspace's fixture actually produces. Two members, not
+    # three: the actor's own owner row is excluded deliberately (see the
+    # docstring). Everything else is 0 because this workspace never stored a
+    # key, made a call, or created a project -- asserted rather than omitted, so
+    # a store that silently began erasing rows it should not would fail here.
+    assert erased["workspace_members"] == 2
+    assert erased["provider_credentials"] == 0
+    assert erased["projects"] == 0
+    assert erased["assets"] == 0
 
 
 def test_a_member_cannot_rename_the_workspace_through_the_api(

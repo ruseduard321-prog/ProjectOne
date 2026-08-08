@@ -123,6 +123,20 @@ Offline: `apps/api` grew from 325 tests to **343**, all passing; `ruff` and `myp
 > [!warning] One probe run crashed before its cleanup
 > An import error in the throwaway validation script aborted it after the assertions passed but before teardown, leaving 11 projects, 1 asset and 2 seeded tenants in the development database. Found immediately, removed by a marker-keyed cleanup script, and the database verified empty of both tables. Recorded rather than omitted: the failure mode is exactly why probe rows carry a marker, and a validation script that leaves state behind is a defect in the validation even when the code under test is correct.
 
+### One defect was found by CI, and only CI could have found it
+
+The first run of this step was **red on one test**: `test_an_owner_is_allowed_the_same_action` asserted the workspace-erasure response against a **hardcoded literal of every registered store**. Registering `ProjectStore` and `AssetStore` added two keys, so the literal went stale and the test failed while the behaviour under test was entirely correct — the erasure reported `"projects": 0, "assets": 0` because that workspace has none.
+
+All 35 of this step's own tests passed. The failure was in an existing test the step's change invalidated.
+
+**It was invisible locally**, and that is the point worth carrying rather than the one-line fix. It is a database-backed test, so it skips on a machine with no `PROJECTONE_TEST_DATABASE_URL` — and the harness still cannot reach the development database (STEP-19's unfixed username/pooler mismatch), while this machine has no local PostgreSQL or Docker. The live-database probe run during validation exercised the *stores* directly and never went through `DELETE /workspaces/{id}/data`, so it could not have caught a stale assertion in an HTTP test either.
+
+**The fix derives the expected key set from `REGISTERED_STORES` instead of restating it.** The literal was asserting two different things at once — that the response covers every store, and that the registry currently holds these particular names — and only the first is that test's subject. The registry's own membership is asserted elsewhere, against the catalog, by `test_teardown_completeness`.
+
+The assertion is **stronger than before, not weaker**: it still fails if any store stops being registered (the [[CLAUDE|CLAUDE.md]] §16 defect it exists to catch — verified by simulating each store's omission in turn), it now also fails on an unregistered *extra* key, and it asserts a per-store count for all six stores rather than only the four the literal named. Verified against the exact response body CI produced: the old literal fails it, the new assertion passes.
+
+The general lesson: **an exact-match assertion over a registry is a test that every future registration breaks.** Deriving the expectation from the registry keeps the property being tested while removing the stale-literal failure mode — and the next store added to `REGISTERED_STORES` will not turn CI red for a reason unrelated to the change.
+
 ### Recorded rather than forgotten
 
 - **Two error types have no HTTP handler yet.** `ProjectNotFoundError` and `IllegalTransitionError` are unmapped because this step built no routes; STEP-21 owes them 404 and 409 respectively.
