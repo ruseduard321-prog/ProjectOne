@@ -6,13 +6,13 @@ version: "2.0"
 last_updated: 2026-08-08
 tags: [engineering, workflow, build-step, ai, frontend]
 step_id: STEP-23
-step_status: Not Started
+step_status: In Progress
 detail_level: full
 ---
 
 # STEP-23 — AI Chat End to End
 
-**Status:** Not Started
+**Status:** In Progress
 **Detail level:** full — expanded by [[STEP-22 Minimum Workflow Engine]], per [[Execution Protocol]].
 
 ## Goal
@@ -74,11 +74,56 @@ Recorded during expansion, while the context was loaded.
 - Every new screen renders its loading, empty and error states.
 - Lint, type-check, tests and build pass for both apps in CI.
 
+### Where each was proven
+
+| Validation | Proven by | Where it runs |
+|---|---|---|
+| Tenant isolation | `test_chat_isolation.py` — 12 tests against real policies | **CI only** (needs PostgreSQL) |
+| Erasure end to end | `test_erasure_clears_conversations_and_messages`, `test_erasure_leaves_the_other_tenant_untouched` | **CI only** |
+| Context bounded | `test_the_context_window_is_bounded`, `test_a_long_conversation_sends_no_more_than_the_window` | Local + CI |
+| Provider failure honest | `test_a_provider_failure_raises_rather_than_fabricating_a_reply`, `test_a_failed_turn_still_keeps_the_users_question`; UI side in `chat/actions.test.ts` | Local + CI |
+| Spend attributed | `AIService` `workflow_type="chat"`, metered by `test_ai_spend_isolation.py` | **CI only** |
+| Loading / empty / error states | `loading.tsx`, `error.tsx`, `EmptyState` branches in `page.tsx` | Build + CI |
+
+> [!warning] The database-backed validation runs in CI, not on the development machine
+> This machine has no PostgreSQL, no Docker, and `apps/api/.env` carries a redacted `DATABASE_URL` placeholder rather than a usable credential, so **285 database-backed tests skip locally**. CI provisions a throwaway `postgres:17` and sets `PROJECTONE_REQUIRE_DATABASE_TESTS=1`, which turns those skips into hard failures — so a green `api` job is what actually proves isolation, erasure and spend metering.
+>
+> **The browser checklist below is therefore partly unverified.** The chat screen cannot be reached without a session, and a session cannot be created without the API, which cannot start without a database. What was verified in a browser is recorded honestly as such; what was not is named rather than assumed.
+
+## Manual Browser Test Checklist
+
+Recorded against a `next dev` server on `http://localhost:3000`, 2026-08-11.
+
+| # | Check | Result |
+|---|---|---|
+| 1 | `/chat` requires a session — an unauthenticated request never reaches the route | **Pass.** Redirected to `/sign-in`; the dev server log shows no `/chat` entry at all, so the proxy refused it before the page ran. |
+| 2 | The route compiles and is server-rendered on demand | **Pass.** `npm run build` lists `ƒ /chat` — dynamic, not statically prerendered, which is correct for a per-workspace screen. |
+| 3 | No client-side console errors on the surfaces reachable without a database | **Pass.** `read_console_messages` returned no errors. |
+| 4 | Signed-in empty state ("No conversations yet") | **Not verified in a browser.** Requires a session, which requires the API, which requires a database this machine does not have. Covered by the `conversations.length === 0` branch in `page.tsx` and exercised by the build. |
+| 5 | Transcript renders a user/assistant exchange with attribution | **Not verified in a browser**, same reason. Covered by `chat-api.test.ts` attribution tests. |
+| 6 | Composer pending state ("Sending…") during a turn | **Not verified in a browser**, same reason. Behaviour is `SettingsForm`'s, already shipped and exercised on the settings and projects screens. |
+| 7 | A provider failure renders beside the transcript rather than replacing the screen | **Not verified in a browser**, same reason. Asserted in `chat/actions.test.ts` — 502/503 return an error state, `revalidatePath` is not called, and no reply is produced. |
+| 8 | Loading skeleton shape matches the loaded screen | **Not verified in a browser**, same reason. `loading.tsx` mirrors the page's heading → list → transcript → composer structure by construction. |
+
+**Items 4–8 need a database-backed environment to complete.** They are listed as outstanding rather than quietly omitted, and they are the reason this step is not `Done`.
+
 ## Definition of Done
 
 A user holds a conversation with an AI inside their workspace, the conversation persists and is readable only by that workspace, context is bounded and includes the active project, spend is governed and attributed, erasure removes it all, and the screen defines loading, empty and error states.
 
 **This is a Critical change** ([[CLAUDE|CLAUDE.md]] §21 — AI architecture, database schema, multi-tenancy, public API contract) and carries an **owner approval gate**.
+
+### Completion state
+
+Per [[Execution Protocol#Step Completion]], this step stays **`In Progress`** until every gate is satisfied:
+
+- [x] Requirements implemented — all 8 tasks.
+- [x] Local validation passed — api 418 passed, web 141 passed, lint/format/type-check/build clean.
+- [x] Documentation updated in the same change.
+- [ ] **Required CI green**, including the database-backed suite this machine cannot run.
+- [ ] **Manual checklist items 4–8** completed in a database-backed environment.
+- [ ] Review conversations resolved.
+- [ ] **Owner approval** — this step carries a gate.
 
 ---
 

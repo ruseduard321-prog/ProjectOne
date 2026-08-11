@@ -69,6 +69,7 @@ from fastapi.responses import JSONResponse
 # -- was rejected here: config genuinely is a lower layer that must not know
 # about AI, whereas an error contract that does not name an error it must
 # translate is an error contract with a hole in it.
+from app.ai.errors import NoProviderAvailableError, ProviderError
 from app.ai.governance import AIShutdownError, GovernanceError, SpendBreakerOpenError
 from app.core.api import current_request_id
 from app.core.logging import get_logger, log_context
@@ -86,6 +87,7 @@ from app.core.security import (
 # imports only `app.core.logging` and `app.repositories.projects`, so there is
 # no cycle -- asserted by `test_no_import_cycle_reaches_the_error_contract`
 # rather than left to be discovered at startup.
+from app.services.chat_service import ConversationNotFoundError
 from app.services.project_service import IllegalTransitionError, ProjectNotFoundError
 from app.workflows.models import RunNotFoundError, RunNotResumableError, WorkflowError
 
@@ -391,6 +393,51 @@ def _governance_refusal(_request: Request, exception: Exception) -> JSONResponse
     return error_response(status.HTTP_402_PAYMENT_REQUIRED, message)
 
 
+def _provider_failed(_request: Request, exception: Exception) -> JSONResponse:
+    """Translate an AI provider failure into an honest status.
+
+    **This handler exists because [[STEP-23 AI Chat End to End]] is the first
+    place a provider failure reaches a user.** Until chat, the only caller was
+    the workflow engine, which records a failure in the run's own status column
+    and returns 201 -- so a `ProviderError` never reached HTTP and had no
+    handler. Without one it would have surfaced as a 500: a correct, deliberate
+    failure reported as a bug in ProjectOne. That is the same shape as the
+    STEP-18 defect where a governance refusal reached the client as a 500.
+
+    The split:
+
+    - **`NoProviderAvailableError` is 503**, because nothing was attempted. It
+      usually means the workspace has configured no key, which is a
+      configuration state that will keep answering identically until someone
+      changes it -- so it carries `Retry-After` like the governance refusals.
+    - **Everything else is 502.** The request was well-formed and ProjectOne did
+      its part; an upstream ProjectOne depends on is what failed. 500 would
+      claim the bug is here, and 400 would blame a caller who did nothing wrong.
+
+    The message is the exception's own `public_message`, never its internal
+    detail: vendor error text can quote request content back, and request
+    content is the user's prompt (CLAUDE.md §24).
+    """
+    logger.warning(
+        log_context(
+            event="ai_provider_failure",
+            cause=type(exception).__name__,
+            provider=getattr(exception, "provider", None),
+        )
+    )
+
+    message = getattr(exception, "public_message", ProviderError.public_message)
+
+    if isinstance(exception, NoProviderAvailableError):
+        return error_response(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            message,
+            headers={"Retry-After": str(_GOVERNANCE_RETRY_AFTER_SECONDS)},
+        )
+
+    return error_response(status.HTTP_502_BAD_GATEWAY, message)
+
+
 #: What a client is told to wait before retrying a shutdown or breaker refusal.
 #:
 #: Deliberately long. Neither condition clears on its own: a shutdown is lifted
@@ -429,6 +476,14 @@ EXCEPTION_HANDLERS: tuple[tuple[type[Exception] | int, Any], ...] = (
     (LastOwnerError, _last_owner_conflict),
     (RateLimitExceededError, _rate_limit_exceeded),
     (GovernanceError, _governance_refusal),
+    # A conversation that is absent or hidden is the same answer as a project
+    # that is -- reusing the handler rather than writing a third that returns an
+    # identical body, for the reason the workflow entries above give.
+    (ConversationNotFoundError, _resource_not_found),
+    # Registered as the base class: every provider failure is answered by the
+    # branch inside the handler, so a new subclass in `app.ai.errors` is covered
+    # the moment it is raised rather than falling through to `_unhandled`.
+    (ProviderError, _provider_failed),
     (RequestValidationError, _validation_failed),
     (HTTPException, _http_exception),
     (Exception, _unhandled),

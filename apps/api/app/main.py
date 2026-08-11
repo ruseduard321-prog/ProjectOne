@@ -17,7 +17,7 @@ from app.core.config import get_settings
 from app.core.errors import EXCEPTION_HANDLERS
 from app.core.logging import configure_logging
 from app.core.middleware import RateLimitMiddleware, RateLimitRule, RequestContextMiddleware
-from app.routers import ai_settings, auth, health, projects, workflows, workspaces
+from app.routers import ai_settings, auth, chat, health, projects, workflows, workspaces
 
 #: Rate limits, keyed by full request path.
 #:
@@ -99,6 +99,7 @@ def create_app() -> FastAPI:
     # so it is registered after the router owning the shorter paths.
     app.include_router(projects.router, prefix=API_PREFIX)
     app.include_router(workflows.router, prefix=API_PREFIX)
+    app.include_router(chat.router, prefix=API_PREFIX)
 
     return app
 

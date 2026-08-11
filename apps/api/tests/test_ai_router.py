@@ -58,6 +58,12 @@ class FakeProvider(AIProvider):
         self.model = model
         self.calls = 0
         self.keys_seen: list[str] = []
+        # Added by STEP-23: chat's context window is a cost control, and the
+        # only honest way to assert it is bounded is to look at what the
+        # provider actually received. Recording is additive -- no existing
+        # assertion reads either attribute.
+        self.requests_seen: list[int] = []
+        self.last_request: CompletionRequest | None = None
 
     @property
     def name(self) -> str:
@@ -74,6 +80,8 @@ class FakeProvider(AIProvider):
     def complete(self, request: CompletionRequest, api_key: str) -> CompletionResponse:
         self.calls += 1
         self.keys_seen.append(api_key)
+        self.requests_seen.append(len(request.messages))
+        self.last_request = request
 
         if self._fail_with is not None:
             raise self._fail_with
