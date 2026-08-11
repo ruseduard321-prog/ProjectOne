@@ -49,43 +49,69 @@ that file or the virtual environment is missing.
   which Windows PowerShell 5.1 would otherwise turn into a terminating error on a successful run.
   Real failures are still caught — via the exit code.
 
-## CLAUDE.md synchronization
+## Governance document synchronization
 
 | File | Purpose |
 |---|---|
-| `sync-claude-md.sh` | macOS / Linux / Git Bash |
-| `sync-claude-md.ps1` | Windows PowerShell (5.1 and 7+) |
-| `sync-claude-md.config.json` | All paths and strip rules — the only file a project edits |
+| `sync-governance-docs.sh` | macOS / Linux / Git Bash |
+| `sync-governance-docs.ps1` | Windows PowerShell (5.1 and 7+) |
+| `sync-governance-docs.config.json` | All paths and strip rules — the only file a project edits |
+| `sync-claude-md.sh` / `.ps1` | **Deprecated** shims — delegate to the above, CLAUDE.md only |
 
-Two copies of CLAUDE.md exist because they serve different consumers: the Claude Code harness
-auto-loads **only** the repository-root `CLAUDE.md`, while every `[[CLAUDE|CLAUDE.md]]` wiki-link in
+Two governed documents are generated into the repository root:
+
+| Canonical source | Generated root file | Read by |
+|---|---|---|
+| `ProjectOne Vault/00 Governance/CLAUDE.md` | `CLAUDE.md` | Claude Code |
+| `ProjectOne Vault/00 Governance/AGENTS.md` | `AGENTS.md` | OpenAI Codex |
+
+Two copies of each exist because they serve different consumers: an agent harness auto-loads **only**
+the repository-root file, while every `[[CLAUDE|CLAUDE.md]]` / `[[AGENTS|AGENTS.md]]` wiki-link in
 the Obsidian vault resolves **only** to the vault copy. Deleting either breaks a real consumer.
 
 Generating one from the other is what makes drift impossible — it is a mechanism, not a rule someone
-has to remember. `ProjectOne Vault/00 Governance/CLAUDE.md` is the canonical authored source; the
-root file is generated output and must never be hand-edited.
+has to remember. The vault copies are the canonical authored sources; the root files are generated
+output and must never be hand-edited.
 
 ### Usage
 
-Regenerate the root file after editing the canonical source:
+Regenerate every governed document after editing a canonical source:
 
 ```bash
-./scripts/sync-claude-md.sh
+./scripts/sync-governance-docs.sh
 ```
 
 ```powershell
-.\scripts\sync-claude-md.ps1
+.\scripts\sync-governance-docs.ps1
 ```
 
 Verify sync without writing (CI / pre-commit form — exits non-zero when stale):
 
 ```bash
-./scripts/sync-claude-md.sh --check
+./scripts/sync-governance-docs.sh --check
 ```
 
 ```powershell
-.\scripts\sync-claude-md.ps1 -Check
+.\scripts\sync-governance-docs.ps1 -Check
 ```
+
+Regenerate a single document:
+
+```bash
+./scripts/sync-governance-docs.sh --only agents
+```
+
+```powershell
+.\scripts\sync-governance-docs.ps1 -Only agents
+```
+
+`--check` verifies **every** document and reports all of them before exiting, so one stale file
+cannot hide another. CI runs it as the `governance docs (sync check)` job, and `pytest` asserts the
+same property offline in `apps/api/tests/test_governance_docs_sync.py`.
+
+> The CI job is **not yet a required check** in the `Protect main` ruleset, which currently requires
+> only `web` and `api`. Until the project owner adds it, stale generated files fail visibly without
+> blocking a merge. The offline `pytest` assertion is the backstop in the meantime.
 
 Both implementations read the same config and produce **byte-identical output** (LF endings, UTF-8
 without BOM), so a repository can be maintained from either platform without churn. `--check`
@@ -95,10 +121,12 @@ drift.
 ### Adopting this in another project
 
 The synchronization logic contains no project-specific paths. Copy the three files into
-`scripts/`, then edit **only** `sync-claude-md.config.json`:
+`scripts/`, then edit **only** `sync-governance-docs.config.json`. Each entry in its `documents`
+array is one canonical source generating one root mirror:
 
 | Key | Meaning |
 |---|---|
+| `name` | Selector for `--only` / `-Only`. Must be unique. |
 | `source` | Canonical authored file, relative to the repository root. Forward slashes on every platform. |
 | `target` | Generated file, relative to the repository root. |
 | `stripFrontmatter` | Remove a leading YAML `---` block from the generated copy. |
@@ -109,8 +137,12 @@ Nothing in either script needs to change — the scripts are the mechanism, the 
 
 ### Notes
 
-- The Bash script parses the flat config with `sed` rather than requiring `jq`, so it has no
-  dependency beyond a POSIX shell and `awk`.
+- **The `sync-claude-md.*` scripts are deprecated compatibility shims.** They delegate to
+  `sync-governance-docs.*` restricted to the `claude` document, so their behaviour is exactly what
+  it always was. They exist because the old name is referenced from `README.md`, from this file's
+  history, and from the callout inside the canonical CLAUDE.md. Prefer the new name.
+- The Bash script parses the config with `awk` rather than requiring `jq`, so it has no
+  dependency beyond a POSIX shell.
 - The PowerShell script targets Windows PowerShell 5.1, so it avoids `??`, ternaries and
   `ConvertFrom-Json -AsHashtable`.
 - Both scripts exit `2` on a configuration or missing-source error, and `1` when `--check` finds

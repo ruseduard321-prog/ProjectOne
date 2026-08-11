@@ -17,7 +17,7 @@ The rules Claude follows when the user says **"Implement the next step."** This 
 1. **Locate** — open [[Build Plan]] (the index only).
 2. **Select** — scan the step table top to bottom; take the **first step whose Status is not `Done`**. That is the step. There is no judgment call here.
 3. **Verify the predecessor** — before any new work, confirm the previous step actually completed: its Status is `Done` in both places, and its Definition of Done genuinely holds against the current state of the project. A `Done` marking that no longer matches reality is a defect to surface, not a green light — stop and report it rather than building on top of it.
-4. **Check the working tree** — run `git status`. It should be clean. Uncommitted changes mean a previous session ended `Blocked` and left its work in place ([[#Blocked Steps Are Never Committed]]) — **do not discard them and do not commit them**. Identify the blocked step, confirm with the user whether to resume it, discard it, or commit it, and act on that answer before starting anything new.
+4. **Check the working tree and branch** — run `git status`. It should be clean, on an up-to-date `main`. Uncommitted changes mean a previous session ended `Blocked` and left its work in place ([[#Blocked Steps Are Never Committed]]) — **do not discard them and do not commit them**. Identify the blocked step, confirm with the user whether to resume it, discard it, or stash it, and act on that answer before starting anything new ([[Branch and Pull Request Workflow#Starting From a Dirty Tree]]). Then create the step's branch ([[#The Step Branch]]).
 5. **Read** — open that one step note, then read only what [[#Context Discipline]] permits. The step's *Required Documentation* is a candidate list, not a reading list.
 6. **Mark In Progress** — set the step's Status to `In Progress` in both the step note and the [[Build Plan]] index, before implementing.
 7. **Implement** — perform the step's Tasks, and only those tasks.
@@ -25,21 +25,24 @@ The rules Claude follows when the user says **"Implement the next step."** This 
 9. **Update documentation** — update the notes this step's work affected, per [[CLAUDE|CLAUDE.md]] §19. Keep indexes and Navigation blocks consistent.
 10. **Synchronize future steps** — reconcile the remaining outline steps against what was actually built; see [[#Future Step Synchronization]].
 11. **Expand the next step** — if the following step is marked `outline`, expand it to full detail now, while its context is loaded. Update its Detail column to `full`.
-12. **Mark Done** — only if every condition in [[#Step Completion]] is met. Set Status to `Done` in both the step note and the index.
-13. **Commit once** — stage everything the step produced and create **exactly one commit** containing implementation, documentation and [[Build Plan]] status updates together. See [[#One Step One Commit]]. Only a step that reached `Done` is committed: a `Blocked` step is left uncommitted ([[#Blocked Steps Are Never Committed]]).
-14. **Verify the tree is clean** — run `git status` and confirm there is nothing uncommitted. A dirty tree at this point means the step is not finished.
-15. **Report and stop** — emit the [[#Step Completion Report]] and stop. Do not begin the next step.
+12. **Commit on the step branch** — stage everything the step produced and commit it to the step's own branch ([[#The Step Branch]]). The step stays `In Progress`: nothing is `Done` before CI and review have run. A `Blocked` step is left uncommitted ([[#Blocked Steps Are Never Committed]]).
+13. **Verify the tree is clean** — run `git status` and confirm there is nothing uncommitted.
+14. **Push and open a Pull Request** into `main`, per [[Branch and Pull Request Workflow]].
+15. **Iterate until the PR is ready** — required CI green, the manual test checklist completed, every review conversation resolved. Corrections are **additional commits on the branch** ([[#Iterating on Review]]); never a rewrite of a pushed commit. The step remains `In Progress` throughout.
+16. **Mark Done** — only when every condition in [[#Step Completion]] is met, including the PR gates above and the owner's approval where one is required. Set Status to `Done` in both the step note and the index, commit that status change to the branch, and push.
+17. **Report and stop** — emit the [[#Step Completion Report]] and stop. **Claude does not merge the PR**; the owner squash-merges it, producing the single permanent commit on `main`. Do not begin the next step.
 
 ## Hard Rules
 
 - **Never skip a step.** If STEP-07 is `Not Started` and STEP-08 looks more urgent, STEP-07 is still the step.
 - **Never run two steps in one session.** Finishing early is not permission to continue.
-- **Never mark `Done` on unvalidated work.** A step whose Validation did not pass is `In Progress` or `Blocked`, never `Done`. Partial completion is not completion ([[CLAUDE|CLAUDE.md]] §22).
+- **Never mark `Done` on unvalidated or unreviewed work.** A step whose Validation did not pass, whose required CI is not green, or whose review is unfinished is `In Progress` or `Blocked`, never `Done`. Partial completion is not completion ([[CLAUDE|CLAUDE.md]] §22).
 - **Never widen scope.** Work not in the step's Tasks belongs to a later step or to no step. No opportunistic refactors ([[CLAUDE|CLAUDE.md]] §29/§35).
 - **Never invent missing information.** If a step depends on a schema, contract or decision that is not documented, stop and say exactly what is missing ([[CLAUDE|CLAUDE.md]] §33–34). That is a `Blocked` step, not a guess.
 - **Never read a document without a question it answers.** Reading is scoped by [[#Context Discipline]], not by a checklist. This never overrides the rule above it — when a fact is genuinely needed and only a document holds it, read the document.
 - **Status lives in two places and must agree.** The step note and the index. Updating one without the other is a defect.
-- **One step, one commit.** A completed step produces exactly one commit — never several, and never a commit that spans two steps. Splitting a step across commits is only permitted when the user explicitly asks for it ([[#One Step One Commit]]).
+- **One step, one commit on `main`.** A completed step becomes exactly one squashed commit on `main`, and never a commit that spans two steps. The step's own branch may carry several commits while implementation, CI and review iterate — the invariant is the permanent history, not the working branch ([[#One Step One Commit On Main]]).
+- **Never rewrite a pushed commit.** Review feedback and CI failures are addressed with additional commits, never with `--amend`, rebase, or force-push over history someone may already have read ([[#Iterating on Review]], [[CLAUDE|CLAUDE.md]] §20).
 - **Never commit a partially implemented step.** A `Blocked` step produces **no commit** — not the partial work, not the `Blocked` status marking. Committing any of it requires explicit user approval, asked for and received ([[#Blocked Steps Are Never Committed]]).
 - **Never leave the project in a partially completed or inconsistent state.** Every session ends at a coherent boundary: the step is finished and committed, or it is `Blocked` — rolled back where safe, reported where not — and left uncommitted for the user to decide on. Half-applied work with no marker is the one outcome this protocol exists to prevent.
 
@@ -84,49 +87,73 @@ Audited after STEP-10: of roughly eighteen vault documents read, about six chang
 
 The governing habit is the one rule 8 encodes: **open a document to answer a question, not to satisfy a list.**
 
-## One Step One Commit
+## The Step Branch
 
-Every Build Plan step produces **exactly one commit**. Not one for the code and another for the docs, not a cleanup commit afterwards — one.
+Every step is implemented on **its own branch**, cut from an up-to-date `main` at the start of the step and named `step-NN-short-name` — `step-23-ai-chat`, not `ai-chat` and not `step-23`.
 
-The commit is created last, after the work is actually finished, in this order:
+**`main` is protected and is never modified directly** ([[Branch and Pull Request Workflow#`main` Is Protected]]). The step's work is committed to the step branch, which reaches `main` through a Pull Request whose required CI is green — squash-merged by the owner, and deleted afterwards.
+
+This does not change what a step *is* or what it contains. It changes where the work lands and how it travels: a step now ends with a PR awaiting the owner rather than a commit already sitting on the default branch. The branch may carry several commits while CI and review iterate; the squash is what preserves one-step-one-commit on `main` ([[#One Step One Commit On Main]]).
+
+**Claude does not merge the Pull Request.** Every Build Plan step is a substantive change to the product, and several touch schema, auth, or AI architecture outright — merging is the owner's call ([[#Owner Approval Gates]]). Claude opens the PR, reports, and stops.
+
+## One Step One Commit On Main
+
+Every Build Plan step becomes **exactly one commit on `main`**. Not one for the code and another for the docs, not a cleanup commit afterwards — one, produced by squash-merging the step's Pull Request.
+
+**The invariant is the permanent history, not the working branch.** The step's own branch may carry several commits: the initial implementation, a fix for a CI failure, a correction from review. Those are working state on a branch that is deleted after merge, and the squash collapses them into the single commit `main` records.
+
+The order of work is:
 
 1. Implement the step's Tasks.
 2. Run every check in the step's Validation section.
 3. Update all affected documentation ([[CLAUDE|CLAUDE.md]] §19).
-4. Update the [[Build Plan]] index row.
-5. Mark the step `Done` in both places ([[#Step Completion]]).
-6. Create one commit containing implementation, documentation and Build Plan updates together.
-7. Verify `git status` reports a clean tree.
-8. Report and stop.
+4. Update the [[Build Plan]] index row (Status `In Progress`).
+5. Commit to the step branch, push, and open the Pull Request.
+6. Iterate until required CI is green, the manual checklist is complete and review is resolved ([[#Iterating on Review]]).
+7. Mark the step `Done` in both places ([[#Step Completion]]), commit that, and push.
+8. Report and stop. The owner squash-merges.
 
-Steps 1–5 come before the commit deliberately: committing first and updating documentation afterwards is what produces the second commit this rule exists to prevent.
+Marking `Done` is step 7, not step 4, deliberately: a step is not complete until the checks that could still reject it have actually run. Marking `Done` before CI would be a claim the pipeline had not yet earned.
 
 ### Why
 
-A step is the unit of work in this plan, so it should be the unit of history. One commit per step means `git log` reads as the Build Plan itself, each step is revertable in one operation, and there is no window in which the code says one thing and the Build Plan says another. Multiple commits per step turn a clean sequence into an archaeology problem for whoever reads it later — and this repository will be read far more often than it is written ([[CLAUDE|CLAUDE.md]] §38).
+A step is the unit of work in this plan, so it should be the unit of *permanent* history. One commit per step on `main` means `git log` reads as the Build Plan itself, each step is revertable in one operation, and there is no lasting window in which the code says one thing and the Build Plan says another. Squash-merging is what delivers that while still allowing a branch to iterate — the intermediate commits never reach `main`, so they cost the reader nothing ([[CLAUDE|CLAUDE.md]] §38).
+
+The earlier form of this rule required exactly one commit on the branch as well. That was written when work landed on `main` directly, and it does not survive code review: a reviewer who asks for a change leaves no legal way to supply it, since a second commit was forbidden and rewriting a pushed one is also forbidden. Constraining the permanent history rather than the working branch keeps the property that mattered and drops the one that deadlocked.
 
 ### The Exception
 
-The user may explicitly ask for a step to be split across several commits. That is the only exception, it is never assumed, and a step's size is not a reason to invoke it — a large step is still one commit.
+The user may explicitly ask for a step to reach `main` as several commits. That is the only exception, it is never assumed, and a step's size is not a reason to invoke it — a large step is still one commit on `main`.
 
 ### Commit Message
 
-The message follows [[CLAUDE|CLAUDE.md]] §20: atomic, and explaining *why* rather than restating the diff. Name the step (`STEP-NN`) so history and plan stay traceable to each other.
+The squashed commit message follows [[CLAUDE|CLAUDE.md]] §20: atomic, and explaining *why* rather than restating the diff. Name the step (`STEP-NN`) so history and plan stay traceable to each other. Intermediate branch commits are working state and need only be clear enough to review.
 
 ### On Failure
 
-**One commit per step means one commit per *completed* step. A step that fails produces no commit at all.**
+**A step that never completes reaches `main` at all.** A `Blocked` step is not merged, and its Pull Request stays open or is closed unmerged — never squashed into `main` as though it were finished.
 
-A `Blocked` step is never committed without explicit user approval — not the partial implementation, and not the `Blocked` status update on its own. Follow [[#Validation Failure and Rollback]]: roll back if it is safe, mark the step `Blocked` in the working tree, report, and stop, leaving the changes uncommitted for the user to inspect.
+Before any commit exists, a `Blocked` step stays uncommitted in the working tree ([[#Blocked Steps Are Never Committed]]). If the block is discovered *after* the branch was pushed — a CI failure that cannot be fixed within scope, review surfacing a missing decision — the branch and its PR are left in place and reported, because the work is already published and discarding it would destroy the record. Mark the step `Blocked` in both places, commit that marking to the branch so the state is visible to anyone reading the PR, and say plainly in the PR that it is not ready to merge.
 
-This is the one case where the session deliberately ends on a **dirty tree**. The clean-tree check in [[#The Loop]] item 14 is a completion condition, not a failure condition — a blocked step has nothing to be clean about yet.
+The clean-tree check in [[#The Loop]] item 13 is a completion condition, not a failure condition — a blocked step that never committed has nothing to be clean about yet.
+
+## Iterating on Review
+
+A Pull Request that needs changes — a red CI job, a reviewer's correction, a manual test that failed — is addressed with **additional commits on the step branch**.
+
+**Never rewrite a pushed commit.** No `--amend`, no interactive rebase, no force-push over history that has been published and that a reviewer may already have read ([[CLAUDE|CLAUDE.md]] §20). A reviewer returning to a PR must find their comments still anchored to the code they described.
+
+The step stays `In Progress` throughout this iteration. It is not `Done` because it is not finished — CI is a completion condition, and so is review.
+
+**Scope discipline still applies.** A correction addresses the specific failure or comment. Review is not an invitation to widen the step, and an issue surfaced in review that lies outside the step's Tasks is reported rather than folded in ([[CLAUDE|CLAUDE.md]] §29/§35).
 
 ## Validation Failure and Rollback
 
 When implementation or validation fails:
 
 1. **Do not mark the step `Done`.** Not "done with a caveat," not "done pending a fix."
-2. **Do not commit.** A failed step creates no commit — see [[#Blocked Steps Are Never Committed]] below. This governs everything that follows.
+2. **Do not commit, and never merge.** A step that fails before anything was committed creates no commit — see [[#Blocked Steps Are Never Committed]] below. A step that fails *after* its branch was pushed keeps that branch and its PR, which stay **unmerged**; mark the block on the branch rather than pretending the work is unpublished. Either way nothing reaches `main`.
 3. **Assess whether rollback is safe**, then take exactly one of these two paths:
    - **Rollback is safe** — restore the project to the last known good state (the previous step's verified state): revert the partial implementation, discard half-written config, undo the broken build. Then stop, **without committing**.
    - **Rollback is unsafe or impossible** — data loss, an already-applied destructive migration, an external side effect that cannot be undone. **Stop immediately without rolling back and without committing**, and report the situation. An unrecoverable rollback is worse than the failure it was meant to fix. If preserving the current state genuinely requires a commit, **ask for user approval first and wait** — never commit a partially implemented step on your own judgment.
@@ -142,7 +169,9 @@ A failed step holds the queue exactly like any other `Blocked` step. Progress re
 
 The only way a blocked step's work reaches a commit is **explicit user approval, asked for and received**. Silence is not approval, and neither is a rollback being unsafe — that is a reason to ask, not a reason to proceed.
 
-**Why.** A commit is a claim that a coherent unit of work is finished. A partial step is not that, and recording one as history makes `git log` stop matching the Build Plan — the exact drift [[#One Step One Commit]] exists to prevent. Leaving the failure uncommitted in the working tree also keeps it visible and trivially discardable: the next session sees a dirty tree and a `Blocked` step and knows immediately that something needs a decision, rather than finding a tidy history that hides a half-built step.
+**Why.** Merging a partial step is a claim that a coherent unit of work is finished. Recording one on `main` makes `git log` stop matching the Build Plan — the exact drift [[#One Step One Commit On Main]] exists to prevent. Leaving an uncommitted failure in the working tree also keeps it visible and trivially discardable: the next session sees a dirty tree and a `Blocked` step and knows immediately that something needs a decision, rather than finding a tidy history that hides a half-built step.
+
+This constrains `main`, not the branch. A blocked step whose work was already pushed keeps its branch and its unmerged PR — that is the record of what was attempted, and it is more useful than a deleted branch.
 
 **The tree stays dirty, and that is correct.** A blocked step is the one session outcome that does not end clean. It still ends *coherently* — rolled back or explicitly reported, with the step marked `Blocked` and the reason written down — which is what the Hard Rule against inconsistent state actually requires.
 
@@ -159,11 +188,17 @@ This applies to every block, not only failures. A step blocked before any code w
 A step may be marked `Done` only when **all** of the following hold:
 
 - [ ] Every Definition of Done item is satisfied.
-- [ ] All required validation has passed — observed, not assumed.
+- [ ] All required local validation has passed — observed, not assumed.
 - [ ] All affected documentation has been updated ([[CLAUDE|CLAUDE.md]] §19).
 - [ ] The step note status and the [[Build Plan]] index row are synchronized.
 - [ ] No Critical issues remain unresolved ([[CLAUDE|CLAUDE.md]] §21).
-- [ ] The step's work is captured in exactly one commit and `git status` reports a clean tree ([[#One Step One Commit]]).
+- [ ] The work is committed and pushed to the step branch, and `git status` reports a clean tree.
+- [ ] A Pull Request into `main` is open, and **every required CI check is green**.
+- [ ] The manual test checklist is complete where the step has user-visible behaviour ([[Branch and Pull Request Workflow#Manual Test Checklist]]).
+- [ ] Every review conversation is resolved.
+- [ ] The owner's approval gate is satisfied where the step carries one ([[#Owner Approval Gates]]).
+
+Merging is **not** a completion condition — the owner merges, and the step is `Done` when it is ready to be merged. What Claude must not do is mark `Done` while any gate above is still open.
 
 If any condition fails, the step is **not** `Done`. Mark it `Blocked` when user intervention is required, `In Progress` when the remaining work is Claude's to finish in this session. There is no third option and no partial credit — partial completion is not completion ([[CLAUDE|CLAUDE.md]] §22).
 
@@ -179,24 +214,36 @@ Modified:      <files modified, or "none">
 Docs updated:  <vault notes updated, or "none">
 Tests run:     <what was executed>
 Validation:    <passed / failed — with the specific result>
-Commit:        <short SHA and subject — exactly one>
+Branch:        <step-NN-short-name, and the number of commits on it>
+Pull request:  <URL>
+CI:            <every required check and its result — green / red, named>
+Manual checks: <completed / not applicable, with the reason>
+Review:        <conversations resolved / none raised>
+Owner gate:    <approved / awaiting owner — only if the step carries one>
+Merge status:  NOT MERGED — awaiting the owner's squash merge
 Known issues:  <only if any exist; omit the line otherwise>
 Next step:     STEP-NN <title>
 ```
+
+`Merge status` is always `NOT MERGED` in a report Claude emits — Claude does not merge. The line exists so the owner can see at a glance that the step is waiting on them rather than finished and forgotten.
 
 A `Blocked` step reports under [[#Validation Failure and Rollback]] instead — what failed, why, and what unblocks it. Because a blocked step is never committed, its report must also state what is left in the working tree, so the user can act on it:
 
 ```
 Step:          STEP-NN
 Status:        Blocked
-Failed at:     <which task or validation check>
+Failed at:     <which task, validation check, or CI job>
 Why:           <the actual cause, not "validation failed">
 Rollback:      <rolled back to last known good state / NOT rolled back — why it was unsafe>
-Uncommitted:   <what is sitting in the working tree right now>
-Commit:        none — blocked steps are not committed
+Uncommitted:   <what is sitting in the working tree right now, or "nothing">
+Branch:        <pushed branch name, or "none — nothing was committed">
+Pull request:  <URL and state, or "none — never opened">
+Merge status:  NOT MERGED — a blocked step never reaches `main`
 Unblocked by:  <the specific thing needed: a credential, an ADR acceptance, an owner decision>
 Approval needed: <only if a commit is being requested; state exactly what would be committed>
 ```
+
+Report the branch and PR truthfully rather than describing a blocked step as if nothing was published. Where the block was found after pushing, the branch and its open PR are the state the owner needs to act on, and hiding them helps nobody.
 
 ## Future Step Synchronization
 
@@ -241,7 +288,8 @@ Two changes fall outside that latitude and need the fuller scrutiny:
 - **Silent scope creep across sessions** — bounded by the step's Tasks and nothing else.
 - **Inconsistent state left behind on failure** — closed by [[#Validation Failure and Rollback]]: every session ends finished and committed, or `Blocked` and uncommitted, never half-applied and never committed halfway.
 - **A plan drifting from the code it describes** — closed by [[#Future Step Synchronization]], which reconciles the remaining outline against what was actually built.
-- **History that no longer matches the plan** — closed by [[#One Step One Commit]]: one step is one commit, so the log and the Build Plan stay readable as the same sequence.
+- **History that no longer matches the plan** — closed by [[#One Step One Commit On Main]]: one step is one squashed commit on `main`, so the log and the Build Plan stay readable as the same sequence.
+- **Work marked finished before anything verified it** — closed by [[#Step Completion]]: required CI, the manual checklist, review and the owner's gate are completion conditions, so `Done` is a statement about checks that actually ran.
 - **Context exhausted before the work is finished** — closed by [[#Context Discipline]]: reading is scoped to questions the step actually has, so the budget survives to the debugging that ends most steps.
 
 Every session starts from the same question and ends at a verifiable boundary with a report of what changed.

@@ -3,8 +3,8 @@
 <!-- If you are reading this at the repository root, this file is GENERATED.
      Do not edit it here — your changes will be overwritten.
      Edit the canonical source: ProjectOne Vault/00 Governance/CLAUDE.md
-     Then run:  ./scripts/sync-claude-md.sh    (macOS / Linux / Git Bash)
-            or  .\scripts\sync-claude-md.ps1   (Windows PowerShell) -->
+     Then run:  ./scripts/sync-governance-docs.sh    (macOS / Linux / Git Bash)
+            or  .\scripts\sync-governance-docs.ps1   (Windows PowerShell) -->
 
 > This document is the permanent operating manual for Claude inside the ProjectOne repository. It is not user documentation. It is not a style guide. It is the constitution that governs how Claude thinks, decides, and writes code in this codebase, for as long as this codebase exists.
 >
@@ -312,7 +312,14 @@ Documentation is part of the product, not an afterthought:
 
 ## 20. Git Workflow
 
-- Follow the Engineering Handbook's Git Workflow and Commit Convention standards (Chapter 1 references these; formalize specifics via ADR when the team defines exact branch/commit conventions).
+**[[Branch and Pull Request Workflow]] is the binding protocol for how work reaches `main`.** It applies to every contributor — the project owner, Claude, and OpenAI Codex alike — and to every change without exception, including a one-line documentation fix. The rules that matter most:
+
+- **`main` is protected and must never be modified directly.** A `Protect main` ruleset enforces this. Never bypass, disable, or work around it — a rejected push is the rule functioning, not an obstacle.
+- **One task or step per branch**, named `step-NN-short-name`, `fix/...`, `chore/...` or `docs/...`, cut from an up-to-date `main`.
+- **Every change reaches `main` through a Pull Request** whose CI is green. A red pipeline is never merged and never overridden.
+- **Squash merge only**, then delete the branch — one branch becomes exactly one commit on `main`, however many commits the branch itself carried.
+- **Never rewrite a pushed commit.** CI failures and review feedback are addressed with additional commits, never `--amend`, rebase or force-push over published history.
+- **Consequential changes require the project owner's explicit approval** before merge (Section 21). Silence is never approval.
 - Every schema change is version controlled — no manual, undocumented migrations (Section 13).
 - Commits should be atomic and explain *why*, not just *what* — the diff already shows what changed.
 - Never rewrite published history without explicit, scoped authorization.
@@ -340,13 +347,18 @@ Per-domain review checklists also apply:
 A feature is complete only when:
 
 - Requirements are implemented.
-- Tests pass.
+- Tests pass locally.
+- **Every required CI check on its Pull Request is green.**
+- **The manual test checklist is complete** where the change has user-visible behaviour, or explicitly marked not applicable with a reason.
 - Security has been reviewed.
 - Documentation is updated (Section 19).
-- Code review is completed (Section 21).
+- Code review is completed and **every review conversation is resolved** (Section 21).
+- **The owner's approval is obtained** where the change is consequential (Section 21).
 - No known critical defects remain.
 
-Partial completion is not completion. A feature that is "done except for tests" or "done except for docs" is not done.
+Partial completion is not completion. A feature that is "done except for tests" or "done except for docs" is not done — and neither is one marked done before the pipeline that could still reject it has run.
+
+Merging is not on this list: the owner merges. A change is "done" when it is ready to merge, and claiming that state while any check above is still open is the failure this section exists to prevent.
 
 ## 23. Definition of Ready
 
@@ -426,21 +438,24 @@ Development, staging, and production are strictly isolated — separate credenti
 
 Every ProjectOne task follows the same lifecycle, regardless of size. The detailed operating manual is [[Task Workflow]] in `01 Claude OS`; the binding shape is:
 
-**Read → Plan → Implement → Validate → Document → Commit → Report.**
+**Read → Plan → Branch → Implement → Validate → Document → Commit → Pull Request → Report.**
 
 - **Read.** Every task begins at [[Start Here]] (Section 6, step 0), then [[Documentation Discovery]] and [[Reading Priority]]. Never read the whole vault; never skip this because a task looks small.
 - **Plan.** Apply the Decision Framework (Section 6) before writing anything.
+- **Branch.** One task or step per branch, cut from an up-to-date `main`, which is never modified directly (Section 20, [[Branch and Pull Request Workflow]]).
 - **Implement.** Only what was asked. Scope discipline is Section 29/35.
 - **Validate.** Observed, not assumed. A type-check alone is not validation (Section 18).
 - **Document.** In the same change, never deferred (Section 19).
 - **Commit.** See the execution rules below.
+- **Pull Request.** Push the branch, open a PR into `main`, get CI green, resolve every review conversation, obtain owner approval where the change is consequential. Squash merge, then delete the branch.
 - **Report.** State what changed, what's next, and end with the `## ChatGPT Summary` required by Section 32a.
 
 ### Build-plan execution
 
 When the task is *"Implement the next step,"* [[Execution Protocol]] governs and adds binding rules this general lifecycle does not state. It is the authority on build-plan execution; these are the rules that hold permanently:
 
-- **One step, one commit.** A completed step produces exactly one commit containing implementation, documentation and [[Build Plan]] status together — created only after validation passes and the step is marked `Done`. Splitting a step across commits requires an explicit user request.
+- **One step, one branch, one Pull Request, one commit on `main`.** A completed step reaches `main` as exactly one squashed commit containing implementation, documentation and [[Build Plan]] status together. The step's own `step-NN-*` branch may carry several commits while CI and review iterate — the invariant is the permanent history, not the working branch, and a pushed commit is never rewritten to address feedback. Claude opens the PR and never merges it. Splitting a step across several commits *on `main`* requires an explicit user request.
+- **`Done` comes after the checks, not before them.** A step stays `In Progress` until its required CI is green, its manual checklist is complete, its review conversations are resolved and its owner gate (if any) is satisfied. Marking `Done` earlier claims a verification that has not happened.
 - **A `Blocked` step is never committed.** Not the partial work, not the `Blocked` status marking. Roll back where safe; where rollback is unsafe, stop and report without rolling back. Committing any of it requires explicit user approval, asked for and received. A blocked step deliberately ends on a dirty working tree.
 - **Never skip a step, never run two in one session.** The step is the first one whose status is not `Done`.
 - **Status lives in two places** — the step note and the [[Build Plan]] index — and they must always agree.
@@ -620,6 +635,7 @@ Claude must follow the ProjectOne Design System (`[[Design System]]`) exactly:
 This CLAUDE.md summarizes and operationalizes the following canonical sources. When in doubt, the linked source document is more detailed and wins on specifics; this file wins on *behavior*.
 
 - **Claude OS (operating procedure, read first):** [[Start Here]] · [[Documentation Discovery]] · [[Reading Priority]] · [[Task Workflow]]
+- **Collaboration & delivery process:** [[Branch and Pull Request Workflow]] · [[Execution Protocol]] · [[AGENTS|AGENTS.md]] (the Codex adapter for this constitution)
 - **Product & Vision:** [[Philosophy]] · [[Vision]] · [[Product Principles]] · [[Target Audience]] · [[User Personas]] · [[User Journey]] · [[Product Bible]]
 - **Features:** [[Dashboard]] · [[Projects]] · [[AI Chat]] · [[Video Generation]] · [[Analytics]] · [[Billing]] · [[Settings]]
 - **AI Systems:** [[AI Architecture]] · [[Agent Architecture]] · [[Memory System]] · [[AI Providers]] · [[Workflow Engine]]

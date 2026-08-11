@@ -21,7 +21,7 @@ How Claude actually does day-to-day engineering work inside ProjectOne — which
 | Deleting files or directories | [[MCP/Terminal|Terminal]] | Filesystem MCP has no delete capability at all — this is the only path for deletion. |
 | Browser/UI validation of frontend changes | [[MCP/Playwright|Playwright]] | Harness-native Browser pane. Exploratory/manual validation only — not a substitute for a real `@playwright/test` CI suite once one exists. |
 | Native desktop app or cross-app automation | [[MCP/Computer Use|Computer Use]] | Fallback only — prefer the dedicated tool for browsers (Playwright) and terminals (Terminal) where one exists; Computer Use's own tiering enforces this. |
-| GitHub repository, PR, and issue operations | [[MCP/GitHub|GitHub]] | Official `github` MCP server. No live repository connected yet — ProjectOne is not currently under git version control. |
+| GitHub repository, PR, and issue operations | [[MCP/GitHub|GitHub]] | Official `github` MCP server, now against a live remote. `gh` CLI is not installed — use these tools for remote operations. Opening a PR is how every change reaches `main` ([[Branch and Pull Request Workflow]]); merging is the owner's decision, never Claude's. |
 | Database operations | [[MCP/Supabase|Supabase]] | Not yet validated — reserved until ProjectOne has a database layer. |
 | Deployment operations | [[MCP/Vercel|Vercel]] | Not yet validated — reserved until ProjectOne has a deployable frontend. |
 

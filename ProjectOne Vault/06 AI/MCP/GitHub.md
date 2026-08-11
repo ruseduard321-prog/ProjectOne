@@ -20,7 +20,7 @@ Gives Claude direct access to GitHub — repositories, issues, pull requests, br
 
 Registration is at **user config scope** (`~/.claude.json`), not project scope — it does not appear in this project's `.mcp.json` (which only declares `filesystem`), consistent with what was documented previously, now confirmed as the deliberate original choice (this repository had no `.git` at install time, so project scope wasn't applicable).
 
-This repository is **still not currently a git repository** (`git status` reports "not a git repository"), so no live GitHub remote is connected to ProjectOne itself.
+**A live remote now exists.** ProjectOne is under git version control and pushes to `https://github.com/ruseduard321-prog/ProjectOne`. `main` is protected by a `Protect main` ruleset, so all work reaches it through branches and Pull Requests — see [[Branch and Pull Request Workflow]].
 
 ## Validation Status
 
@@ -35,7 +35,9 @@ This repository is **still not currently a git repository** (`git status` report
 2. **Tool-surface validation (confirmed working, in a later session):**
    - A fresh session (started after registration) successfully loaded **24 `mcp__github__*` tools**: repo/file operations (`create_repository`, `fork_repository`, `get_file_contents`, `create_or_update_file`, `push_files`, `create_branch`, `list_commits`), issues (`create_issue`, `get_issue`, `list_issues`, `update_issue`, `add_issue_comment`), pull requests (`create_pull_request`, `get_pull_request`, `list_pull_requests`, `get_pull_request_files`, `get_pull_request_comments`, `get_pull_request_reviews`, `get_pull_request_status`, `create_pull_request_review`, `merge_pull_request`, `update_pull_request_branch`), and search (`search_code`, `search_issues`, `search_repositories`, `search_users`).
 
-**Not validated:** no real create/read/update operation was executed against an actual GitHub repository or issue (e.g., no test repo created, no PR opened) — validation stopped at confirming the tools load and the credential authenticates. No live remote exists for ProjectOne to exercise these against yet.
+3. **Live repository operations (confirmed working, 2026-08-11):** `get_file_contents` and `create_pull_request` exercised against the real ProjectOne repository while opening the `chore/agent-collaboration-workflow` PR. Reading a file and creating a PR both succeeded against `ruseduard321-prog/ProjectOne`.
+
+**Still not validated:** issue creation/triage, PR review submission, and merge operations. `merge_pull_request` is deliberately unexercised — merging is the project owner's decision ([[Branch and Pull Request Workflow#Owner Approval]]), so an agent has no occasion to call it.
 
 ## Architecture
 
@@ -56,9 +58,8 @@ Once ProjectOne's code is pushed to a GitHub repository, this server becomes the
 
 ## Limitations
 
-- No live repository connection exists yet — ProjectOne is not currently under git version control locally, so GitHub-side operations (PR creation, issue triage) have no real target to validate end-to-end against today.
-- `gh` CLI is unavailable in this environment; any workflow assuming CLI-based GitHub access would fail here.
-- No real create/read/update operation against an actual repository has been exercised yet — only credential auth and tool-manifest loading are confirmed.
+- `gh` CLI is **not installed** in this environment — confirmed again on 2026-08-11, in both Bash and PowerShell. Any workflow assuming CLI-based GitHub access fails here; use these MCP tools for remote operations and plain `git` for local ones (`git push` works normally over HTTPS).
+- Issue triage, PR review submission, and merge operations remain unexercised against a real target.
 
 ## Bugs Discovered During Validation
 
