@@ -112,7 +112,7 @@ The full workflow is `ProjectOne Vault/09 Development/Branch and Pull Request Wo
 2. Branch from an up-to-date `main`.
 3. Implement and validate locally — run the commands above for every layer the change touches.
 4. Push the branch and open a Pull Request into `main`.
-5. **GitHub CI must pass.** A red pipeline is never merged and never overridden.
+5. **GitHub CI must pass.** A red pipeline is never merged and never overridden — including a job that is not (yet) a required check. Note that *running* in CI and being *required* by the `Protect main` ruleset are different things: the ruleset currently requires **web** and **api** only, so `governance docs (sync check)` reports without blocking until the owner adds it.
 6. Supply a manual test checklist in the PR description where the change has user-visible behavior, and complete it.
 7. Resolve every review conversation before merge.
 8. **Consequential changes require the project owner's explicit approval** — see the next section.

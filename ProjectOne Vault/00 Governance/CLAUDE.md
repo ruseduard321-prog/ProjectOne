@@ -335,7 +335,8 @@ Documentation is part of the product, not an afterthought:
 - **`main` is protected and must never be modified directly.** A `Protect main` ruleset enforces this. Never bypass, disable, or work around it — a rejected push is the rule functioning, not an obstacle.
 - **One task or step per branch**, named `step-NN-short-name`, `fix/...`, `chore/...` or `docs/...`, cut from an up-to-date `main`.
 - **Every change reaches `main` through a Pull Request** whose CI is green. A red pipeline is never merged and never overridden.
-- **Squash merge only**, then delete the branch — one branch becomes exactly one commit on `main`.
+- **Squash merge only**, then delete the branch — one branch becomes exactly one commit on `main`, however many commits the branch itself carried.
+- **Never rewrite a pushed commit.** CI failures and review feedback are addressed with additional commits, never `--amend`, rebase or force-push over published history.
 - **Consequential changes require the project owner's explicit approval** before merge (Section 21). Silence is never approval.
 - Every schema change is version controlled — no manual, undocumented migrations (Section 13).
 - Commits should be atomic and explain *why*, not just *what* — the diff already shows what changed.
@@ -364,13 +365,18 @@ Per-domain review checklists also apply:
 A feature is complete only when:
 
 - Requirements are implemented.
-- Tests pass.
+- Tests pass locally.
+- **Every required CI check on its Pull Request is green.**
+- **The manual test checklist is complete** where the change has user-visible behaviour, or explicitly marked not applicable with a reason.
 - Security has been reviewed.
 - Documentation is updated (Section 19).
-- Code review is completed (Section 21).
+- Code review is completed and **every review conversation is resolved** (Section 21).
+- **The owner's approval is obtained** where the change is consequential (Section 21).
 - No known critical defects remain.
 
-Partial completion is not completion. A feature that is "done except for tests" or "done except for docs" is not done.
+Partial completion is not completion. A feature that is "done except for tests" or "done except for docs" is not done — and neither is one marked done before the pipeline that could still reject it has run.
+
+Merging is not on this list: the owner merges. A change is "done" when it is ready to merge, and claiming that state while any check above is still open is the failure this section exists to prevent.
 
 ## 23. Definition of Ready
 
@@ -466,7 +472,8 @@ Every ProjectOne task follows the same lifecycle, regardless of size. The detail
 
 When the task is *"Implement the next step,"* [[Execution Protocol]] governs and adds binding rules this general lifecycle does not state. It is the authority on build-plan execution; these are the rules that hold permanently:
 
-- **One step, one branch, one commit, one Pull Request.** A completed step produces exactly one commit containing implementation, documentation and [[Build Plan]] status together — created only after validation passes and the step is marked `Done`, on the step's own `step-NN-*` branch, and delivered to `main` through a PR that Claude opens but does not merge. Splitting a step across commits requires an explicit user request.
+- **One step, one branch, one Pull Request, one commit on `main`.** A completed step reaches `main` as exactly one squashed commit containing implementation, documentation and [[Build Plan]] status together. The step's own `step-NN-*` branch may carry several commits while CI and review iterate — the invariant is the permanent history, not the working branch, and a pushed commit is never rewritten to address feedback. Claude opens the PR and never merges it. Splitting a step across several commits *on `main`* requires an explicit user request.
+- **`Done` comes after the checks, not before them.** A step stays `In Progress` until its required CI is green, its manual checklist is complete, its review conversations are resolved and its owner gate (if any) is satisfied. Marking `Done` earlier claims a verification that has not happened.
 - **A `Blocked` step is never committed.** Not the partial work, not the `Blocked` status marking. Roll back where safe; where rollback is unsafe, stop and report without rolling back. Committing any of it requires explicit user approval, asked for and received. A blocked step deliberately ends on a dirty working tree.
 - **Never skip a step, never run two in one session.** The step is the first one whose status is not `Done`.
 - **Status lives in two places** — the step note and the [[Build Plan]] index — and they must always agree.

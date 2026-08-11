@@ -106,8 +106,12 @@ Regenerate a single document:
 ```
 
 `--check` verifies **every** document and reports all of them before exiting, so one stale file
-cannot hide another. CI runs it as the `governance-docs` job, and `pytest` asserts the same property
-offline in `apps/api/tests/test_governance_docs_sync.py`.
+cannot hide another. CI runs it as the `governance docs (sync check)` job, and `pytest` asserts the
+same property offline in `apps/api/tests/test_governance_docs_sync.py`.
+
+> The CI job is **not yet a required check** in the `Protect main` ruleset, which currently requires
+> only `web` and `api`. Until the project owner adds it, stale generated files fail visibly without
+> blocking a merge. The offline `pytest` assertion is the backstop in the meantime.
 
 Both implementations read the same config and produce **byte-identical output** (LF endings, UTF-8
 without BOM), so a repository can be maintained from either platform without churn. `--check`

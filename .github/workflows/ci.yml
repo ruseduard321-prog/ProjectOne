@@ -27,7 +27,13 @@ jobs:
   #
   # Cheap and dependency-free, so it runs first and fails fast. `pytest` also
   # asserts this (tests/test_governance_docs_sync.py) for contributors who run
-  # the suite locally; this job is what makes it a merge gate.
+  # the suite locally.
+  #
+  # NOT YET A MERGE GATE. The `Protect main` ruleset currently requires only
+  # the `web` and `api` checks, so this job can be red while the merge button
+  # stays green. Adding a job to CI and adding it to the ruleset's required
+  # checks are separate actions, and only the project owner can do the second.
+  # Until they do, this reports drift rather than blocking it.
   governance-docs:
     name: governance docs (sync check)
     runs-on: ubuntu-latest
