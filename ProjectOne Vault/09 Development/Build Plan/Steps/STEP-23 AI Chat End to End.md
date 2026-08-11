@@ -85,14 +85,20 @@ Recorded during expansion, while the context was loaded.
 | Spend attributed | `AIService` `workflow_type="chat"`, metered by `test_ai_spend_isolation.py` | **CI only** |
 | Loading / empty / error states | `loading.tsx`, `error.tsx`, `EmptyState` branches in `page.tsx` | Build + CI |
 
-> [!example] What the first CI run caught
-> The first run of this step's PR **failed the `api` job**, and it is worth recording why rather than only that it was fixed.
+> [!example] What CI caught that this machine could not
+> The `api` job failed **twice** on this step's PR, and both failures are worth recording — the second especially, because it is the more instructive.
 >
-> `test_chat_isolation.py` seeded its fixture from `identity.label` — an attribute `Identity` does not have. All **eleven** tests in the file errored during setup, so not one isolation, erasure or role-vocabulary assertion actually executed. The local suite reported a clean 418 passed throughout, because the whole file skips without PostgreSQL.
+> **Run 1 — the fixture never ran.** `test_chat_isolation.py` seeded from `identity.label`, an attribute `Identity` does not have. All **eleven** tests errored during setup, so not one isolation, erasure or role-vocabulary assertion executed.
 >
-> CI ran **692 tests** against a real `postgres:17` where this machine manages 418. That gap is precisely the coverage the warning below describes, and it found a defect that a green local run would otherwise have carried into review as though it were proven.
+> **Run 2 — the tests ran, and five failed.** Fixing the fixture revealed what it had been masking. Alice could read Bob's conversation and message, a cross-tenant UPDATE affected a row, and a message was editable by its author. Read at face value: a tenant breach.
 >
-> The lesson is not "the tests were wrong" but **a skipped security test looks identical to a passing one** in a local summary line. `PROJECTONE_REQUIRE_DATABASE_TESTS=1` in CI is what makes the difference visible, and it is why a green `api` job — not a green local run — is what this step's isolation and erasure claims rest on.
+> **It was not a breach.** The policies were correct from the start. `as_user` applies the tenant identity with `SET LOCAL ROLE` and a transaction-scoped `set_config` — both discarded immediately outside an explicit transaction, because psycopg autocommits each statement. Every query then ran as the privileged owner, which bypasses RLS entirely. The file's docstring claims it follows [[STEP-20 Projects Schema and Lifecycle|`test_project_isolation.py`]] exactly; that file wraps **16 of 16** `as_user` calls in a transaction, and this one wrapped **0 of 8**.
+>
+> **The negative control was the worst part.** It disabled RLS, observed a breach, and passed — but it would have passed identically against a harness that never applied an identity at all, because it only ever asserted the breach half. It now asserts both: zero rows visible with the policies in place, one with them disabled. *A control that cannot fail is not a control*, and this one was guarding the most security-sensitive assertions in the step.
+>
+> **No production code changed in either fix.** The migration's policies were right; the defect was entirely in how the tests exercised them.
+>
+> The lesson is not "the tests were wrong" but that **a skipped security test is indistinguishable from a passing one** in a local summary line — and worse, *a security test that runs without its identity applied looks like a passing one too*. CI ran **698 tests** against a real `postgres:17` where this machine manages 418. `PROJECTONE_REQUIRE_DATABASE_TESTS=1` is what makes that gap visible, and it is why a green `api` job — not a green local run — is what this step's isolation and erasure claims rest on.
 
 > [!warning] The database-backed validation runs in CI, not on the development machine
 > This machine has no PostgreSQL, no Docker, and `apps/api/.env` carries a redacted `DATABASE_URL` placeholder rather than a usable credential, so **285 database-backed tests skip locally**. CI provisions a throwaway `postgres:17` and sets `PROJECTONE_REQUIRE_DATABASE_TESTS=1`, which turns those skips into hard failures — so a green `api` job is what actually proves isolation, erasure and spend metering.

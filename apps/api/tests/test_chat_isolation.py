@@ -188,15 +188,22 @@ def test_a_conversation_soft_delete_affects_a_row(
 
     # The transaction is what makes the identity real: `as_user` uses `SET LOCAL
     # ROLE` and a transaction-scoped `set_config`, both of which are discarded
-    # the moment an implicit transaction commits. Rolled back at the end of the
-    # block, so the soft delete does not leak into another test.
-    with admin_connection.transaction() as transaction:
+    # the moment an implicit transaction commits.
+    #
+    # Undone at the end so the soft delete does not leak into another test.
+    # psycopg's `Transaction` has no `rollback()` method -- raising out of the
+    # block is how it is told to roll back, and `Rollback` is the sentinel it
+    # swallows rather than propagating.
+    with admin_connection.transaction():
         as_user(admin_connection, alice.user_id)
         repository = ConversationRepository(admin_connection)
 
         assert repository.soft_delete(alice.workspace_id, alice_conversation) is True
 
-        transaction.rollback()
+        # Swallowed by the block it names, so this rolls back without failing
+        # the test. An assertion failure above propagates normally and also
+        # rolls back, which is the behaviour wanted in both directions.
+        raise psycopg.Rollback
 
 
 def test_erasure_clears_conversations_and_messages(
