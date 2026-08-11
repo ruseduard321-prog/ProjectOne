@@ -324,7 +324,9 @@ The lesson worth carrying: **all three were invisible locally and only reachable
 
 **Five limitations are stated rather than discovered:** execution is synchronous on the request thread (bounded by the 300s wall-clock ceiling — but the persistence model is already the one a queue would need, so moving it later changes one call site); no branching, scheduling or parallelism; no UI, so runs are reachable over HTTP only; one workflow and one agent, since the interface is the deliverable; and a resumed run re-executes an interrupted step, making step execution at-least-once — safe for every current step, but a future step with an external side effect needs its own idempotency.
 
-**STEP-22 carries an owner approval gate** (Critical — AI/agent architecture, database schema, multi-tenancy, public API contract). It is `Done` and committed, but STEP-23 does not begin until the owner confirms it, including confirming the CI run.
+**STEP-22 carried an owner approval gate** (Critical — AI/agent architecture, database schema, multi-tenancy, public API contract). The owner **approved it on 2026-08-11**, including its validated implementation and green CI, and authorized STEP-23 to proceed. The gate is closed.
+
+**STEP-23 carries its own owner approval gate**, for the same categories plus a public API contract. It is `In Progress` on `step-23-ai-chat` with an open Pull Request; it is not `Done` until required CI is green, the outstanding manual browser checks are completed in a database-backed environment, review is resolved, and the owner approves.
 
 **A long-term UI vision now exists, and it changes nothing in this plan** (2026-08-03). The project owner supplied [[Design Backlog and UI Vision]] — a premium-AI-OS design direction plus a Dashboard concept mockup. It is filed as **informational only** by explicit owner instruction: **not a step, not a roadmap change, not an architecture change, and overriding no engineering document.** No step was added, renumbered or rescheduled, and the [[Roadmap]] is untouched.
 

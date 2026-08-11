@@ -63,11 +63,19 @@ def seeded_chat(
     ids: list[uuid.UUID] = []
 
     for identity in (alice, bob):
+        # `Identity` carries `user_id`, `workspace_id` and `email` -- the label
+        # passed to `seed_identity` is not retained on the object. The email's
+        # local part starts with that label, so it is the distinguishing value
+        # available here, and distinguishing the two tenants' rows is the whole
+        # requirement: every assertion below turns on one tenant not seeing the
+        # other's.
+        owner = identity.email.split("@")[0]
+
         with admin_connection.cursor() as cursor:
             cursor.execute(
                 "INSERT INTO public.conversations (workspace_id, title, created_by) "
                 "VALUES (%s, %s, %s) RETURNING id",
-                (identity.workspace_id, f"{identity.label} conversation", identity.user_id),
+                (identity.workspace_id, f"{owner} conversation", identity.user_id),
             )
             row = cursor.fetchone()
             assert row is not None
@@ -76,7 +84,7 @@ def seeded_chat(
             cursor.execute(
                 "INSERT INTO public.messages "
                 "(workspace_id, conversation_id, role, content) VALUES (%s, %s, %s, %s)",
-                (identity.workspace_id, conversation_id, "user", f"{identity.label} said this"),
+                (identity.workspace_id, conversation_id, "user", f"{owner} said this"),
             )
 
         ids.append(conversation_id)
