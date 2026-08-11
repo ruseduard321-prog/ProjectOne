@@ -1,0 +1,44 @@
+{
+  "$comment": [
+    "Configuration for sync-governance-docs.sh / sync-governance-docs.ps1.",
+    "Both scripts read this file, so the synchronization logic itself contains no",
+    "project-specific paths. To adopt this mechanism in another project, copy the",
+    "two scripts plus this file and edit ONLY the values below.",
+    "Paths are relative to the repository root (the parent of scripts/) and use",
+    "forward slashes on every platform."
+  ],
+
+  "$comment_documents": [
+    "Each entry is one canonical source generating one repository-root mirror.",
+    "'name' selects a single document from the command line; omitting the",
+    "selector processes every entry. Two entries exist because ProjectOne has",
+    "two governed root documents with two different consumers: the Claude Code",
+    "harness reads CLAUDE.md, OpenAI Codex reads AGENTS.md."
+  ],
+
+  "$comment_strip": [
+    "stripFrontmatter: remove a leading YAML '---' block from the generated file.",
+    "stripCalloutStartsWith: drop a blockquote callout whose first line starts with",
+    "  this text, plus its continuation lines. Empty string disables it.",
+    "stripFromHeading: drop this heading and everything after it. Empty disables it."
+  ],
+
+  "documents": [
+    {
+      "name": "claude",
+      "source": "ProjectOne Vault/00 Governance/CLAUDE.md",
+      "target": "CLAUDE.md",
+      "stripFrontmatter": true,
+      "stripCalloutStartsWith": "> [!important] This file is the canonical CLAUDE.md",
+      "stripFromHeading": "## Navigation"
+    },
+    {
+      "name": "agents",
+      "source": "ProjectOne Vault/00 Governance/AGENTS.md",
+      "target": "AGENTS.md",
+      "stripFrontmatter": true,
+      "stripCalloutStartsWith": "> [!important] This file is the canonical AGENTS.md",
+      "stripFromHeading": "## Navigation"
+    }
+  ]
+}

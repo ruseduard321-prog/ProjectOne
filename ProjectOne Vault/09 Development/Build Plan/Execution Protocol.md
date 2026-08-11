@@ -17,7 +17,7 @@ The rules Claude follows when the user says **"Implement the next step."** This 
 1. **Locate** — open [[Build Plan]] (the index only).
 2. **Select** — scan the step table top to bottom; take the **first step whose Status is not `Done`**. That is the step. There is no judgment call here.
 3. **Verify the predecessor** — before any new work, confirm the previous step actually completed: its Status is `Done` in both places, and its Definition of Done genuinely holds against the current state of the project. A `Done` marking that no longer matches reality is a defect to surface, not a green light — stop and report it rather than building on top of it.
-4. **Check the working tree** — run `git status`. It should be clean. Uncommitted changes mean a previous session ended `Blocked` and left its work in place ([[#Blocked Steps Are Never Committed]]) — **do not discard them and do not commit them**. Identify the blocked step, confirm with the user whether to resume it, discard it, or commit it, and act on that answer before starting anything new.
+4. **Check the working tree and branch** — run `git status`. It should be clean, on an up-to-date `main`. Uncommitted changes mean a previous session ended `Blocked` and left its work in place ([[#Blocked Steps Are Never Committed]]) — **do not discard them and do not commit them**. Identify the blocked step, confirm with the user whether to resume it, discard it, or stash it, and act on that answer before starting anything new ([[Branch and Pull Request Workflow#Starting From a Dirty Tree]]). Then create the step's branch ([[#The Step Branch]]).
 5. **Read** — open that one step note, then read only what [[#Context Discipline]] permits. The step's *Required Documentation* is a candidate list, not a reading list.
 6. **Mark In Progress** — set the step's Status to `In Progress` in both the step note and the [[Build Plan]] index, before implementing.
 7. **Implement** — perform the step's Tasks, and only those tasks.
@@ -26,9 +26,10 @@ The rules Claude follows when the user says **"Implement the next step."** This 
 10. **Synchronize future steps** — reconcile the remaining outline steps against what was actually built; see [[#Future Step Synchronization]].
 11. **Expand the next step** — if the following step is marked `outline`, expand it to full detail now, while its context is loaded. Update its Detail column to `full`.
 12. **Mark Done** — only if every condition in [[#Step Completion]] is met. Set Status to `Done` in both the step note and the index.
-13. **Commit once** — stage everything the step produced and create **exactly one commit** containing implementation, documentation and [[Build Plan]] status updates together. See [[#One Step One Commit]]. Only a step that reached `Done` is committed: a `Blocked` step is left uncommitted ([[#Blocked Steps Are Never Committed]]).
+13. **Commit once** — stage everything the step produced and create **exactly one commit** containing implementation, documentation and [[Build Plan]] status updates together, **on the step's own branch** ([[#The Step Branch]]). See [[#One Step One Commit]]. Only a step that reached `Done` is committed: a `Blocked` step is left uncommitted ([[#Blocked Steps Are Never Committed]]).
 14. **Verify the tree is clean** — run `git status` and confirm there is nothing uncommitted. A dirty tree at this point means the step is not finished.
-15. **Report and stop** — emit the [[#Step Completion Report]] and stop. Do not begin the next step.
+15. **Push and open a Pull Request** into `main`, per [[Branch and Pull Request Workflow]]. The step is not delivered until CI is green and the PR is merged — and **Claude does not merge it**: that is the owner's decision ([[#Owner Approval Gates]]).
+16. **Report and stop** — emit the [[#Step Completion Report]] and stop. Do not begin the next step.
 
 ## Hard Rules
 
@@ -83,6 +84,16 @@ This narrowing is scoped to build-plan steps. Any other ProjectOne task still en
 Audited after STEP-10: of roughly eighteen vault documents read, about six changed nothing about the outcome — two large security documents restating [[CLAUDE|CLAUDE.md]] §16, the four routing notes, and several read because a checklist named them. Both defects that step found — a pooled-connection claim leak and Supabase's default privileges re-granting DML on every future table — were found by testing against a live database, not by reading. The context those six documents consumed was most needed later, during exactly that debugging.
 
 The governing habit is the one rule 8 encodes: **open a document to answer a question, not to satisfy a list.**
+
+## The Step Branch
+
+Every step is implemented on **its own branch**, cut from an up-to-date `main` at the start of the step and named `step-NN-short-name` — `step-23-ai-chat`, not `ai-chat` and not `step-23`.
+
+**`main` is protected and is never modified directly** ([[Branch and Pull Request Workflow#`main` Is Protected]]). The step's one commit lands on the step branch; the branch reaches `main` through a Pull Request whose CI is green, squash-merged, and deleted afterwards.
+
+This does not change what a step *is* or what it contains — [[#One Step One Commit]] is untouched, and one step is still exactly one commit. It changes only where that commit lands and how it travels: a step now ends with a PR awaiting the owner rather than a commit already sitting on the default branch.
+
+**Claude does not merge the Pull Request.** Every Build Plan step is a substantive change to the product, and several touch schema, auth, or AI architecture outright — merging is the owner's call ([[#Owner Approval Gates]]). Claude opens the PR, reports, and stops.
 
 ## One Step One Commit
 
@@ -179,7 +190,9 @@ Modified:      <files modified, or "none">
 Docs updated:  <vault notes updated, or "none">
 Tests run:     <what was executed>
 Validation:    <passed / failed — with the specific result>
+Branch:        <step-NN-short-name>
 Commit:        <short SHA and subject — exactly one>
+Pull request:  <URL, and CI status>
 Known issues:  <only if any exist; omit the line otherwise>
 Next step:     STEP-NN <title>
 ```

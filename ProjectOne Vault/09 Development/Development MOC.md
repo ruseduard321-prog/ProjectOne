@@ -25,6 +25,11 @@ Practices, standards and process documentation for day-to-day engineering work.
 - [[Release Strategy]]
 - [[Deployment Strategy]]
 
+## Collaboration Process
+
+- [[Branch and Pull Request Workflow]] — how work reaches `main`: protected branch, one task per branch, PR with green CI, squash merge. Binding on every contributor, human or agent.
+- [[AGENTS|AGENTS.md]] — the concise adapter pointing OpenAI Codex at ProjectOne's canonical sources
+
 ## Build Execution
 
 - [[Build Plan]] — the step index taking ProjectOne from empty repository to first public release (26 planned, plus inserted steps)

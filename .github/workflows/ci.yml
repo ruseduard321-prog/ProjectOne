@@ -19,6 +19,25 @@ permissions:
   contents: read
 
 jobs:
+  # The root CLAUDE.md and AGENTS.md are generated from canonical sources in
+  # `ProjectOne Vault/00 Governance/`. Nothing enforced that before: a
+  # contributor could edit a canonical source, forget to regenerate, and leave
+  # the root file — the one the agent harnesses actually read — describing older
+  # rules than the vault it claims to mirror.
+  #
+  # Cheap and dependency-free, so it runs first and fails fast. `pytest` also
+  # asserts this (tests/test_governance_docs_sync.py) for contributors who run
+  # the suite locally; this job is what makes it a merge gate.
+  governance-docs:
+    name: governance docs (sync check)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify generated documents match their canonical sources
+        run: ./scripts/sync-governance-docs.sh --check
+
   web:
     name: web (lint, typecheck, test, build)
     runs-on: ubuntu-latest

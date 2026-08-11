@@ -28,11 +28,26 @@ Key entry points inside the vault:
 | `08 ADR/` | Architecture Decision Records |
 | `09 Development/Build Plan/` | The 26-step execution plan from empty repo to first release |
 
-[`CLAUDE.md`](CLAUDE.md) at the repository root is the operating manual governing how Claude works
-in this codebase. **It is generated** — the canonical source is
-[`ProjectOne Vault/00 Governance/CLAUDE.md`](ProjectOne%20Vault/00%20Governance/CLAUDE.md). Edit
-that file, then regenerate this one — `./scripts/sync-claude-md.sh` on macOS/Linux/Git Bash, or
-`.\scripts\sync-claude-md.ps1` on Windows PowerShell. Never edit the root copy directly.
+Two root files tell coding agents how to work in this codebase, one per agent:
+
+| File | Read by | Canonical source |
+|---|---|---|
+| [`CLAUDE.md`](CLAUDE.md) | Claude Code | [`ProjectOne Vault/00 Governance/CLAUDE.md`](ProjectOne%20Vault/00%20Governance/CLAUDE.md) |
+| [`AGENTS.md`](AGENTS.md) | OpenAI Codex | [`ProjectOne Vault/00 Governance/AGENTS.md`](ProjectOne%20Vault/00%20Governance/AGENTS.md) |
+
+**Both are generated.** Edit the canonical source, then regenerate —
+`./scripts/sync-governance-docs.sh` on macOS/Linux/Git Bash, or
+`.\scripts\sync-governance-docs.ps1` on Windows PowerShell. Never edit a root copy directly; CI
+fails when one is stale.
+
+`CLAUDE.md` is the full constitution. `AGENTS.md` is a concise adapter that points Codex at the same
+canonical sources — it deliberately does not restate the constitution.
+
+## Contributing
+
+`main` is protected and is never modified directly. Every change — including a one-line
+documentation fix — reaches it through a branch and a Pull Request with green CI, squash-merged.
+See [`Branch and Pull Request Workflow`](ProjectOne%20Vault/09%20Development/Branch%20and%20Pull%20Request%20Workflow.md).
 
 ## Repository Structure
 

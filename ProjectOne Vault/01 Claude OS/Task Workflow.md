@@ -34,6 +34,8 @@ Test
      ↓
 Update documentation
      ↓
+Branch → PR → CI → review → merge
+     ↓
 Report completion
 ```
 
@@ -46,7 +48,8 @@ Report completion
 5. **Implement.** Follow the relevant layer standards ([[Engineering Handbook MOC]]) and use [[Workflows/Development Workflow|Development Workflow]] to select the right tool for each step.
 6. **Test.** Per [[CLAUDE|CLAUDE.md]] §18 — business logic gets unit tests, UI changes get real browser validation, nothing is called done on the strength of a type-check alone.
 7. **Update documentation.** Per §19 — update only the notes the change actually affects, in the same change, not as a follow-up. Prefer updating an existing note over creating a new one; never duplicate content — link to it instead. Keep indexes and Navigation blocks consistent. This is [[Skills/Documentation Keeper|Documentation Keeper]]'s domain.
-8. **Report completion.** State what changed and what's next — concise, per the Definition of Done (§22). Partial completion is not completion.
+8. **Deliver through a branch and Pull Request.** Every change reaches `main` this way — [[Branch and Pull Request Workflow]] is binding, and `main` is never modified directly. One task per branch, CI green, review conversations resolved, owner approval where the change is consequential, squash merge, branch deleted.
+9. **Report completion.** State what changed and what's next — concise, per the Definition of Done (§22). Partial completion is not completion.
 
 ---
 
