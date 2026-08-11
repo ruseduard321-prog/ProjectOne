@@ -100,10 +100,11 @@ def test_a_conversation_is_invisible_across_the_tenant_boundary(
 ) -> None:
     alice, _bob, _alice_conversation, bob_conversation = seeded_chat
 
-    cursor = as_user(admin_connection, alice.user_id)
-    cursor.execute("SELECT id FROM public.conversations WHERE id = %s", (bob_conversation,))
+    with admin_connection.transaction():
+        cursor = as_user(admin_connection, alice.user_id)
+        cursor.execute("SELECT id FROM public.conversations WHERE id = %s", (bob_conversation,))
 
-    assert cursor.fetchone() is None
+        assert cursor.fetchone() is None
 
 
 def test_a_message_is_invisible_across_the_tenant_boundary(
@@ -112,12 +113,13 @@ def test_a_message_is_invisible_across_the_tenant_boundary(
 ) -> None:
     alice, bob, _a, _b = seeded_chat
 
-    cursor = as_user(admin_connection, alice.user_id)
-    cursor.execute(
-        "SELECT content FROM public.messages WHERE workspace_id = %s", (bob.workspace_id,)
-    )
+    with admin_connection.transaction():
+        cursor = as_user(admin_connection, alice.user_id)
+        cursor.execute(
+            "SELECT content FROM public.messages WHERE workspace_id = %s", (bob.workspace_id,)
+        )
 
-    assert cursor.fetchall() == []
+        assert cursor.fetchall() == []
 
 
 def test_a_cross_tenant_update_affects_no_rows(
@@ -126,12 +128,13 @@ def test_a_cross_tenant_update_affects_no_rows(
 ) -> None:
     alice, _bob, _a, bob_conversation = seeded_chat
 
-    cursor = as_user(admin_connection, alice.user_id)
-    cursor.execute(
-        "UPDATE public.conversations SET title = 'seized' WHERE id = %s", (bob_conversation,)
-    )
+    with admin_connection.transaction():
+        cursor = as_user(admin_connection, alice.user_id)
+        cursor.execute(
+            "UPDATE public.conversations SET title = 'seized' WHERE id = %s", (bob_conversation,)
+        )
 
-    assert cursor.rowcount == 0
+        assert cursor.rowcount == 0
 
 
 def test_a_message_cannot_be_attached_to_another_tenants_conversation(
@@ -143,16 +146,13 @@ def test_a_message_cannot_be_attached_to_another_tenants_conversation(
     # refuses it -- and it fails as a ForeignKeyViolation, not an RLS error.
     alice, _bob, _a, bob_conversation = seeded_chat
 
-    cursor = as_user(admin_connection, alice.user_id)
-
-    with pytest.raises(psycopg.errors.ForeignKeyViolation):
+    with admin_connection.transaction(), pytest.raises(psycopg.errors.ForeignKeyViolation):
+        cursor = as_user(admin_connection, alice.user_id)
         cursor.execute(
             "INSERT INTO public.messages (workspace_id, conversation_id, role, content) "
             "VALUES (%s, %s, %s, %s)",
             (alice.workspace_id, bob_conversation, "user", "smuggled"),
         )
-
-    admin_connection.rollback()
 
 
 def test_a_message_cannot_be_edited_by_its_author(
@@ -170,15 +170,12 @@ def test_a_message_cannot_be_edited_by_its_author(
     # no-op, and the reason the policy is scoped rather than simply absent.
     alice, _bob, alice_conversation, _b = seeded_chat
 
-    cursor = as_user(admin_connection, alice.user_id)
-
-    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+    with admin_connection.transaction(), pytest.raises(psycopg.errors.InsufficientPrivilege):
+        cursor = as_user(admin_connection, alice.user_id)
         cursor.execute(
             "UPDATE public.messages SET content = 'rewritten' WHERE conversation_id = %s",
             (alice_conversation,),
         )
-
-    admin_connection.rollback()
 
 
 def test_a_conversation_soft_delete_affects_a_row(
@@ -189,14 +186,17 @@ def test_a_conversation_soft_delete_affects_a_row(
     # `deleted_at IS NULL` makes this affect zero rows, silently.
     alice, _bob, alice_conversation, _b = seeded_chat
 
-    cursor = as_user(admin_connection, alice.user_id)
-    repository = ConversationRepository(admin_connection)
+    # The transaction is what makes the identity real: `as_user` uses `SET LOCAL
+    # ROLE` and a transaction-scoped `set_config`, both of which are discarded
+    # the moment an implicit transaction commits. Rolled back at the end of the
+    # block, so the soft delete does not leak into another test.
+    with admin_connection.transaction() as transaction:
+        as_user(admin_connection, alice.user_id)
+        repository = ConversationRepository(admin_connection)
 
-    cursor.execute("SELECT 1")  # keep the role/claim set for the repository's queries
+        assert repository.soft_delete(alice.workspace_id, alice_conversation) is True
 
-    assert repository.soft_delete(alice.workspace_id, alice_conversation) is True
-
-    admin_connection.rollback()
+        transaction.rollback()
 
 
 def test_erasure_clears_conversations_and_messages(
@@ -249,7 +249,13 @@ def test_the_export_carries_the_message_content(
 
     exported = MessageStore().export(admin_connection, alice.workspace_id)
 
-    assert [record["content"] for record in exported] == ["alice said this"]
+    # Derived from the identity rather than written as a literal: `seed_identity`
+    # makes each email unique per run, and the fixture seeds the message content
+    # from it, so a hardcoded string here would assert against a value that never
+    # occurs.
+    owner = alice.email.split("@")[0]
+
+    assert [record["content"] for record in exported] == [f"{owner} said this"]
 
 
 def test_the_stored_role_vocabulary_matches_its_check_constraint(
@@ -304,23 +310,40 @@ def test_the_policies_are_what_makes_isolation_hold(
     """
     alice, bob, _a, _b = seeded_chat
 
-    with admin_connection.cursor() as cursor:
-        cursor.execute("ALTER TABLE public.conversations DISABLE ROW LEVEL SECURITY")
-
-    try:
+    # Both halves are asserted against the same query, so the control genuinely
+    # discriminates: with the policies in place Alice sees none of Bob's
+    # conversations, and with them disabled she sees one. Asserting only the
+    # breach would pass just as well against a harness that never applied her
+    # identity at all -- which is exactly the defect this file shipped with.
+    with admin_connection.transaction():
         cursor = as_user(admin_connection, alice.user_id)
         cursor.execute(
             "SELECT count(*) FROM public.conversations WHERE workspace_id = %s",
             (bob.workspace_id,),
         )
-        row = cursor.fetchone()
+        protected = cursor.fetchone()
 
-        assert row is not None
-        # The breach, observed directly.
-        assert row[0] == 1
+        assert protected is not None
+        assert protected[0] == 0
+
+    with admin_connection.cursor() as cursor:
+        cursor.execute("ALTER TABLE public.conversations DISABLE ROW LEVEL SECURITY")
+
+    admin_connection.commit()
+
+    try:
+        with admin_connection.transaction():
+            cursor = as_user(admin_connection, alice.user_id)
+            cursor.execute(
+                "SELECT count(*) FROM public.conversations WHERE workspace_id = %s",
+                (bob.workspace_id,),
+            )
+            breached = cursor.fetchone()
+
+            assert breached is not None
+            # The breach, observed directly.
+            assert breached[0] == 1
     finally:
-        admin_connection.rollback()
-
         with admin_connection.cursor() as cursor:
             cursor.execute("ALTER TABLE public.conversations ENABLE ROW LEVEL SECURITY")
 

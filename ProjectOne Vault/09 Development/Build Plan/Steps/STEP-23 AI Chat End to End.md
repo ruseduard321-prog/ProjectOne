@@ -78,12 +78,21 @@ Recorded during expansion, while the context was loaded.
 
 | Validation | Proven by | Where it runs |
 |---|---|---|
-| Tenant isolation | `test_chat_isolation.py` — 12 tests against real policies | **CI only** (needs PostgreSQL) |
+| Tenant isolation | `test_chat_isolation.py` — 12 tests against real policies | **CI only** (needs PostgreSQL — and see the note below: these errored on the first run) |
 | Erasure end to end | `test_erasure_clears_conversations_and_messages`, `test_erasure_leaves_the_other_tenant_untouched` | **CI only** |
 | Context bounded | `test_the_context_window_is_bounded`, `test_a_long_conversation_sends_no_more_than_the_window` | Local + CI |
 | Provider failure honest | `test_a_provider_failure_raises_rather_than_fabricating_a_reply`, `test_a_failed_turn_still_keeps_the_users_question`; UI side in `chat/actions.test.ts` | Local + CI |
 | Spend attributed | `AIService` `workflow_type="chat"`, metered by `test_ai_spend_isolation.py` | **CI only** |
 | Loading / empty / error states | `loading.tsx`, `error.tsx`, `EmptyState` branches in `page.tsx` | Build + CI |
+
+> [!example] What the first CI run caught
+> The first run of this step's PR **failed the `api` job**, and it is worth recording why rather than only that it was fixed.
+>
+> `test_chat_isolation.py` seeded its fixture from `identity.label` — an attribute `Identity` does not have. All **eleven** tests in the file errored during setup, so not one isolation, erasure or role-vocabulary assertion actually executed. The local suite reported a clean 418 passed throughout, because the whole file skips without PostgreSQL.
+>
+> CI ran **692 tests** against a real `postgres:17` where this machine manages 418. That gap is precisely the coverage the warning below describes, and it found a defect that a green local run would otherwise have carried into review as though it were proven.
+>
+> The lesson is not "the tests were wrong" but **a skipped security test looks identical to a passing one** in a local summary line. `PROJECTONE_REQUIRE_DATABASE_TESTS=1` in CI is what makes the difference visible, and it is why a green `api` job — not a green local run — is what this step's isolation and erasure claims rest on.
 
 > [!warning] The database-backed validation runs in CI, not on the development machine
 > This machine has no PostgreSQL, no Docker, and `apps/api/.env` carries a redacted `DATABASE_URL` placeholder rather than a usable credential, so **285 database-backed tests skip locally**. CI provisions a throwaway `postgres:17` and sets `PROJECTONE_REQUIRE_DATABASE_TESTS=1`, which turns those skips into hard failures — so a green `api` job is what actually proves isolation, erasure and spend metering.
