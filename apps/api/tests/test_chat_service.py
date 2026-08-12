@@ -29,12 +29,14 @@ from app.ai.errors import (
 from app.ai.health import ProviderHealthTracker
 from app.ai.provider import Role
 from app.ai.router import AIRouter
+from app.repositories.chat_turns import TurnClaim
 from app.repositories.conversations import ChatMessage, Conversation
 from app.services.ai_service import AIService
 from app.services.ai_spend_service import AISpendService
 from app.services.chat_service import (
     _CONTEXT_MESSAGE_LIMIT,
     ChatService,
+    TurnNotClaimableError,
     _title_from,
 )
 from app.services.provider_credential_service import ProviderCredentialService
@@ -125,7 +127,15 @@ class FakeConversationRepository:
         provider: str | None = None,
         model: str | None = None,
         token_count: int = 0,
+        turn_status: str | None = None,
+        reply_to: uuid.UUID | None = None,
     ) -> ChatMessage:
+        # Mirrors `uq_messages_reply_to`, which is total rather than partial: a
+        # turn is consumed permanently, so a second reply to one is refused even
+        # after the first is deleted.
+        if reply_to is not None and any(m.reply_to == reply_to for m in self.messages):
+            raise psycopg.errors.UniqueViolation(f"turn {reply_to} already has a reply")
+
         message = ChatMessage(
             id=uuid.uuid4(),
             workspace_id=workspace_id,
@@ -136,6 +146,8 @@ class FakeConversationRepository:
             model=model,
             token_count=token_count,
             created_at=datetime.now(UTC),
+            turn_status=turn_status,
+            reply_to=reply_to,
         )
         self.messages.append(message)
         return message
@@ -155,6 +167,60 @@ class FakeConversationRepository:
         self.history_limits.append(limit)
         stored = self.list_messages(workspace_id, conversation_id)
         return stored[-limit:]
+
+
+class FakeTurnRepository:
+    """An in-memory stand-in for `ChatTurnRepository`.
+
+    **This fake cannot prove the property the real one exists for.** The claim
+    is durable specifically because it commits on its own connection, outside
+    the request transaction that a provider failure rolls back -- and a dict has
+    no transaction to roll back, so these tests would pass against an
+    implementation that wrote the claim inside the request and lost it.
+
+    That is exactly how the original defect survived a green suite. The
+    transaction behaviour is asserted in `test_chat_turn_claims.py`, against a
+    real database, and this fake only covers the decisions layered on top of it.
+    """
+
+    def __init__(self) -> None:
+        self.status: dict[uuid.UUID, str] = {}
+        self.tokens: dict[uuid.UUID, uuid.UUID] = {}
+        self.claims: list[uuid.UUID] = []
+        self.releases: list[uuid.UUID] = []
+
+    def claim(self, workspace_id: uuid.UUID, user_message_id: uuid.UUID) -> object | None:
+        if self.status.get(user_message_id) != "pending":
+            return None
+
+        token = uuid.uuid4()
+        self.status[user_message_id] = "in_progress"
+        self.tokens[user_message_id] = token
+        self.claims.append(user_message_id)
+
+        return TurnClaim(user_message_id=user_message_id, claim_token=token)
+
+    def release(self, workspace_id: uuid.UUID, claim: TurnClaim) -> bool:
+        if self.tokens.get(claim.user_message_id) != claim.claim_token:
+            return False
+
+        self.status[claim.user_message_id] = "pending"
+        del self.tokens[claim.user_message_id]
+        self.releases.append(claim.user_message_id)
+
+        return True
+
+    def complete(self, workspace_id: uuid.UUID, claim: TurnClaim) -> bool:
+        if self.tokens.get(claim.user_message_id) != claim.claim_token:
+            return False
+
+        self.status[claim.user_message_id] = "completed"
+        del self.tokens[claim.user_message_id]
+
+        return True
+
+    def status_of(self, workspace_id: uuid.UUID, user_message_id: uuid.UUID) -> str | None:
+        return self.status.get(user_message_id)
 
 
 class FakeProjectRepository:
@@ -203,13 +269,61 @@ def build(
     if configure_key:
         credentials.store(workspace, "openai", KEY, uuid.uuid4())
 
-    return ChatService(conversations, projects, ai), conversations, projects, workspace  # type: ignore[arg-type]
+    turns = FakeTurnRepository()
+
+    service = ChatService(conversations, projects, ai, turns)  # type: ignore[arg-type]
+
+    # The fake mirrors the schema's own rule: a user message is `pending` from
+    # the moment it is stored. Wiring it here rather than in each test keeps the
+    # two halves of a turn in step without every test restating the setup.
+    original_add = conversations.add_message
+
+    def add_message(*args: object, **kwargs: object) -> ChatMessage:
+        message = original_add(*args, **kwargs)  # type: ignore[arg-type]
+
+        if message.role == "user":
+            turns.status[message.id] = "pending"
+
+        return message
+
+    conversations.add_message = add_message  # type: ignore[assignment,method-assign]
+
+    return service, conversations, projects, workspace
+
+
+def send(
+    service: ChatService,
+    workspace: uuid.UUID,
+    content: str,
+    actor: uuid.UUID | None = None,
+    conversation_id: uuid.UUID | None = None,
+    project_id: uuid.UUID | None = None,
+) -> object:
+    """Run both halves of a turn, as a caller does.
+
+    The API is two requests now (`start_turn`, then `complete_turn`), so a test
+    asserting end-to-end behaviour makes both calls. Kept as a helper rather
+    than repeated, so the *ordering* is stated in one place -- and a test that
+    deliberately exercises only one half calls that half directly.
+    """
+    actor_id = actor or uuid.uuid4()
+
+    pending = service.start_turn(
+        workspace, content, actor_id, conversation_id=conversation_id, project_id=project_id
+    )
+
+    return service.complete_turn(
+        workspace_id=workspace,
+        conversation_id=pending.conversation.id,
+        user_message_id=pending.user_message.id,
+        actor_id=actor_id,
+    )
 
 
 def test_a_turn_persists_the_question_and_the_reply() -> None:
     service, store, _, workspace = build()
 
-    turn = service.send_message(workspace, "What should I film?", uuid.uuid4())
+    turn = send(service, workspace, "What should I film?", uuid.uuid4())
 
     assert turn.user_message.role == "user"
     assert turn.assistant_message.role == "assistant"
@@ -221,7 +335,7 @@ def test_the_reply_records_which_provider_answered() -> None:
     # a reply that does not say which is one the caller cannot attribute.
     service, _, _, workspace = build((FakeProvider("openai", model="fake-model"),))
 
-    turn = service.send_message(workspace, "Hello", uuid.uuid4())
+    turn = send(service, workspace, "Hello", uuid.uuid4())
 
     assert turn.assistant_message.provider == "openai"
     assert turn.assistant_message.model == "fake-model"
@@ -230,7 +344,7 @@ def test_the_reply_records_which_provider_answered() -> None:
 def test_a_new_conversation_takes_its_title_from_the_first_message() -> None:
     service, _, _, workspace = build()
 
-    turn = service.send_message(workspace, "Plan my launch week", uuid.uuid4())
+    turn = send(service, workspace, "Plan my launch week", uuid.uuid4())
 
     assert turn.conversation.title == "Plan my launch week"
 
@@ -241,10 +355,10 @@ def test_the_context_window_is_bounded() -> None:
     service, store, _, workspace = build()
     actor = uuid.uuid4()
 
-    turn = service.send_message(workspace, "First", actor)
+    turn = send(service, workspace, "First", actor)
 
     for index in range(30):
-        service.send_message(workspace, f"Message {index}", actor, turn.conversation.id)
+        send(service, workspace, f"Message {index}", actor, turn.conversation.id)
 
     assert store.history_limits, "the service never read a bounded history"
     assert set(store.history_limits) == {_CONTEXT_MESSAGE_LIMIT}
@@ -257,10 +371,10 @@ def test_a_long_conversation_sends_no_more_than_the_window() -> None:
     service, _, _, workspace = build((provider,))
     actor = uuid.uuid4()
 
-    turn = service.send_message(workspace, "First", actor)
+    turn = send(service, workspace, "First", actor)
 
     for index in range(30):
-        service.send_message(workspace, f"Message {index}", actor, turn.conversation.id)
+        send(service, workspace, f"Message {index}", actor, turn.conversation.id)
 
     # One system instruction plus at most the window of stored turns.
     assert provider.requests_seen[-1] <= _CONTEXT_MESSAGE_LIMIT + 1
@@ -273,7 +387,7 @@ def test_a_provider_failure_raises_rather_than_fabricating_a_reply() -> None:
     )
 
     with pytest.raises(AllProvidersFailedError):
-        service.send_message(workspace, "Are you there?", uuid.uuid4())
+        send(service, workspace, "Are you there?", uuid.uuid4())
 
     assert all(message.role != "assistant" for message in store.messages)
 
@@ -286,7 +400,7 @@ def test_a_failed_turn_still_keeps_the_users_question() -> None:
     )
 
     with pytest.raises(AllProvidersFailedError):
-        service.send_message(workspace, "Remember this", uuid.uuid4())
+        send(service, workspace, "Remember this", uuid.uuid4())
 
     assert [message.content for message in store.messages] == ["Remember this"]
 
@@ -295,7 +409,7 @@ def test_a_workspace_with_no_key_fails_honestly() -> None:
     service, store, _, workspace = build(configure_key=False)
 
     with pytest.raises(NoProviderAvailableError):
-        service.send_message(workspace, "Hello", uuid.uuid4())
+        send(service, workspace, "Hello", uuid.uuid4())
 
     assert all(message.role != "assistant" for message in store.messages)
 
@@ -315,7 +429,7 @@ def test_an_unknown_conversation_id_starts_a_conversation_with_it() -> None:
     service, store, _, workspace = build()
     chosen = uuid.uuid4()
 
-    turn = service.send_message(workspace, "Hi", uuid.uuid4(), chosen)
+    turn = send(service, workspace, "Hi", uuid.uuid4(), chosen)
 
     assert turn.conversation.id == chosen
     assert store.conversations[chosen].workspace_id == workspace
@@ -328,14 +442,119 @@ def test_retrying_with_the_same_id_continues_one_conversation() -> None:
     chosen = uuid.uuid4()
     actor = uuid.uuid4()
 
-    service.send_message(workspace, "Hi", actor, chosen)
-    service.send_message(workspace, "Hi", actor, chosen)
+    send(service, workspace, "Hi", actor, chosen)
+    send(service, workspace, "Hi", actor, chosen)
 
     assert len(store.conversations) == 1
 
     # And the title still comes from the first message rather than being
     # rewritten by the retry -- the conversation was continued, not recreated.
     assert store.conversations[chosen].title == "Hi"
+
+
+def test_a_stored_question_survives_a_provider_failure() -> None:
+    # The defect manual testing caught, asserted at the service layer.
+    #
+    # `start_turn` makes no network call, so what it stores is committed before
+    # anything can fail. The old single-method design persisted the question and
+    # then called the provider inside one transaction, so the failure rolled the
+    # question back -- while this suite's fake, having no transaction, reported
+    # that it had not.
+    service, store, _, workspace = build(
+        (FakeProvider("openai", fail_with=ProviderUnavailableError("down", "openai")),)
+    )
+    actor = uuid.uuid4()
+
+    pending = service.start_turn(workspace, "Remember this", actor)
+
+    with pytest.raises(AllProvidersFailedError):
+        service.complete_turn(
+            workspace_id=workspace,
+            conversation_id=pending.conversation.id,
+            user_message_id=pending.user_message.id,
+            actor_id=actor,
+        )
+
+    assert [m.content for m in store.messages] == ["Remember this"]
+    assert all(m.role != "assistant" for m in store.messages)
+
+
+def test_a_failed_turn_is_released_so_it_can_be_retried() -> None:
+    # Releasing is what makes a provider outage retryable rather than terminal:
+    # the question stays stored and the turn becomes claimable again, so the
+    # user's retry is another attempt at the same question.
+    provider = FakeProvider("openai", fail_with=ProviderUnavailableError("down", "openai"))
+    service, _, _, workspace = build((provider,))
+    actor = uuid.uuid4()
+
+    pending = service.start_turn(workspace, "Hello", actor)
+
+    with pytest.raises(AllProvidersFailedError):
+        service.complete_turn(
+            workspace_id=workspace,
+            conversation_id=pending.conversation.id,
+            user_message_id=pending.user_message.id,
+            actor_id=actor,
+        )
+
+    turns = service._turns  # noqa: SLF001 - asserting the collaborator's state
+    assert turns.status[pending.user_message.id] == "pending"
+    assert turns.releases == [pending.user_message.id]
+
+
+def test_a_second_completion_of_one_turn_is_refused() -> None:
+    # The concurrency property, at the service layer: a turn already answered
+    # cannot be answered again, so a double-submitted completion cannot reach a
+    # provider twice. The database-backed half -- that concurrent claims
+    # serialise -- is in `test_chat_turn_claims.py`, where it can actually be
+    # proven.
+    service, store, _, workspace = build()
+    actor = uuid.uuid4()
+
+    pending = service.start_turn(workspace, "Hello", actor)
+    service.complete_turn(
+        workspace_id=workspace,
+        conversation_id=pending.conversation.id,
+        user_message_id=pending.user_message.id,
+        actor_id=actor,
+    )
+
+    with pytest.raises(TurnNotClaimableError):
+        service.complete_turn(
+            workspace_id=workspace,
+            conversation_id=pending.conversation.id,
+            user_message_id=pending.user_message.id,
+            actor_id=actor,
+        )
+
+    assert len([m for m in store.messages if m.role == "assistant"]) == 1
+
+
+def test_each_question_is_its_own_turn() -> None:
+    # Idempotency is per user message, not per conversation. Keying on the
+    # conversation would make a legitimate follow-up look like a retry and
+    # refuse it.
+    service, store, _, workspace = build()
+    actor = uuid.uuid4()
+
+    first = service.start_turn(workspace, "One", actor)
+    service.complete_turn(
+        workspace_id=workspace,
+        conversation_id=first.conversation.id,
+        user_message_id=first.user_message.id,
+        actor_id=actor,
+    )
+
+    second = service.start_turn(workspace, "Two", actor, conversation_id=first.conversation.id)
+    service.complete_turn(
+        workspace_id=workspace,
+        conversation_id=second.conversation.id,
+        user_message_id=second.user_message.id,
+        actor_id=actor,
+    )
+
+    assert first.conversation.id == second.conversation.id
+    assert len([m for m in store.messages if m.role == "assistant"]) == 2
 
 
 def test_another_tenants_conversation_is_not_continuable() -> None:
@@ -351,7 +570,7 @@ def test_another_tenants_conversation_is_not_continuable() -> None:
     theirs = store.create(uuid.uuid4(), "Theirs", None, uuid.uuid4())
 
     with pytest.raises(psycopg.errors.UniqueViolation):
-        service.send_message(workspace, "Hi", uuid.uuid4(), theirs.id)
+        send(service, workspace, "Hi", uuid.uuid4(), theirs.id)
 
     # Their conversation is untouched: same workspace, same title, and no
     # message was smuggled into it.
@@ -366,7 +585,7 @@ def test_the_active_project_reaches_the_model() -> None:
     project_id = uuid.uuid4()
     projects.projects[project_id] = StubProject(workspace, "Spring campaign", "Launch video")
 
-    service.send_message(workspace, "What next?", uuid.uuid4(), project_id=project_id)
+    send(service, workspace, "What next?", uuid.uuid4(), project_id=project_id)
 
     sent = provider.last_request
     assert sent is not None
@@ -382,7 +601,7 @@ def test_a_deleted_project_does_not_fail_the_turn() -> None:
     # contribute no context rather than break the conversation.
     service, _, _, workspace = build()
 
-    turn = service.send_message(workspace, "Still here?", uuid.uuid4(), project_id=uuid.uuid4())
+    turn = send(service, workspace, "Still here?", uuid.uuid4(), project_id=uuid.uuid4())
 
     assert turn.assistant_message.content
 
@@ -391,7 +610,7 @@ def test_a_conversation_without_a_project_sends_no_project_context() -> None:
     provider = FakeProvider("openai")
     service, _, _, workspace = build((provider,))
 
-    service.send_message(workspace, "Hello", uuid.uuid4())
+    send(service, workspace, "Hello", uuid.uuid4())
 
     sent = provider.last_request
     assert sent is not None
@@ -401,7 +620,7 @@ def test_a_conversation_without_a_project_sends_no_project_context() -> None:
 
 def test_deleting_a_conversation_reports_whether_it_existed() -> None:
     service, store, _, workspace = build()
-    turn = service.send_message(workspace, "Hello", uuid.uuid4())
+    turn = send(service, workspace, "Hello", uuid.uuid4())
 
     assert service.delete_conversation(workspace, turn.conversation.id) is True
     assert service.delete_conversation(workspace, turn.conversation.id) is False
@@ -414,9 +633,9 @@ def test_a_conversations_project_is_fixed_after_creation() -> None:
     first = uuid.uuid4()
     projects.projects[first] = StubProject(workspace, "First", None)
 
-    turn = service.send_message(workspace, "Hello", uuid.uuid4(), project_id=first)
-    again = service.send_message(
-        workspace, "Again", uuid.uuid4(), turn.conversation.id, project_id=uuid.uuid4()
+    turn = send(service, workspace, "Hello", uuid.uuid4(), project_id=first)
+    again = send(
+        service, workspace, "Again", uuid.uuid4(), turn.conversation.id, project_id=uuid.uuid4()
     )
 
     assert again.conversation.project_id == first
@@ -426,10 +645,10 @@ def test_the_transcript_is_unbounded_while_the_context_is_not() -> None:
     # The window bounds spend, not the user's access to their own history.
     service, _, _, workspace = build()
     actor = uuid.uuid4()
-    turn = service.send_message(workspace, "First", actor)
+    turn = send(service, workspace, "First", actor)
 
     for index in range(25):
-        service.send_message(workspace, f"Message {index}", actor, turn.conversation.id)
+        send(service, workspace, f"Message {index}", actor, turn.conversation.id)
 
     transcript = service.list_messages(workspace, turn.conversation.id)
 

@@ -90,6 +90,31 @@ class MessageSendRequest(BaseModel):
     project_id: str | None = None
 
 
+class CompletionRequestBody(BaseModel):
+    """Which stored question to answer.
+
+    The turn key is the *user message* id, not the conversation id: a
+    conversation holds many turns, and naming the conversation would make a
+    second question in the same conversation look like a retry of the first.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    user_message_id: str
+
+
+class PendingTurnResponse(BaseModel):
+    """A stored question awaiting its answer.
+
+    What `POST /chat/conversations` returns. The client needs both ids: the
+    conversation to navigate to, and the message id that names this turn for
+    the completion call that follows.
+    """
+
+    conversation: ConversationResponse
+    user_message: MessageResponse
+
+
 class MessageResponse(BaseModel):
     """One stored message."""
 

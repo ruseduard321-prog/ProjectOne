@@ -23,7 +23,8 @@ _CONVERSATION_COLUMNS = (
 )
 
 _MESSAGE_COLUMNS = (
-    "id, workspace_id, conversation_id, role, content, provider, model, token_count, created_at"
+    "id, workspace_id, conversation_id, role, content, provider, model, token_count, "
+    "created_at, turn_status, reply_to"
 )
 
 
@@ -66,6 +67,18 @@ class ChatMessage:
     token_count: int
     created_at: datetime
 
+    #: Where this question is in being answered, or None on a reply.
+    #:
+    #: `pending` until a completion claims it, `in_progress` while a provider
+    #: call is in flight, `completed` once the reply is stored. A turn stuck in
+    #: `in_progress` is one whose process died mid-call -- STEP-23 surfaces that
+    #: rather than recovering from it, because the provider may already have
+    #: charged for the request.
+    turn_status: str | None = None
+
+    #: The question an assistant reply answers, or None on a question.
+    reply_to: uuid.UUID | None = None
+
 
 def _conversation_from_row(row: tuple[object, ...]) -> Conversation:
     """Build a `Conversation` from a row selected with `_CONVERSATION_COLUMNS`."""
@@ -93,6 +106,8 @@ def _message_from_row(row: tuple[object, ...]) -> ChatMessage:
         model=row[6],  # type: ignore[arg-type]
         token_count=row[7],  # type: ignore[arg-type]
         created_at=row[8],  # type: ignore[arg-type]
+        turn_status=row[9],  # type: ignore[arg-type]
+        reply_to=row[10],  # type: ignore[arg-type]
     )
 
 
@@ -244,8 +259,26 @@ class ConversationRepository:
         provider: str | None = None,
         model: str | None = None,
         token_count: int = 0,
+        turn_status: str | None = None,
+        reply_to: uuid.UUID | None = None,
     ) -> ChatMessage:
         """Append one message to a conversation.
+
+        Args:
+            workspace_id: The tenant, from the verified request context.
+            conversation_id: Which conversation to append to.
+            role: `user` or `assistant`, the vocabulary the CHECK permits.
+            content: What was said.
+            provider: Which provider produced an assistant message.
+            model: Which model produced it.
+            token_count: What it consumed.
+            turn_status: `pending` on a user message awaiting an answer. Null on
+                an assistant message, which is not a turn to be claimed --
+                `ck_messages_turn_state_matches_role` enforces the pairing.
+            reply_to: The user message an assistant reply answers. Refused by
+                `app_messages_reply_eligible` unless it names a `user` message
+                in the same conversation, and by `uq_messages_reply_to` if that
+                turn already has a reply.
 
         Returns:
             The stored message. A cross-tenant `conversation_id` raises
@@ -257,8 +290,8 @@ class ConversationRepository:
                 f"""
                 INSERT INTO public.messages
                     (workspace_id, conversation_id, role, content,
-                     provider, model, token_count)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                     provider, model, token_count, turn_status, reply_to)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING {_MESSAGE_COLUMNS}
                 """,  # noqa: S608 - module constant, not input
                 (
@@ -269,6 +302,8 @@ class ConversationRepository:
                     provider,
                     model,
                     token_count,
+                    turn_status,
+                    reply_to,
                 ),
             )
             row = cursor.fetchone()

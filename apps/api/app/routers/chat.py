@@ -47,11 +47,13 @@ from app.core.permissions import WorkspacePermission, WorkspaceRole
 from app.core.user_rate_limit import limit_by_user
 from app.repositories.conversations import ChatMessage, Conversation
 from app.schemas.chat import (
+    CompletionRequestBody,
     ConversationDetailResponse,
     ConversationResponse,
     MessageResponse,
     MessageRole,
     MessageSendRequest,
+    PendingTurnResponse,
     TurnResponse,
 )
 from app.services.chat_service import ConversationNotFoundError
@@ -117,6 +119,17 @@ def _parse_optional_uuid(value: str | None, field: str) -> uuid.UUID | None:
         ) from error
 
 
+def _parse_uuid(value: str, field: str) -> uuid.UUID:
+    """Parse a required id from a request body, or refuse it as a 422."""
+    try:
+        return uuid.UUID(value)
+    except ValueError as error:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"{field} is not a valid identifier",
+        ) from error
+
+
 @router.get(
     "/conversations",
     response_model=list[ConversationResponse],
@@ -171,48 +184,89 @@ def read_conversation(
 
 
 @router.post(
-    "/messages",
-    response_model=TurnResponse,
+    "/conversations",
+    response_model=PendingTurnResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Send a message and receive the reply",
-    # The only route here that reaches a provider, so the only one with a limit
-    # this tight. Generous enough that a person typing never meets it and a
-    # script does.
+    summary="Store a question, without answering it",
     dependencies=[Depends(limit_by_user("chat-message", limit=20, window_seconds=60))],
 )
-def send_message(
+def start_turn(
     workspace_id: uuid.UUID,
     request: MessageSendRequest,
     user: CurrentUserDep,
     chat: ChatServiceDep,
     _role: _MemberOfWorkspace,
-) -> TurnResponse:
-    """Run one turn: persist the question, call the model, persist the reply.
+) -> PendingTurnResponse:
+    """Persist a question and return the ids needed to answer it.
 
-    **201 because a turn creates two messages.** A failed *completion* does not
-    reach this return at all -- it raises, and the handler table answers 502 or
-    503 with nothing fabricated in the transcript. That is the inverse of
-    STEP-22's rule that a failed *run* is a 201: there, the run was created and
-    recorded why it stopped, so the resource exists; here, no assistant message
-    exists to return.
+    **The first of two requests, and the split is the point.**
 
-    The user's message is persisted either way, so a provider outage costs the
-    user their answer but never their question.
+    A turn used to be one request: persist the question, call the provider,
+    persist the reply. Because the whole request runs in one transaction
+    (`RequestSessionFactory.authenticated_as`), a provider failure rolled the
+    question back with it -- the UI reported "your message was saved" while
+    nothing had been. The transaction boundary cannot simply be moved: a commit
+    discards `SET LOCAL ROLE`, which would continue the request with RLS off.
 
-    **`conversation_id` may name a conversation that does not exist yet**, and
-    one is created with that id. This is what makes the failure above
-    recoverable: the client knows the id before it calls, so a failed first turn
-    still leaves it able to open the conversation holding its saved question, and
-    a retry continues that conversation instead of starting a second one. An id
-    belonging to another workspace is invisible under RLS and refused by the
-    primary key, never adopted -- see `ChatService._resolve_conversation`.
+    This request makes no network call, so what it stores is durable before any
+    provider is contacted. `POST /conversations/{id}/completion` then answers it.
+
+    201 because a question is created. The reply is a separate resource, created
+    by a separate request.
     """
-    turn = chat.send_message(
+    turn = chat.start_turn(
         workspace_id=workspace_id,
         content=request.content,
         actor_id=user.id,
         conversation_id=_parse_optional_uuid(request.conversation_id, "conversation_id"),
         project_id=_parse_optional_uuid(request.project_id, "project_id"),
+    )
+
+    return PendingTurnResponse(
+        conversation=_conversation_response(turn.conversation),
+        user_message=_message_response(turn.user_message),
+    )
+
+
+@router.post(
+    "/conversations/{conversation_id}/completion",
+    response_model=TurnResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Answer a stored question",
+    # The only route here that reaches a provider, so the only one with a limit
+    # this tight. Generous enough that a person typing never meets it and a
+    # script does.
+    dependencies=[Depends(limit_by_user("chat-message", limit=20, window_seconds=60))],
+)
+def complete_turn(
+    workspace_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    request: CompletionRequestBody,
+    user: CurrentUserDep,
+    chat: ChatServiceDep,
+    _role: _MemberOfWorkspace,
+) -> TurnResponse:
+    """Answer a stored question, calling a provider at most once.
+
+    **The second of two requests.** The turn is claimed with a conditional
+    UPDATE, committed before the network call, so concurrent completions of the
+    same question produce exactly one provider invocation and one charge -- not
+    one stored reply after two bills, which is all a unique index would give.
+
+    A provider failure releases the claim and answers 502/503, leaving the
+    question stored and the turn immediately retryable. That is the honest
+    contract STEP-23 promises, now actually kept.
+
+    409 when the turn is already being answered or has been -- including a turn
+    whose process died mid-call, which stays claimed on purpose. Recovering it
+    automatically would risk paying twice for one question, so it is surfaced
+    rather than retried.
+    """
+    turn = chat.complete_turn(
+        workspace_id=workspace_id,
+        conversation_id=conversation_id,
+        user_message_id=_parse_uuid(request.user_message_id, "user_message_id"),
+        actor_id=user.id,
     )
 
     return TurnResponse(

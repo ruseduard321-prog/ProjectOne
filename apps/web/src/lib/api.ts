@@ -658,6 +658,18 @@ export interface ApiTurn {
   readonly assistant_message: ApiChatMessage;
 }
 
+/**
+ * A stored question awaiting its answer.
+ *
+ * No `assistant_message`, and that absence is the contract: this is what exists
+ * after the question is saved and before any provider has been asked. The
+ * `user_message.id` is the turn key the completion call names.
+ */
+export interface ApiPendingTurn {
+  readonly conversation: ApiConversation;
+  readonly user_message: ApiChatMessage;
+}
+
 export function listConversations(
   accessToken: string,
   workspaceId: string,
@@ -692,15 +704,22 @@ export function readConversation(
  * can fail with a governance refusal (402/503) or a provider error (502/503).
  * Those are rendered as messages, never as a fabricated reply.
  */
-export function sendChatMessage(
+/**
+ * Store a question without answering it.
+ *
+ * The first of two calls. It makes no provider request, so what it stores
+ * survives whatever happens to the completion that follows — which is the whole
+ * reason a turn is split in two. See {@link completeChatTurn}.
+ */
+export function startChatTurn(
   accessToken: string,
   workspaceId: string,
   content: string,
   conversationId?: string,
   projectId?: string,
-): Promise<ApiTurn> {
-  return apiRequest<ApiTurn>({
-    path: `/workspaces/${workspaceId}/chat/messages`,
+): Promise<ApiPendingTurn> {
+  return apiRequest<ApiPendingTurn>({
+    path: `/workspaces/${workspaceId}/chat/conversations`,
     method: "POST",
     // Optional ids are omitted rather than sent as null: the request model
     // forbids extra fields, and an explicit null would say the same thing less
@@ -715,6 +734,31 @@ export function sendChatMessage(
       ...(conversationId === undefined ? {} : { conversation_id: conversationId }),
       ...(projectId === undefined ? {} : { project_id: projectId }),
     },
+    accessToken,
+  });
+}
+
+/**
+ * Answer a stored question.
+ *
+ * The second of two calls, and the only one that reaches a provider. The server
+ * claims the turn before calling out, so two concurrent completions of the same
+ * question produce one invocation and one charge — not one stored reply after
+ * two bills.
+ *
+ * A failure here leaves the question stored and the turn retryable: call again
+ * with the same `userMessageId`.
+ */
+export function completeChatTurn(
+  accessToken: string,
+  workspaceId: string,
+  conversationId: string,
+  userMessageId: string,
+): Promise<ApiTurn> {
+  return apiRequest<ApiTurn>({
+    path: `/workspaces/${workspaceId}/chat/conversations/${conversationId}/completion`,
+    method: "POST",
+    body: { user_message_id: userMessageId },
     accessToken,
   });
 }

@@ -27,8 +27,9 @@ import { redirect } from "next/navigation";
 import {
   ApiError,
   ApiUnreachableError,
+  completeChatTurn,
   deleteConversation,
-  sendChatMessage,
+  startChatTurn,
 } from "@/lib/api";
 import { resolveAccessToken } from "@/lib/auth";
 import type { FormState } from "@/lib/form-state";
@@ -149,13 +150,28 @@ const SESSION_LOST: FormState = {
  * primary key, and the server refuses a collision rather than merging into
  * whatever holds it.
  *
- * ## Both outcomes navigate
+ * ## Two calls, because one transaction could not keep the promise
  *
- * Success and provider failure both end at `?conversation=<id>`, because in both
- * cases that conversation now exists and holds the user's question. The
- * difference is what is shown there — a reply, or an honest error and the
- * unanswered question still in the transcript. Navigating only on success is
- * what stranded the failed turn.
+ * Sending is `startChatTurn` then `completeChatTurn`. The split is not
+ * cosmetic: the API runs each request inside one transaction, so when a single
+ * request persisted the question *and* called the provider, a provider failure
+ * rolled the question back with it. This screen said "your message was saved"
+ * while nothing had been — found in manual testing, after every unit test on
+ * both sides passed.
+ *
+ * Step 1 contacts no provider, so it commits. By the time step 2 can fail, the
+ * question is durable.
+ *
+ * ## Both outcomes keep the question visible
+ *
+ * Success and provider failure both end with the conversation open at
+ * `?conversation=<id>`, because in both cases it exists and holds what the user
+ * typed. The difference is what sits beside it — a reply, or an honest error
+ * above the unanswered question.
+ *
+ * Retrying re-sends the same text, which stores a *new* question and answers
+ * that one. The turn key makes the server side idempotent per question, so a
+ * double-submitted completion cannot bill twice for the same one.
  *
  * `project_id` is only meaningful when starting one: an existing conversation's
  * project is fixed, because its earlier turns were already answered against it.
@@ -188,8 +204,15 @@ export async function sendMessageAction(
   const conversationId = openConversationId === "" ? randomUUID() : openConversationId;
   const isNewConversation = openConversationId === "";
 
+  /*
+   * Step 1 — store the question. No provider is contacted, so this commits and
+   * what it saves is durable. A failure here means nothing was stored, which is
+   * why it returns rather than navigating: there is no conversation to open.
+   */
+  let pending;
+
   try {
-    await sendChatMessage(
+    pending = await startChatTurn(
       accessToken,
       workspaceId,
       content,
@@ -197,31 +220,49 @@ export async function sendMessageAction(
       projectId === "" ? undefined : projectId,
     );
   } catch (error) {
+    return toFormState(error);
+  }
+
+  /*
+   * Step 2 — answer it. This is the call that can fail for reasons outside the
+   * user's control, and by now their question is already saved, so every exit
+   * below leaves it visible and retryable.
+   */
+  try {
+    await completeChatTurn(
+      accessToken,
+      workspaceId,
+      pending.conversation.id,
+      pending.user_message.id,
+    );
+  } catch (error) {
     const state = toFormState(error);
 
     /*
-     * A failed *first* turn still created the conversation and saved the
-     * question — the API persists both before it calls a provider. Leaving the
-     * screen where it is would show "your message was saved" beside no
-     * conversation at all, which is the contradiction this branch exists to
-     * remove.
+     * The question is stored — step 1 committed before any provider was
+     * contacted — so the screen must show it whatever went wrong here. That is
+     * now true for a reply as well as a first message, which it was not when
+     * the turn was a single request: back then a failure rolled the question
+     * back, and the promise "your message was saved" was false.
      *
-     * The error travels in the URL rather than in the returned state, because
-     * `redirect` throws and the state is discarded. The alternative — staying
-     * put and returning the id — keeps the message but strands the conversation,
-     * which is the defect itself. Navigating with the reason attached is the
-     * only option that preserves both.
+     * Revalidate so the transcript re-renders with the unanswered question in
+     * it, and carry the reason in the URL because `redirect` throws and the
+     * returned state would be discarded.
      *
-     * Only for a new conversation. Continuing an open one is already at the
-     * right URL, and redirecting would discard the error for no gain.
+     * A *new* conversation must navigate — nothing on screen points at it yet.
+     * An open one is already at the right URL, so it revalidates in place and
+     * returns the error for the form to render, keeping focus where the user
+     * left it.
      *
-     * `SESSION_LOST` and an empty message return earlier, so neither reaches
-     * here — nothing was created in those cases and there is nothing to open.
+     * `SESSION_LOST`, an empty message and a failed step 1 all return earlier:
+     * in those cases nothing was stored and there is nothing to open.
      */
+    revalidatePath(CHAT_PATH);
+
     if (isNewConversation && state.formError !== undefined) {
-      revalidatePath(CHAT_PATH);
       redirect(
-        `${CHAT_PATH}?conversation=${conversationId}&error=${encodeURIComponent(state.formError)}`,
+        `${CHAT_PATH}?conversation=${pending.conversation.id}` +
+          `&error=${encodeURIComponent(state.formError)}`,
       );
     }
 

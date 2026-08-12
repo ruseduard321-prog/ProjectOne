@@ -45,6 +45,10 @@ from dataclasses import dataclass
 
 from app.ai.provider import CompletionRequest, Message, Role
 from app.core.logging import get_logger, log_context
+from app.repositories.chat_turns import (
+    PENDING,
+    ChatTurnRepository,
+)
 from app.repositories.conversations import (
     ChatMessage,
     Conversation,
@@ -95,6 +99,44 @@ class ConversationTurn:
     assistant_message: ChatMessage
 
 
+@dataclass(frozen=True)
+class PendingTurn:
+    """A stored question awaiting its answer.
+
+    What `start_turn` returns, and what the client needs to ask for a
+    completion: the conversation to navigate to, and the user message id that
+    identifies this turn for the rest of its life.
+    """
+
+    conversation: Conversation
+    user_message: ChatMessage
+
+
+class TurnNotClaimableError(Exception):
+    """The turn is already being answered, or has been.
+
+    Raised rather than silently answering again. A second concurrent completion
+    must not reach a provider -- that is a duplicate charge, not a duplicate
+    row -- and a caller who asked to complete a turn someone else is completing
+    deserves to be told, not quietly given someone else's answer as though they
+    had caused it.
+
+    **A turn stuck by a crash raises this too**, rather than a distinct error,
+    and the reason is that the database cannot tell the two apart: a turn
+    abandoned by a dead process and one a live process is answering right now
+    are both `in_progress` with a token and a timestamp. Distinguishing them
+    needs a lease, and a lease is exactly what STEP-23 excludes -- expiring one
+    would return the turn to `pending` and risk re-invoking a provider that has
+    already accepted and charged for the request.
+
+    `claimed_at` is recorded for an operator diagnosing the difference by hand.
+    Nothing in this step reads it to make a decision; reconciliation belongs to
+    the follow-up ADR-backed step.
+    """
+
+    public_message = "This message is already being answered"
+
+
 class ChatService:
     """Holds conversations, assembles their context, and runs one turn at a time."""
 
@@ -103,6 +145,7 @@ class ChatService:
         conversations: ConversationRepository,
         projects: ProjectRepository,
         ai: AIService,
+        turns: ChatTurnRepository,
     ) -> None:
         """Wire the transcript store, the project store and the governed AI path.
 
@@ -115,6 +158,7 @@ class ChatService:
         self._conversations = conversations
         self._projects = projects
         self._ai = ai
+        self._turns = turns
 
     def list_conversations(self, workspace_id: uuid.UUID) -> tuple[Conversation, ...]:
         """Return every live conversation in a workspace, most recently active first."""
@@ -145,65 +189,121 @@ class ChatService:
         """
         return self._conversations.soft_delete(workspace_id, conversation_id)
 
-    def send_message(
+    def start_turn(
         self,
         workspace_id: uuid.UUID,
         content: str,
         actor_id: uuid.UUID,
         conversation_id: uuid.UUID | None = None,
         project_id: uuid.UUID | None = None,
-    ) -> ConversationTurn:
-        """Run one turn: persist the question, call the model, persist the reply.
+    ) -> PendingTurn:
+        """Persist a question, and nothing else.
+
+        **The first half of a turn, and the reason a turn is split at all.**
+
+        The single-request design persisted the question and then called the
+        provider inside one request -- and therefore inside one transaction,
+        because `RequestSessionFactory.authenticated_as` wraps the whole request.
+        A provider failure rolled the question back with it, so the screen said
+        "your message was saved" while nothing had been. Found by manual testing
+        rather than review: every unit test asserted against an in-memory fake
+        with no transaction semantics, so the assertion passed while the
+        behaviour did not.
+
+        This method makes no network call, so it commits cleanly. What it stores
+        survives whatever happens next.
 
         Args:
             workspace_id: The tenant, from the verified request context.
             content: What the user said.
             actor_id: Who said it, for `created_by` and spend attribution.
             conversation_id: The conversation to continue, or the id to start one
-                with. None lets the database choose. See
-                `_resolve_conversation` for why an unknown id creates rather
-                than refuses.
+                with. None lets the database choose. See `_resolve_conversation`
+                for why an unknown id creates rather than refuses.
             project_id: The project a *new* conversation is about. Ignored when
-                continuing an existing one, whose project is already fixed --
-                changing it mid-conversation would silently rewrite what earlier
-                turns were answered against.
+                continuing an existing one, whose project is already fixed.
 
         Returns:
-            The conversation and both messages of the completed turn.
-
-        Raises:
-            ProviderError: The provider failed, or none was available. Raised
-                rather than answered with a fabricated reply (CLAUDE.md §15).
-            GovernanceError: A spend ceiling, breaker or shutdown refused the
-                call before any provider was contacted.
+            The conversation and the stored question. The user message's id is
+            the turn key every later completion names.
         """
         conversation = self._resolve_conversation(
             workspace_id, content, actor_id, conversation_id, project_id
         )
 
-        # Persisted before the call, so a provider failure does not also discard
-        # what the user typed. See the module docstring.
         user_message = self._conversations.add_message(
             workspace_id=workspace_id,
             conversation_id=conversation.id,
             role="user",
             content=content,
+            turn_status=PENDING,
         )
 
-        request = CompletionRequest(
-            messages=self._context_for(workspace_id, conversation),
-            workspace_id=workspace_id,
-        )
+        self._conversations.touch(workspace_id, conversation.id)
 
-        # No try/except: a failure must reach the route, which translates it into
-        # an honest status. Catching it here to store a placeholder reply would
-        # be the fabricated answer CLAUDE.md §15 forbids -- and the user's
-        # message is already safely persisted above.
-        response = self._ai.complete(
-            workspace_id=workspace_id,
-            request=request,
-            actor_id=actor_id,
-        )
+        return PendingTurn(conversation=conversation, user_message=user_message)
+
+    def complete_turn(
+        self,
+        workspace_id: uuid.UUID,
+        conversation_id: uuid.UUID,
+        user_message_id: uuid.UUID,
+        actor_id: uuid.UUID,
+    ) -> ConversationTurn:
+        """Answer a stored question, calling the provider at most once.
+
+        **The second half, and where the concurrency control lives.**
+
+        The turn is claimed with a conditional UPDATE before any network call,
+        and that claim is committed on its own connection -- so the provider
+        request runs with no transaction open and no row locked, while a second
+        concurrent caller cannot reach a provider at all.
+
+        A unique index on the reply was tried first and rejected: it prevents a
+        duplicate reply *row*, but only after both callers have already invoked
+        and been billed. It deduplicates storage, never spend. The index is kept
+        as defence in depth, not as the mechanism.
+
+        Raises:
+            ConversationNotFoundError: no such conversation or message here.
+            TurnNotClaimableError: another caller holds the turn, or it is done.
+            ProviderError: the provider failed. The claim is released first, so
+                the turn stays retryable.
+            GovernanceError: a ceiling refused the call before any provider was
+                contacted. Also released.
+        """
+        conversation = self._conversations.get(workspace_id, conversation_id)
+
+        if conversation is None:
+            raise ConversationNotFoundError(
+                f"Conversation {conversation_id} was not found in this workspace"
+            )
+
+        claim = self._turns.claim(workspace_id, user_message_id)
+
+        if claim is None:
+            raise self._not_claimable(workspace_id, user_message_id)
+
+        # Everything below runs with the claim committed and no transaction of
+        # ours open. A failure must release it, or the turn is stranded in
+        # exactly the state this step refuses to recover from automatically.
+        try:
+            request = CompletionRequest(
+                messages=self._context_for(workspace_id, conversation),
+                workspace_id=workspace_id,
+            )
+
+            response = self._ai.complete(
+                workspace_id=workspace_id,
+                request=request,
+                actor_id=actor_id,
+            )
+        except Exception:
+            # Released rather than left claimed: an ordinary failure must leave
+            # the turn retryable. The spend reservation is settled by
+            # `AIService`'s own `finally`, so no charge leaks either.
+            self._turns.release(workspace_id, claim)
+            raise
 
         assistant_message = self._conversations.add_message(
             workspace_id=workspace_id,
@@ -213,10 +313,12 @@ class ChatService:
             provider=response.provider,
             model=response.model,
             token_count=response.usage.total_tokens,
+            reply_to=user_message_id,
         )
 
-        # So the conversation list orders by real activity. Explicit rather than
-        # trigger-driven -- see `ConversationRepository.touch`.
+        # After the reply is stored, never before: a turn marked complete
+        # without one could never be retried and would have no answer.
+        self._turns.complete(workspace_id, claim)
         self._conversations.touch(workspace_id, conversation.id)
 
         logger.info(
@@ -232,8 +334,45 @@ class ChatService:
 
         return ConversationTurn(
             conversation=conversation,
-            user_message=user_message,
+            user_message=self._user_message(workspace_id, conversation_id, user_message_id),
             assistant_message=assistant_message,
+        )
+
+    def _not_claimable(
+        self,
+        workspace_id: uuid.UUID,
+        user_message_id: uuid.UUID,
+    ) -> Exception:
+        """Choose the honest error for a turn that could not be claimed.
+
+        A turn absent from this workspace is a 404 for the reason
+        `ConversationNotFoundError` gives -- absent and hidden must not be
+        distinguishable. Anything else is a live or finished turn, and the
+        caller is told so rather than being handed someone else's answer as
+        though they had caused it.
+        """
+        status = self._turns.status_of(workspace_id, user_message_id)
+
+        if status is None:
+            return ConversationNotFoundError(
+                f"Message {user_message_id} was not found in this conversation"
+            )
+
+        return TurnNotClaimableError(TurnNotClaimableError.public_message)
+
+    def _user_message(
+        self,
+        workspace_id: uuid.UUID,
+        conversation_id: uuid.UUID,
+        user_message_id: uuid.UUID,
+    ) -> ChatMessage:
+        """Read back the question this turn answered."""
+        for message in self._conversations.list_messages(workspace_id, conversation_id):
+            if message.id == user_message_id:
+                return message
+
+        raise ConversationNotFoundError(  # pragma: no cover - defensive
+            f"Message {user_message_id} was not found in this conversation"
         )
 
     def _resolve_conversation(

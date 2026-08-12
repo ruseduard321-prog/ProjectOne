@@ -31,6 +31,7 @@ from app.core.permissions import WorkspacePermission, WorkspaceRole
 from app.core.security import InvalidTokenError
 from app.repositories.ai_spend import AISpendRepository
 from app.repositories.audit import AuditRepository
+from app.repositories.chat_turns import ChatTurnRepository
 from app.repositories.conversations import ConversationRepository
 from app.repositories.database import DatabaseRepository
 from app.repositories.memberships import MembershipRepository
@@ -540,10 +541,25 @@ def get_conversation_repository(connection: TenantConnectionDep) -> Conversation
 ConversationRepositoryDep = Annotated[ConversationRepository, Depends(get_conversation_repository)]
 
 
+def get_chat_turn_repository(settings: SettingsDep) -> ChatTurnRepository:
+    """Construct the turn-claim repository.
+
+    Takes `Settings` rather than the request's tenant connection, deliberately.
+    A claim must survive the failure of the call it guards, and the tenant
+    connection's transaction is rolled back by exactly that failure -- so a
+    claim written there would not be a claim at all. See the module docstring.
+    """
+    return ChatTurnRepository(settings)
+
+
+ChatTurnRepositoryDep = Annotated[ChatTurnRepository, Depends(get_chat_turn_repository)]
+
+
 def get_chat_service(
     conversations: ConversationRepositoryDep,
     projects: ProjectRepositoryDep,
     ai: AIServiceDep,
+    turns: ChatTurnRepositoryDep,
 ) -> ChatService:
     """Construct the chat service.
 
@@ -552,7 +568,7 @@ def get_chat_service(
     that applies the CLAUDE.md §15a controls, so chat cannot become a second path
     to a provider that spends without a ceiling.
     """
-    return ChatService(conversations, projects, ai)
+    return ChatService(conversations, projects, ai, turns)
 
 
 ChatServiceDep = Annotated[ChatService, Depends(get_chat_service)]

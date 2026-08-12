@@ -87,7 +87,7 @@ from app.core.security import (
 # imports only `app.core.logging` and `app.repositories.projects`, so there is
 # no cycle -- asserted by `test_no_import_cycle_reaches_the_error_contract`
 # rather than left to be discovered at startup.
-from app.services.chat_service import ConversationNotFoundError
+from app.services.chat_service import ConversationNotFoundError, TurnNotClaimableError
 from app.services.project_service import IllegalTransitionError, ProjectNotFoundError
 from app.workflows.models import RunNotFoundError, RunNotResumableError, WorkflowError
 
@@ -480,6 +480,11 @@ EXCEPTION_HANDLERS: tuple[tuple[type[Exception] | int, Any], ...] = (
     # that is -- reusing the handler rather than writing a third that returns an
     # identical body, for the reason the workflow entries above give.
     (ConversationNotFoundError, _resource_not_found),
+    # 409, matching the last-owner rule rather than 403 or 500: the caller holds
+    # every permission this needs, and what refuses them is the turn's *state*.
+    # A turn already being answered -- or one left claimed by a process that
+    # died mid-call -- is a conflict, and re-authenticating would not help.
+    (TurnNotClaimableError, _last_owner_conflict),
     # Registered as the base class: every provider failure is answered by the
     # branch inside the handler, so a new subclass in `app.ai.errors` is covered
     # the moment it is raised rather than falling through to `_unhandled`.

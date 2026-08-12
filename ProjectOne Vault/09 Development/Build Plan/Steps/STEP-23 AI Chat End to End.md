@@ -85,6 +85,12 @@ Recorded during expansion, while the context was loaded.
 | A message is immutable, including while being deleted | `test_a_message_cannot_be_rewritten_while_being_soft_deleted`, `test_no_attributed_field_survives_a_soft_delete` (5 fields), `test_an_ordinary_message_soft_delete_is_still_permitted` | **CI only** |
 | A client-supplied id cannot reach another tenant | `test_a_client_supplied_id_cannot_adopt_another_tenants_conversation`, `test_another_tenants_conversation_is_not_continuable` | CI / Local |
 | A failed first turn is reachable, and a retry does not duplicate it | `test_retrying_with_the_same_id_continues_one_conversation`; UI side in `chat/actions.test.ts` | Local + CI |
+| **A stored question survives a provider failure** | `test_a_stored_question_survives_a_provider_failure`, `test_a_claim_survives_a_rolled_back_request_transaction` | Local + **CI only** for the transaction half |
+| **Concurrent completions invoke a provider once** | `test_only_one_of_many_concurrent_callers_may_invoke_a_provider` (4 real threads) | **CI only** |
+| A superseded claim cannot settle a turn | `test_a_superseded_claim_cannot_settle_the_turn` | **CI only** |
+| One turn admits one reply, even after deletion | `test_one_turn_admits_one_reply_even_after_it_is_deleted` | **CI only** |
+| A reply must answer a user message in its own conversation | `test_a_reply_must_answer_a_user_message_in_its_own_conversation` | **CI only** |
+| Another tenant's turn cannot be claimed | `test_another_tenants_turn_cannot_be_claimed` | **CI only** |
 | Spend attributed | `AIService` `workflow_type="chat"`, metered by `test_ai_spend_isolation.py` | **CI only** |
 | Loading / empty / error states | `loading.tsx`, `error.tsx`, `EmptyState` branches in `page.tsx` | Build + CI |
 
@@ -127,6 +133,57 @@ Recorded during expansion, while the context was loaded.
 >
 > **The RLS isolation suite still runs in CI only, and deliberately so.** It requires `PROJECTONE_TEST_DATABASE_URL` — a variable distinct from `DATABASE_URL` — and refuses to run without it. That guard exists precisely so a suite that creates and destroys tenant fixtures cannot be pointed at a shared database by accident. It was not overridden. CI provisions a throwaway `postgres:17` with `PROJECTONE_REQUIRE_DATABASE_TESTS=1`, and a green `api` job is what proves isolation, erasure and spend metering.
 
+> [!bug] What manual testing caught that a green pipeline could not
+> Item 7a failed against a real browser, and the diagnosis is the most instructive thing in this step.
+>
+> **The symptom.** Removing the provider key and sending a message produced the correct inline error — *"Your message was saved — try sending it again in a moment"* — and the URL moved to a new `?conversation=` id. But the screen showed *"No conversation open"*, the conversation list did not contain it, and the saved question was nowhere. The database confirmed it: **the conversation did not exist and the question was never persisted.**
+>
+> **The cause was the transaction boundary, not the chat code.** `ChatService` persisted the question *before* calling the provider — the ordering was right. But `RequestSessionFactory.authenticated_as` wraps the **entire request** in one transaction, so when the provider error propagated out, PostgreSQL rolled back the conversation and the message along with it. The promise the UI made was one the architecture could not keep.
+>
+> **It could not be fixed by committing mid-request.** psycopg refuses `commit()` inside a `Transaction` context outright, and — verified against the live database — a commit *discards* `SET LOCAL ROLE`, so the request would continue as the privileged owner with RLS switched off. The obvious fix was a tenant-isolation breach.
+>
+> **So a turn became two requests**: `POST /chat/conversations` stores the question and commits, then `POST /chat/conversations/{id}/completion` answers it. Step 1 contacts no provider, so what it stores survives whatever step 2 does.
+>
+> **The second design was also wrong, and review caught it.** The first attempt at making completion idempotent used a unique index on the reply. A concurrency probe showed *both* callers reading zero replies and *both* proceeding to invoke the provider — the index refuses the duplicate **row**, after the duplicate **charge**. Deduplicating storage is not deduplicating spend. The mechanism is now an atomic conditional claim (`WHERE turn_status = 'pending'`), committed before the network call: four concurrent callers, **one** invocation.
+>
+> **The common thread across all four defects in this step**: every one was invisible to the tests covering it, because the fakes have no transactions and no concurrency. `test_a_failed_turn_still_keeps_the_users_question` passed throughout, against a dict. That is why `test_chat_turn_claims.py` exists and why it is CI-only.
+
+## The two-request contract
+
+A turn is two calls, and the split is load-bearing rather than stylistic.
+
+| Step | Endpoint | Contacts a provider | On failure |
+|---|---|---|---|
+| 1 | `POST /workspaces/{id}/chat/conversations` | No | Nothing stored; the question is not lost because it was never accepted |
+| 2 | `POST /workspaces/{id}/chat/conversations/{id}/completion` | **Yes** | Question stays stored; claim released; turn retryable |
+
+**The turn key is the user message id, not the conversation id.** A conversation holds many turns; keying idempotency on the conversation would make a legitimate follow-up question look like a retry of the previous one and refuse it.
+
+### Guarantees, stated exactly
+
+- **Concurrency — at most one provider invocation per question.** Proven with four concurrent callers against real PostgreSQL.
+- **Ordinary failure — fully retryable.** The claim is released, the question stays stored, no charge is incurred (the reservation is settled by `AIService`'s existing `finally`).
+- **Crash after the provider accepted — not recoverable automatically, by design.** The turn stays visibly `in_progress` and answers 409. Returning it to `pending` on a timer would re-invoke a provider that has already charged for the request. **Exactly-once execution across a crash is unachievable without provider-side idempotency keys**, and this step does not pretend otherwise.
+
+### Follow-up required: AI execution durability (ADR-backed, not yet scheduled)
+
+Four concerns were deliberately left out of this step because they belong to the AI layer as a whole, not to chat, and because each is an architectural decision rather than a fix:
+
+1. **Provider-side idempotency.** OpenAI accepts an `Idempotency-Key` header. Adopting it would close the crash window this step cannot — but it changes `AIProvider`, so it governs every AI call and needs verifying against each provider's official documentation rather than assumed.
+2. **Stale-claim reconciliation.** How an operator resolves a turn stuck `in_progress`, and whether that is manual, assisted or automatic.
+3. **Lease policy and bounded recovery.** What a safe lease duration is, and what may be retried automatically once provider idempotency exists.
+4. **Crash-window handling across all AI features.** Workflow runs have the same exposure; chat is simply where it surfaced first.
+
+**This is an ADR before it is a step** — it reverses nothing, but it constrains how every future AI feature executes. Until it lands, the honest position is the one this step ships: a stuck turn is visible, says so, and is not silently retried.
+
+### The spend invariant
+
+Spend is **not** in one transaction with the reply, and reversing that would undo a deliberate STEP-22 decision — a budget row locked for the duration of an upstream HTTP call is how one becomes a bottleneck. What holds instead:
+
+- every reservation is eventually settled or released;
+- no successful assistant reply exists without recorded spend;
+- an ordinary provider failure leaves no charge.
+
 ## Manual Browser Test Checklist
 
 Recorded against a `next dev` server on `http://localhost:3000`, 2026-08-11.
@@ -136,11 +193,12 @@ Recorded against a `next dev` server on `http://localhost:3000`, 2026-08-11.
 | 1 | `/chat` requires a session — an unauthenticated request never reaches the route | **Pass.** Redirected to `/sign-in`; the dev server log shows no `/chat` entry at all, so the proxy refused it before the page ran. |
 | 2 | The route compiles and is server-rendered on demand | **Pass.** `npm run build` lists `ƒ /chat` — dynamic, not statically prerendered, which is correct for a per-workspace screen. |
 | 3 | No client-side console errors on the surfaces reachable without a database | **Pass.** `read_console_messages` returned no errors. |
-| 4 | Signed-in empty state ("No conversations yet") | **Not verified in a browser.** Blocked on a session — see below. Covered by the `conversations.length === 0` branch in `page.tsx` and exercised by the build. |
-| 5 | Transcript renders a user/assistant exchange with attribution | **Not verified in a browser.** Blocked on a session *and* on a provider credential. Covered by `chat-api.test.ts` attribution tests. |
-| 6 | Composer pending state ("Sending…") during a turn | **Not verified in a browser**, same blockers. Behaviour is `SettingsForm`'s, already shipped and exercised on the settings and projects screens. |
-| 7 | A provider failure renders beside the transcript rather than replacing the screen | **Not verified in a browser**, blocked on a session. Asserted in `chat/actions.test.ts` — 502/503 produce an error, no reply, and (for a first turn) navigation to the conversation holding the saved question. |
-| 8 | Loading skeleton shape matches the loaded screen | **Not verified in a browser**, blocked on a session. `loading.tsx` mirrors the page's heading → list → transcript → composer structure by construction. |
+| 4 | Signed-in empty state ("No conversations yet") | **Pass**, 2026-08-12. |
+| 5 | Transcript renders a user/assistant exchange with attribution | **Pass.** Automatic navigation to the new conversation, both bubbles, provider/model/token metadata shown. |
+| 6 | Composer pending state ("Sending…") during a turn | **Not clearly observed.** The turn completed faster than the pending state could be seen. Behaviour is `SettingsForm`'s, already shipped on settings and projects. |
+| 7a | A provider failure renders beside the transcript, keeping the saved question | **Failed, then fixed — awaiting retest.** The question was not persisted at all; see the callout above. Fixed by the two-request split; needs re-running against the restored key. |
+| 7b | Retry continues the same conversation without duplicating | **Blocked on 7a — awaiting retest.** |
+| 8 | Loading skeleton shape matches the loaded screen | **Partial.** Persistence after a hard refresh passed; the skeleton itself was too brief to observe. |
 
 ### What items 4–8 are actually blocked on
 

@@ -6,7 +6,8 @@ import {
   deleteConversation,
   listConversations,
   readConversation,
-  sendChatMessage,
+  completeChatTurn,
+  startChatTurn,
 } from "@/lib/api";
 
 /**
@@ -99,7 +100,7 @@ describe("a client may only ever send a user message", () => {
       assistant_message: message("assistant"),
     });
 
-    await sendChatMessage("token", WORKSPACE, "Hello");
+    await startChatTurn("token", WORKSPACE, "Hello");
 
     const body = JSON.parse(String(calls[0]?.init.body)) as Record<string, unknown>;
 
@@ -113,12 +114,12 @@ describe("a client may only ever send a user message", () => {
       assistant_message: message("assistant"),
     });
 
-    await sendChatMessage("token", WORKSPACE, "Hello");
+    await startChatTurn("token", WORKSPACE, "Hello");
 
     const body = JSON.parse(String(calls[0]?.init.body)) as Record<string, unknown>;
 
     expect(body).not.toHaveProperty("workspace_id");
-    expect(calls[0]?.url).toContain(`/workspaces/${WORKSPACE}/chat/messages`);
+    expect(calls[0]?.url).toContain(`/workspaces/${WORKSPACE}/chat/conversations`);
   });
 });
 
@@ -130,7 +131,7 @@ describe("starting a conversation versus continuing one", () => {
       assistant_message: message("assistant"),
     });
 
-    await sendChatMessage("token", WORKSPACE, "Hello");
+    await startChatTurn("token", WORKSPACE, "Hello");
 
     const body = JSON.parse(String(calls[0]?.init.body)) as Record<string, unknown>;
 
@@ -148,7 +149,7 @@ describe("starting a conversation versus continuing one", () => {
       assistant_message: message("assistant"),
     });
 
-    await sendChatMessage("token", WORKSPACE, "Hello", CONVERSATION);
+    await startChatTurn("token", WORKSPACE, "Hello", CONVERSATION);
 
     const body = JSON.parse(String(calls[0]?.init.body)) as Record<string, unknown>;
 
@@ -162,12 +163,50 @@ describe("starting a conversation versus continuing one", () => {
       assistant_message: message("assistant"),
     });
 
-    await sendChatMessage("token", WORKSPACE, "Hello", undefined, "99999999-9999-9999-9999-999999999999");
+    await startChatTurn("token", WORKSPACE, "Hello", undefined, "99999999-9999-9999-9999-999999999999");
 
     const body = JSON.parse(String(calls[0]?.init.body)) as Record<string, unknown>;
 
     expect(body.project_id).toBe("99999999-9999-9999-9999-999999999999");
     expect(body).not.toHaveProperty("conversation_id");
+  });
+});
+
+describe("completing a stored turn", () => {
+  it("names the user message, not the conversation, as the turn key", async () => {
+    const calls = capture({
+      conversation: conversation(),
+      user_message: message("user"),
+      assistant_message: message("assistant"),
+    });
+
+    await completeChatTurn("token", WORKSPACE, CONVERSATION, "abc-123");
+
+    const body = JSON.parse(String(calls[0]?.init.body)) as Record<string, unknown>;
+
+    // A conversation holds many turns. Keying on the conversation would make a
+    // second question look like a retry of the first, and idempotency would
+    // then refuse a legitimate follow-up.
+    expect(body.user_message_id).toBe("abc-123");
+    expect(calls[0]?.url).toContain(
+      `/workspaces/${WORKSPACE}/chat/conversations/${CONVERSATION}/completion`,
+    );
+  });
+
+  it("sends no content — the question is already stored", async () => {
+    const calls = capture({
+      conversation: conversation(),
+      user_message: message("user"),
+      assistant_message: message("assistant"),
+    });
+
+    await completeChatTurn("token", WORKSPACE, CONVERSATION, "abc-123");
+
+    const body = JSON.parse(String(calls[0]?.init.body)) as Record<string, unknown>;
+
+    // Re-sending the text would make the completion capable of storing a
+    // *different* question than the one it claims to answer.
+    expect(body).not.toHaveProperty("content");
   });
 });
 
