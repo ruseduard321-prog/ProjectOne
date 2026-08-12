@@ -178,6 +178,136 @@ def test_a_message_cannot_be_edited_by_its_author(
         )
 
 
+def test_a_client_supplied_id_cannot_adopt_another_tenants_conversation(
+    admin_connection: psycopg.Connection,
+    seeded_chat: tuple[Identity, Identity, uuid.UUID, uuid.UUID],
+) -> None:
+    # `POST /messages` accepts an id for a conversation that does not exist yet,
+    # which is what makes a failed first turn retryable. The obvious question
+    # that opens is whether a caller can name *another tenant's* id and be handed
+    # their conversation.
+    #
+    # They cannot, and it is worth being precise about why. RLS hides the row, so
+    # the service's `get` reads it as absent and takes the create path. The
+    # primary key then refuses the insert -- the constraint sees every row in the
+    # table, including ones the caller cannot select. The result is a loud
+    # UniqueViolation rather than a silent cross-tenant write or, worse, a
+    # successful adoption.
+    alice, _bob, _a, bob_conversation = seeded_chat
+
+    with admin_connection.transaction():
+        cursor = as_user(admin_connection, alice.user_id)
+
+        # Confirm the premise first: Bob's conversation is genuinely invisible.
+        # Without this the test would pass even if RLS were switched off, since
+        # the primary key would refuse the insert either way.
+        cursor.execute(
+            "SELECT count(*) FROM public.conversations WHERE id = %s", (bob_conversation,)
+        )
+        row = cursor.fetchone()
+        assert row is not None
+        assert row[0] == 0, "Bob's conversation must be invisible to Alice"
+
+        raise psycopg.Rollback
+
+    with admin_connection.transaction(), pytest.raises(psycopg.errors.UniqueViolation):
+        cursor = as_user(admin_connection, alice.user_id)
+        cursor.execute(
+            "INSERT INTO public.conversations (id, workspace_id, title, created_by) "
+            "VALUES (%s, %s, %s, %s)",
+            (bob_conversation, alice.workspace_id, "adopted", alice.user_id),
+        )
+
+
+def test_a_message_cannot_be_rewritten_while_being_soft_deleted(
+    admin_connection: psycopg.Connection,
+    seeded_chat: tuple[Identity, Identity, uuid.UUID, uuid.UUID],
+) -> None:
+    # The hole the policy alone left open, and the reason `app_messages_immutable`
+    # exists. `messages_soft_delete_member`'s WITH CHECK constrains exactly one
+    # column of the resulting row -- `deleted_at IS NOT NULL` -- and says nothing
+    # about the rest. A single statement that sets `content` *and* `deleted_at`
+    # satisfies it completely, so the policy permitted rewriting history as long
+    # as the rewrite also deleted it.
+    #
+    # RLS structurally cannot catch this: a policy sees only the candidate row,
+    # never the row it replaces, and "content must equal what it was" is a claim
+    # about OLD and NEW together. The BEFORE UPDATE trigger is what compares them.
+    #
+    # Raised as check_violation (23514) by the trigger, not InsufficientPrivilege:
+    # the policy admits this row, and what refuses it is the integrity rule.
+    alice, _bob, alice_conversation, _b = seeded_chat
+
+    with admin_connection.transaction(), pytest.raises(psycopg.errors.CheckViolation):
+        cursor = as_user(admin_connection, alice.user_id)
+        cursor.execute(
+            "UPDATE public.messages SET content = 'rewritten', deleted_at = now() "
+            "WHERE conversation_id = %s",
+            (alice_conversation,),
+        )
+
+
+@pytest.mark.parametrize(
+    "column, value",
+    [
+        ("role", "'assistant'"),
+        ("provider", "'forged'"),
+        ("model", "'forged'"),
+        ("token_count", "999999"),
+        ("created_at", "now()"),
+    ],
+)
+def test_no_attributed_field_survives_a_soft_delete(
+    admin_connection: psycopg.Connection,
+    seeded_chat: tuple[Identity, Identity, uuid.UUID, uuid.UUID],
+    column: str,
+    value: str,
+) -> None:
+    # Content is the obvious field to protect, but not the only one that matters.
+    # `provider`, `model` and `token_count` are what a reply is *attributed* to
+    # (CLAUDE.md §15) and what a conversation's cost is answerable from; `role`
+    # decides whether a stored line is replayed as the user's or the model's; and
+    # `created_at` is the ordering every context assembly depends on.
+    #
+    # Each is checked while also soft-deleting, so this proves the trigger rather
+    # than re-proving the policy -- the policy would admit every one of these.
+    alice, _bob, alice_conversation, _b = seeded_chat
+
+    with admin_connection.transaction(), pytest.raises(psycopg.errors.CheckViolation):
+        cursor = as_user(admin_connection, alice.user_id)
+        cursor.execute(
+            f"UPDATE public.messages SET {column} = {value}, deleted_at = now() "  # noqa: S608 - parametrised from a literal list, never input
+            "WHERE conversation_id = %s",
+            (alice_conversation,),
+        )
+
+
+def test_an_ordinary_message_soft_delete_is_still_permitted(
+    admin_connection: psycopg.Connection,
+    seeded_chat: tuple[Identity, Identity, uuid.UUID, uuid.UUID],
+) -> None:
+    # The other half, and the one that matters most: the trigger must not have
+    # made erasure impossible. That is exactly the failure mode this migration
+    # already shipped once in draft -- an UPDATE affecting zero rows while
+    # reporting success -- so a guard added to protect immutability has to be
+    # proven not to have re-created it.
+    #
+    # A soft delete writes `deleted_at`; `touch_row` then advances `updated_at`
+    # and `version`. All three are on the permitted list, so this must succeed.
+    alice, _bob, alice_conversation, _b = seeded_chat
+
+    with admin_connection.transaction():
+        cursor = as_user(admin_connection, alice.user_id)
+        cursor.execute(
+            "UPDATE public.messages SET deleted_at = now() WHERE conversation_id = %s",
+            (alice_conversation,),
+        )
+
+        assert cursor.rowcount > 0, "erasure must still be able to soft-delete a message"
+
+        raise psycopg.Rollback
+
+
 def test_a_conversation_soft_delete_affects_a_row(
     admin_connection: psycopg.Connection,
     seeded_chat: tuple[Identity, Identity, uuid.UUID, uuid.UUID],

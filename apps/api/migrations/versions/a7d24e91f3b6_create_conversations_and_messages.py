@@ -53,10 +53,28 @@ matched zero rows -- a workspace erasure silently leaving every message in place
 while reporting success. That is the `provider_credentials` defect STEP-19 paid
 for, reached by a different route.
 
-`messages_soft_delete_member` resolves both requirements at once: its `WITH
-CHECK` admits only rows that end up soft-deleted, so erasure works and rewriting
-`content` is still refused by the policy rather than by convention.
-`token_count` is written at INSERT and never revised.
+`messages_soft_delete_member` admits only rows that end up soft-deleted, so
+erasure works. **That alone does not make a message immutable**, and the second
+draft's claim that it did was wrong: `WITH CHECK (deleted_at IS NOT NULL)`
+constrains one column of the resulting row and says nothing about the others, so
+a single statement setting `content` *and* `deleted_at` satisfies it perfectly.
+The policy permitted rewriting history as long as the rewrite also deleted it.
+
+RLS cannot express this rule at all. A policy sees only the candidate row, never
+the row it replaces, so "these columns must equal what they were" is not
+something `WITH CHECK` can say -- it is a statement about `OLD` and `NEW`
+together. A `BEFORE UPDATE` trigger is the mechanism PostgreSQL provides for
+exactly that comparison.
+
+**The trigger that closes this lives in `b4e8c02d71fa`, not here.** This revision
+had already been applied to the shared development database by the time the hole
+was found, so amending it in place would have left that database permanently
+defective while every freshly-built schema was correct -- exactly the divergence
+[[CLAUDE|CLAUDE.md]] §13's expand/contract rule exists to prevent. The follow-up
+migration is what reaches an environment that already ran this one.
+
+So what this revision creates is deliberately *incomplete*, and the policy below
+says so rather than claiming a protection it does not provide.
 
 ## Neither table filters `deleted_at` in its SELECT policy
 
@@ -246,10 +264,12 @@ WITH CHECK (workspace_id IN (SELECT public.app_current_user_workspaces()));
 -- it against a real database, not by review; it is the `provider_credentials`
 -- defect STEP-19 paid for, arriving by a different route.
 --
--- `WITH CHECK (deleted_at IS NOT NULL)` is what keeps immutability real. The
--- only UPDATE this admits is one whose resulting row is soft-deleted, so an
--- attempt to rewrite `content` is still refused by the policy rather than by
--- convention. Erasure is permitted; editing history is not.
+-- `WITH CHECK (deleted_at IS NOT NULL)` bounds this to soft deletion, so an
+-- UPDATE that merely edits a live message is refused here. It does **not** make
+-- the row immutable on its own -- a statement setting `content` and `deleted_at`
+-- together satisfies it completely. `app_messages_immutable`, added by
+-- `b4e8c02d71fa`, is what closes that: the rule compares OLD and NEW, and a
+-- policy never sees OLD.
 CREATE POLICY messages_soft_delete_member ON public.messages
 FOR UPDATE TO authenticated
 USING (workspace_id IN (SELECT public.app_current_user_workspaces()))
