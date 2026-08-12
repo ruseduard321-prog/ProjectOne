@@ -82,6 +82,9 @@ Recorded during expansion, while the context was loaded.
 | Erasure end to end | `test_erasure_clears_conversations_and_messages`, `test_erasure_leaves_the_other_tenant_untouched` | **CI only** |
 | Context bounded | `test_the_context_window_is_bounded`, `test_a_long_conversation_sends_no_more_than_the_window` | Local + CI |
 | Provider failure honest | `test_a_provider_failure_raises_rather_than_fabricating_a_reply`, `test_a_failed_turn_still_keeps_the_users_question`; UI side in `chat/actions.test.ts` | Local + CI |
+| A message is immutable, including while being deleted | `test_a_message_cannot_be_rewritten_while_being_soft_deleted`, `test_no_attributed_field_survives_a_soft_delete` (5 fields), `test_an_ordinary_message_soft_delete_is_still_permitted` | **CI only** |
+| A client-supplied id cannot reach another tenant | `test_a_client_supplied_id_cannot_adopt_another_tenants_conversation`, `test_another_tenants_conversation_is_not_continuable` | CI / Local |
+| A failed first turn is reachable, and a retry does not duplicate it | `test_retrying_with_the_same_id_continues_one_conversation`; UI side in `chat/actions.test.ts` | Local + CI |
 | Spend attributed | `AIService` `workflow_type="chat"`, metered by `test_ai_spend_isolation.py` | **CI only** |
 | Loading / empty / error states | `loading.tsx`, `error.tsx`, `EmptyState` branches in `page.tsx` | Build + CI |
 
@@ -100,10 +103,27 @@ Recorded during expansion, while the context was loaded.
 >
 > The lesson is not "the tests were wrong" but that **a skipped security test is indistinguishable from a passing one** in a local summary line — and worse, *a security test that runs without its identity applied looks like a passing one too*. CI ran **698 tests** against a real `postgres:17` where this machine manages 418. `PROJECTONE_REQUIRE_DATABASE_TESTS=1` is what makes that gap visible, and it is why a green `api` job — not a green local run — is what this step's isolation and erasure claims rest on.
 
-> [!warning] The database-backed validation runs in CI, not on the development machine
-> This machine has no PostgreSQL, no Docker, and `apps/api/.env` carries a redacted `DATABASE_URL` placeholder rather than a usable credential, so **285 database-backed tests skip locally**. CI provisions a throwaway `postgres:17` and sets `PROJECTONE_REQUIRE_DATABASE_TESTS=1`, which turns those skips into hard failures — so a green `api` job is what actually proves isolation, erasure and spend metering.
+> [!bug] What review caught that green CI could not
+> Two defects survived a fully green pipeline and were found by independent review of the merged diff. Both are worth recording, because neither was the kind of thing another test run would have surfaced.
 >
-> **The browser checklist below is therefore partly unverified.** The chat screen cannot be reached without a session, and a session cannot be created without the API, which cannot start without a database. What was verified in a browser is recorded honestly as such; what was not is named rather than assumed.
+> **1. Message immutability was asserted, not enforced.** `messages_soft_delete_member` carries `WITH CHECK (deleted_at IS NOT NULL)`, and the migration's own docstring claimed this made a transcript immutable — "rewriting `content` is still refused by the policy rather than by convention". **It did not.** A `WITH CHECK` constrains the *resulting* row, and that clause constrains exactly one column of it. A single `UPDATE` setting `content` **and** `deleted_at` satisfies the policy completely. The policy permitted rewriting history as long as the rewrite also deleted it.
+>
+> The test that was supposed to prove immutability (`test_a_message_cannot_be_edited_by_its_author`) updated `content` *alone*, which the policy genuinely does refuse — so it passed while testing the one variation that was never the risk.
+>
+> **RLS structurally cannot express this rule.** A policy sees only the candidate row, never the row it replaces; "content must equal what it was" is a claim about `OLD` and `NEW` together. A `BEFORE UPDATE` trigger is PostgreSQL's mechanism for that comparison, and `workspace_members` already uses one for the last-owner rule — the same shape of invariant. `app_messages_immutable` now refuses any UPDATE changing anything except `deleted_at`, `updated_at` and `version`, expressed as a **whitelist** so a column added later is immutable by default.
+>
+> **2. A failed first turn saved the user's question somewhere unreachable.** The conversation id existed only inside a successful response. So a first message that failed at the provider persisted the conversation *and* the question under an id the UI never learned — the screen said "your message was saved" while showing no conversation open, and retrying created a **second** conversation holding a **second** copy of the question. Every individual piece behaved as documented; the defect was in the seam between them.
+>
+> Fixed by letting the client choose the conversation id up front, so the id is known before the call rather than discovered after it. Success navigates there, failure navigates there carrying the reason, and a retry names the conversation that already exists.
+>
+> **The common thread is that both defects were invisible to the tests that covered them.** The first had a passing test asserting the adjacent property; the second had passing tests on both sides of a seam neither crossed. Green CI proves the assertions that were written, and says nothing about the ones that were not.
+
+> [!warning] What this machine can and cannot validate
+> **Correcting an earlier claim in this note.** A previous revision said `apps/api/.env` carried a redacted `DATABASE_URL` placeholder and that no database was reachable. That was wrong: `.env` holds working credentials for the **shared Supabase development project** (`aws-0-eu-central-1.pooler.supabase.com`, PostgreSQL 17.6), and the API starts and serves `/health` against it. The mistake made items 4–8 look blocked by infrastructure when they are blocked by something narrower.
+>
+> What that database *did* prove, directly and with every write rolled back: the immutability defect was **live and reproducible** there (an `UPDATE` setting `content` and `deleted_at` together succeeded and changed the stored text), and `b4e8c02d71fa` closes it while leaving ordinary soft deletion working.
+>
+> **The RLS isolation suite still runs in CI only, and deliberately so.** It requires `PROJECTONE_TEST_DATABASE_URL` — a variable distinct from `DATABASE_URL` — and refuses to run without it. That guard exists precisely so a suite that creates and destroys tenant fixtures cannot be pointed at a shared database by accident. It was not overridden. CI provisions a throwaway `postgres:17` with `PROJECTONE_REQUIRE_DATABASE_TESTS=1`, and a green `api` job is what proves isolation, erasure and spend metering.
 
 ## Manual Browser Test Checklist
 
@@ -114,13 +134,22 @@ Recorded against a `next dev` server on `http://localhost:3000`, 2026-08-11.
 | 1 | `/chat` requires a session — an unauthenticated request never reaches the route | **Pass.** Redirected to `/sign-in`; the dev server log shows no `/chat` entry at all, so the proxy refused it before the page ran. |
 | 2 | The route compiles and is server-rendered on demand | **Pass.** `npm run build` lists `ƒ /chat` — dynamic, not statically prerendered, which is correct for a per-workspace screen. |
 | 3 | No client-side console errors on the surfaces reachable without a database | **Pass.** `read_console_messages` returned no errors. |
-| 4 | Signed-in empty state ("No conversations yet") | **Not verified in a browser.** Requires a session, which requires the API, which requires a database this machine does not have. Covered by the `conversations.length === 0` branch in `page.tsx` and exercised by the build. |
-| 5 | Transcript renders a user/assistant exchange with attribution | **Not verified in a browser**, same reason. Covered by `chat-api.test.ts` attribution tests. |
-| 6 | Composer pending state ("Sending…") during a turn | **Not verified in a browser**, same reason. Behaviour is `SettingsForm`'s, already shipped and exercised on the settings and projects screens. |
-| 7 | A provider failure renders beside the transcript rather than replacing the screen | **Not verified in a browser**, same reason. Asserted in `chat/actions.test.ts` — 502/503 return an error state, `revalidatePath` is not called, and no reply is produced. |
-| 8 | Loading skeleton shape matches the loaded screen | **Not verified in a browser**, same reason. `loading.tsx` mirrors the page's heading → list → transcript → composer structure by construction. |
+| 4 | Signed-in empty state ("No conversations yet") | **Not verified in a browser.** Blocked on a session — see below. Covered by the `conversations.length === 0` branch in `page.tsx` and exercised by the build. |
+| 5 | Transcript renders a user/assistant exchange with attribution | **Not verified in a browser.** Blocked on a session *and* on a provider credential. Covered by `chat-api.test.ts` attribution tests. |
+| 6 | Composer pending state ("Sending…") during a turn | **Not verified in a browser**, same blockers. Behaviour is `SettingsForm`'s, already shipped and exercised on the settings and projects screens. |
+| 7 | A provider failure renders beside the transcript rather than replacing the screen | **Not verified in a browser**, blocked on a session. Asserted in `chat/actions.test.ts` — 502/503 produce an error, no reply, and (for a first turn) navigation to the conversation holding the saved question. |
+| 8 | Loading skeleton shape matches the loaded screen | **Not verified in a browser**, blocked on a session. `loading.tsx` mirrors the page's heading → list → transcript → composer structure by construction. |
 
-**Items 4–8 need a database-backed environment to complete.** They are listed as outstanding rather than quietly omitted, and they are the reason this step is not `Done`.
+### What items 4–8 are actually blocked on
+
+Both servers run correctly against the shared development database — the API answers `/health` with 200, and `/chat` redirects an unauthenticated request to `/sign-in` (item 1, re-confirmed). Two things are missing, and neither is a code defect:
+
+1. **A session.** The development project has two accounts (`owner.test@projectone.dev`, `step16.confirmed@gmail.com`) whose passwords are not in the repository, and Claude does not enter credentials or create accounts. **The project owner must sign in**, after which items 4, 7 and 8 are immediately checkable.
+2. **A provider credential.** `provider_credentials` is empty and no `OPENAI_API_KEY`/`ANTHROPIC_API_KEY` is set, so a turn cannot reach a model. Items 5 and 6 need a key configured in Settings (BYOK) for the workspace. Without one, a turn fails at the provider — which exercises item 7's path rather than items 5–6.
+
+Also absent: `ai_budgets` and `ai_shutdown_switches` are both empty, so the workspace has no explicit spend ceiling. Worth setting one before running a turn, given [[CLAUDE|CLAUDE.md]] §15a.
+
+**These are configuration steps for the owner, not outstanding work in the step.** They are the reason this step is not `Done`.
 
 ## Definition of Done
 
@@ -133,10 +162,12 @@ A user holds a conversation with an AI inside their workspace, the conversation 
 Per [[Execution Protocol#Step Completion]], this step stays **`In Progress`** until every gate is satisfied:
 
 - [x] Requirements implemented — all 8 tasks.
-- [x] Local validation passed — api 418 passed, web 141 passed, lint/format/type-check/build clean.
+- [x] Local validation passed — api 419 passed, web 146 passed, lint/format/type-check/build clean.
 - [x] Documentation updated in the same change.
+- [x] Message immutability enforced by `b4e8c02d71fa`, proven against the live development database.
+- [x] First-turn navigation and retry made coherent, with tests on both sides.
 - [ ] **Required CI green**, including the database-backed suite this machine cannot run.
-- [ ] **Manual checklist items 4–8** completed in a database-backed environment.
+- [ ] **Manual checklist items 4–8** — blocked on an owner sign-in and a configured provider key, not on code.
 - [ ] Review conversations resolved.
 - [ ] **Owner approval** — this step carries a gate.
 
