@@ -703,8 +703,13 @@ export function sendChatMessage(
     path: `/workspaces/${workspaceId}/chat/messages`,
     method: "POST",
     // Optional ids are omitted rather than sent as null: the request model
-    // forbids extra fields but treats an absent id as "start a new one", and
-    // sending an explicit null would be the same thing said less clearly.
+    // forbids extra fields, and an explicit null would say the same thing less
+    // clearly.
+    //
+    // `conversationId` may name a conversation that does not exist yet — the
+    // API creates one with that id. That is what lets a caller know the id
+    // before the call, so a failed first turn is still reachable and a retry
+    // continues it rather than starting a second. See `sendMessageAction`.
     body: {
       content,
       ...(conversationId === undefined ? {} : { conversation_id: conversationId }),

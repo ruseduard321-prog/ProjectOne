@@ -159,7 +159,10 @@ class ChatService:
             workspace_id: The tenant, from the verified request context.
             content: What the user said.
             actor_id: Who said it, for `created_by` and spend attribution.
-            conversation_id: The conversation to continue. None starts a new one.
+            conversation_id: The conversation to continue, or the id to start one
+                with. None lets the database choose. See
+                `_resolve_conversation` for why an unknown id creates rather
+                than refuses.
             project_id: The project a *new* conversation is about. Ignored when
                 continuing an existing one, whose project is already fixed --
                 changing it mid-conversation would silently rewrite what earlier
@@ -169,8 +172,6 @@ class ChatService:
             The conversation and both messages of the completed turn.
 
         Raises:
-            ConversationNotFoundError: `conversation_id` names no conversation
-                this caller can see.
             ProviderError: The provider failed, or none was available. Raised
                 rather than answered with a fabricated reply (CLAUDE.md §15).
             GovernanceError: A spend ceiling, breaker or shutdown refused the
@@ -243,23 +244,43 @@ class ChatService:
         conversation_id: uuid.UUID | None,
         project_id: uuid.UUID | None,
     ) -> Conversation:
-        """Return the conversation this turn belongs to, creating one if needed."""
-        if conversation_id is None:
-            return self._conversations.create(
-                workspace_id=workspace_id,
-                title=_title_from(content),
-                project_id=project_id,
-                created_by=actor_id,
-            )
+        """Return the conversation this turn belongs to, creating one if needed.
 
-        conversation = self._conversations.get(workspace_id, conversation_id)
+        Three cases, and the third is what makes a first turn retryable:
 
-        if conversation is None:
-            raise ConversationNotFoundError(
-                f"Conversation {conversation_id} was not found in this workspace"
-            )
+        1. **No id** -- start a conversation and let the database name it.
+        2. **An id naming a live conversation** -- continue it. Its `project_id`
+           is left alone, because earlier turns were answered against it.
+        3. **An id naming nothing** -- start a conversation *with that id*.
 
-        return conversation
+        Case 3 replaces an earlier `ConversationNotFoundError`, and the reason is
+        the failure it was causing. A first turn that failed at the provider left
+        the conversation and the user's question persisted under an id the client
+        never learned, because the id only ever appeared in a successful
+        response. Retrying therefore started a *second* conversation and stored
+        the question again. Letting the client choose the id up front makes the
+        retry land in the same conversation, which is what the user means by
+        "try that again".
+
+        The id is never a way to reach another tenant's conversation: `get` runs
+        under RLS, so another workspace's id reads as absent here and the insert
+        that follows is refused by the primary key rather than adopting the row.
+        That is a `UniqueViolation`, not a silent cross-tenant write, and it is
+        asserted rather than assumed.
+        """
+        if conversation_id is not None:
+            conversation = self._conversations.get(workspace_id, conversation_id)
+
+            if conversation is not None:
+                return conversation
+
+        return self._conversations.create(
+            workspace_id=workspace_id,
+            title=_title_from(content),
+            project_id=project_id,
+            created_by=actor_id,
+            conversation_id=conversation_id,
+        )
 
     def _context_for(
         self, workspace_id: uuid.UUID, conversation: Conversation

@@ -111,22 +111,38 @@ class ConversationRepository:
         title: str,
         project_id: uuid.UUID | None,
         created_by: uuid.UUID,
+        conversation_id: uuid.UUID | None = None,
     ) -> Conversation:
         """Insert a conversation and return it as stored.
+
+        Args:
+            workspace_id: The tenant, from the verified request context.
+            title: Derived from the first message by the service.
+            project_id: The project this conversation is about, when it is
+                about one.
+            created_by: Who started it.
+            conversation_id: The id to create it with. None lets the database
+                generate one. A caller-supplied id is what makes a first turn
+                retryable -- see `MessageSendRequest.conversation_id`. An id that
+                already exists raises `UniqueViolation` rather than overwriting
+                anything, including one held by another tenant, which RLS hides
+                but the primary key still sees.
 
         Returns:
             The created conversation, read back so trigger-maintained columns are
             the real values rather than this layer's guess at them.
         """
         with self._connection.cursor() as cursor:
+            # `DEFAULT` rather than a second SQL string: one statement with one
+            # column list, so the two paths cannot drift apart.
             cursor.execute(
                 f"""
                 INSERT INTO public.conversations
-                    (workspace_id, title, project_id, created_by)
-                VALUES (%s, %s, %s, %s)
+                    (id, workspace_id, title, project_id, created_by)
+                VALUES (COALESCE(%s, gen_random_uuid()), %s, %s, %s, %s)
                 RETURNING {_CONVERSATION_COLUMNS}
                 """,  # noqa: S608 - module constant, not input
-                (workspace_id, title, project_id, created_by),
+                (conversation_id, workspace_id, title, project_id, created_by),
             )
             row = cursor.fetchone()
 

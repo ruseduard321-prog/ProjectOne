@@ -17,6 +17,7 @@ import os
 import uuid
 from datetime import UTC, datetime
 
+import psycopg
 import pytest
 
 from app.ai.crypto import CredentialCipher
@@ -34,7 +35,6 @@ from app.services.ai_spend_service import AISpendService
 from app.services.chat_service import (
     _CONTEXT_MESSAGE_LIMIT,
     ChatService,
-    ConversationNotFoundError,
     _title_from,
 )
 from app.services.provider_credential_service import ProviderCredentialService
@@ -65,10 +65,17 @@ class FakeConversationRepository:
         title: str,
         project_id: uuid.UUID | None,
         created_by: uuid.UUID,
+        conversation_id: uuid.UUID | None = None,
     ) -> Conversation:
+        # Mirrors the primary key: a caller-supplied id that is already taken --
+        # including by another tenant, which `get` correctly hides -- is refused
+        # rather than silently adopting or overwriting the existing row.
+        if conversation_id is not None and conversation_id in self.conversations:
+            raise psycopg.errors.UniqueViolation(f"conversation {conversation_id} already exists")
+
         now = datetime.now(UTC)
         conversation = Conversation(
-            id=uuid.uuid4(),
+            id=uuid.uuid4() if conversation_id is None else conversation_id,
             workspace_id=workspace_id,
             title=title,
             project_id=project_id,
@@ -293,21 +300,64 @@ def test_a_workspace_with_no_key_fails_honestly() -> None:
     assert all(message.role != "assistant" for message in store.messages)
 
 
-def test_continuing_an_unknown_conversation_is_refused() -> None:
-    service, _, _, workspace = build()
+def test_an_unknown_conversation_id_starts_a_conversation_with_it() -> None:
+    # This replaces an earlier `ConversationNotFoundError`, and the change is the
+    # whole of the first-turn recovery fix.
+    #
+    # Refusing an unknown id meant the id of a new conversation existed only
+    # inside a successful response. A first turn that failed at the provider
+    # therefore saved the user's question under an id the client never learned,
+    # and the retry -- which had no id to send -- created a *second* conversation
+    # holding a *second* copy of the question.
+    #
+    # Accepting the id makes the retry land in the conversation that already
+    # holds the question, which is what "try that again" means to the user.
+    service, store, _, workspace = build()
+    chosen = uuid.uuid4()
 
-    with pytest.raises(ConversationNotFoundError):
-        service.send_message(workspace, "Hi", uuid.uuid4(), uuid.uuid4())
+    turn = service.send_message(workspace, "Hi", uuid.uuid4(), chosen)
+
+    assert turn.conversation.id == chosen
+    assert store.conversations[chosen].workspace_id == workspace
+
+
+def test_retrying_with_the_same_id_continues_one_conversation() -> None:
+    # The property the fix exists for, asserted end to end at the service level:
+    # two sends carrying one id produce one conversation, not two.
+    service, store, _, workspace = build()
+    chosen = uuid.uuid4()
+    actor = uuid.uuid4()
+
+    service.send_message(workspace, "Hi", actor, chosen)
+    service.send_message(workspace, "Hi", actor, chosen)
+
+    assert len(store.conversations) == 1
+
+    # And the title still comes from the first message rather than being
+    # rewritten by the retry -- the conversation was continued, not recreated.
+    assert store.conversations[chosen].title == "Hi"
 
 
 def test_another_tenants_conversation_is_not_continuable() -> None:
     # The service-level half of the isolation property; the RLS half is proven
     # against a real database in `test_chat_isolation.py`.
+    #
+    # **The refusal moved, and that is the point.** It used to be a 404 from
+    # `get`. Now `get` still hides the row -- so the service treats the id as
+    # new -- and the *primary key* refuses the insert. A caller therefore cannot
+    # reach, adopt or overwrite another tenant's conversation by naming its id,
+    # and the failure is loud rather than a silent cross-tenant write.
     service, store, _, workspace = build()
     theirs = store.create(uuid.uuid4(), "Theirs", None, uuid.uuid4())
 
-    with pytest.raises(ConversationNotFoundError):
+    with pytest.raises(psycopg.errors.UniqueViolation):
         service.send_message(workspace, "Hi", uuid.uuid4(), theirs.id)
+
+    # Their conversation is untouched: same workspace, same title, and no
+    # message was smuggled into it.
+    assert store.conversations[theirs.id].workspace_id == theirs.workspace_id
+    assert store.conversations[theirs.id].title == "Theirs"
+    assert store.messages == []
 
 
 def test_the_active_project_reaches_the_model() -> None:

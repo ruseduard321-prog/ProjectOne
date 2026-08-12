@@ -198,6 +198,14 @@ def send_message(
 
     The user's message is persisted either way, so a provider outage costs the
     user their answer but never their question.
+
+    **`conversation_id` may name a conversation that does not exist yet**, and
+    one is created with that id. This is what makes the failure above
+    recoverable: the client knows the id before it calls, so a failed first turn
+    still leaves it able to open the conversation holding its saved question, and
+    a retry continues that conversation instead of starting a second one. An id
+    belonging to another workspace is invisible under RLS and refused by the
+    primary key, never adopted -- see `ChatService._resolve_conversation`.
     """
     turn = chat.send_message(
         workspace_id=workspace_id,

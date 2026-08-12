@@ -47,7 +47,10 @@ export const metadata: Metadata = {
 export default async function ChatPage({
   searchParams,
 }: {
-  readonly searchParams: Promise<{ readonly conversation?: string }>;
+  readonly searchParams: Promise<{
+    readonly conversation?: string;
+    readonly error?: string;
+  }>;
 }) {
   await requireProfile();
 
@@ -67,7 +70,7 @@ export default async function ChatPage({
   }
 
   const workspaceId = workspace.current.id;
-  const { conversation: requestedId } = await searchParams;
+  const { conversation: requestedId, error: turnError } = await searchParams;
 
   const conversations = await listConversations(accessToken, workspaceId);
 
@@ -89,6 +92,7 @@ export default async function ChatPage({
       workspaceName={workspace.current.name}
       conversations={conversations}
       open={open}
+      turnError={turnError}
     />
   );
 }
@@ -98,6 +102,13 @@ interface ChatScreenProps {
   readonly workspaceName: string;
   readonly conversations: readonly ApiConversation[];
   readonly open: ApiConversationDetail | undefined;
+  /**
+   * Why the turn that opened this conversation failed, when one did.
+   *
+   * Carried in the URL because the action that knows it ends in a `redirect`,
+   * which discards the returned form state. See `sendMessageAction`.
+   */
+  readonly turnError: string | undefined;
 }
 
 /**
@@ -106,7 +117,13 @@ interface ChatScreenProps {
  * The same split the projects and settings screens use: the layout is readable
  * without the awaits, and a future test can render it against fixed props.
  */
-function ChatScreen({ workspaceId, workspaceName, conversations, open }: ChatScreenProps) {
+function ChatScreen({
+  workspaceId,
+  workspaceName,
+  conversations,
+  open,
+  turnError,
+}: ChatScreenProps) {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
@@ -143,6 +160,26 @@ function ChatScreen({ workspaceId, workspaceName, conversations, open }: ChatScr
             />
           ) : (
             <Transcript messages={open.messages} />
+          )}
+
+          {/*
+           * The reason a first turn failed, shown beside the question it saved
+           * rather than in place of it.
+           *
+           * `role="alert"` so it is announced on arrival: the user navigated
+           * here rather than submitting in place, so nothing else would tell a
+           * screen reader that the turn did not complete ([[Design System]] §9).
+           *
+           * Rendered after the transcript, so the reading order is what was
+           * asked, then what happened to it.
+           */}
+          {turnError === undefined ? null : (
+            <div
+              role="alert"
+              className="rounded-md border border-danger px-4 py-3 text-sm text-danger"
+            >
+              <p>{turnError}</p>
+            </div>
           )}
 
           <Composer workspaceId={workspaceId} openConversationId={open?.conversation.id} />

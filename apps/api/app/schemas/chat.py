@@ -61,11 +61,25 @@ class MessageSendRequest(BaseModel):
 
     content: MessageContent
 
-    #: The conversation to continue. Omitted to start a new one.
+    #: The conversation this message belongs to. Omitted to let the server pick.
     #:
     #: A path parameter would force the client to create a conversation before
     #: saying anything, which is a round trip and an empty conversation left
     #: behind whenever the user changes their mind.
+    #:
+    #: **A client may name an id that does not exist yet**, and the conversation
+    #: is created with it. That is what makes a first turn recoverable: without
+    #: it, the id of a new conversation exists only inside a successful response,
+    #: so a provider failure on the first message saves the question to a
+    #: conversation the client can never name again -- and the retry starts a
+    #: second one, duplicating the question. Choosing the id up front makes the
+    #: retry continue the same conversation instead.
+    #:
+    #: This is safe because the id is only ever *created* or *matched within the
+    #: caller's own workspace*: an id belonging to another tenant is invisible to
+    #: the caller's RLS, so it is treated as new and refused by the primary key
+    #: rather than adopted. Asserted by
+    #: `test_a_client_supplied_id_cannot_adopt_another_tenants_conversation`.
     conversation_id: str | None = None
 
     #: The project a *new* conversation is about.

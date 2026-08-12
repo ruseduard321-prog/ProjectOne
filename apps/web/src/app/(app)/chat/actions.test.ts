@@ -50,6 +50,39 @@ vi.mock("@/lib/api", () => ({
 vi.mock("@/lib/auth", () => ({ resolveAccessToken }));
 vi.mock("next/cache", () => ({ revalidatePath }));
 
+/*
+ * `redirect` throws in Next.js, and the action depends on that: it is how a
+ * first turn ends without falling through to the return below it. The mock
+ * throws a tagged error so a test can assert *where* the action navigated,
+ * which a silent no-op mock would hide.
+ */
+class RedirectSignal extends Error {
+  constructor(readonly url: string) {
+    super(`NEXT_REDIRECT:${url}`);
+  }
+}
+
+const redirect = vi.fn((url: string) => {
+  throw new RedirectSignal(url);
+});
+
+vi.mock("next/navigation", () => ({ redirect }));
+
+/** Run an action that is expected to redirect, and return where it went. */
+async function redirectedTo(run: () => Promise<unknown>): Promise<string> {
+  try {
+    await run();
+  } catch (error) {
+    if (error instanceof RedirectSignal) {
+      return error.url;
+    }
+
+    throw error;
+  }
+
+  throw new Error("expected the action to redirect, but it returned normally");
+}
+
 const { deleteConversationAction, sendMessageAction } = await import(
   "@/app/(app)/chat/actions"
 );
@@ -79,14 +112,16 @@ afterEach(() => {
 });
 
 describe("a failed turn is reported honestly, never fabricated", () => {
-  it("returns an error state rather than a reply when the provider fails", async () => {
+  it("reports the provider failure rather than a reply, when replying in place", async () => {
     sendChatMessage.mockRejectedValue(
       new MockApiError(502, "The AI provider could not be reached"),
     );
 
+    // An *open* conversation, so the action returns rather than navigating —
+    // the screen is already showing the right transcript.
     const state = await sendMessageAction(
       { fieldErrors: {} },
-      form({ workspace_id: WORKSPACE, conversation_id: "", content: "Hello" }),
+      form({ workspace_id: WORKSPACE, conversation_id: CONVERSATION, content: "More" }),
     );
 
     // The whole point: an error, and nothing resembling an answer.
@@ -99,7 +134,7 @@ describe("a failed turn is reported honestly, never fabricated", () => {
 
     const state = await sendMessageAction(
       { fieldErrors: {} },
-      form({ workspace_id: WORKSPACE, conversation_id: "", content: "Hello" }),
+      form({ workspace_id: WORKSPACE, conversation_id: CONVERSATION, content: "More" }),
     );
 
     // The API persists the user's message before calling a provider, so the
@@ -107,17 +142,136 @@ describe("a failed turn is reported honestly, never fabricated", () => {
     expect(state.formError).toContain("saved");
   });
 
-  it("does not revalidate the page when the turn failed", async () => {
+  it("does not revalidate when a reply inside an open conversation failed", async () => {
     sendChatMessage.mockRejectedValue(new MockApiError(502, "Provider failed"));
 
     await sendMessageAction(
       { fieldErrors: {} },
-      form({ workspace_id: WORKSPACE, conversation_id: "", content: "Hello" }),
+      form({ workspace_id: WORKSPACE, conversation_id: CONVERSATION, content: "More" }),
     );
 
-    // Nothing changed that a re-render would show, and revalidating on failure
-    // would imply the transcript had moved on.
+    // Nothing new exists, and revalidating would imply the transcript moved on.
+    // A failed *first* turn is the opposite case — it created a conversation,
+    // so it must revalidate. Asserted below.
     expect(revalidatePath).not.toHaveBeenCalled();
+  });
+});
+
+describe("a first turn is reachable whether it succeeds or fails", () => {
+  /*
+   * The defect these cover, in one sentence: the conversation id used to exist
+   * only inside a successful response, so a first turn that failed saved the
+   * user's question somewhere the UI could never name — and the retry made a
+   * second conversation holding a second copy of it.
+   */
+
+  it("opens the new conversation after a successful first turn", async () => {
+    const url = await redirectedTo(() =>
+      sendMessageAction(
+        { fieldErrors: {} },
+        form({ workspace_id: WORKSPACE, conversation_id: "", content: "Hello" }),
+      ),
+    );
+
+    // Navigated to the conversation the turn just created, so the reply is on
+    // screen rather than waiting for the user to find it in the list.
+    const sentId = sendChatMessage.mock.calls[0][3];
+
+    expect(sentId).toBeTypeOf("string");
+    expect(url).toBe(`/chat?conversation=${sentId}`);
+  });
+
+  it("opens the conversation holding the saved question when a first turn fails", async () => {
+    sendChatMessage.mockRejectedValue(
+      new MockApiError(502, "The AI provider could not be reached"),
+    );
+
+    const url = await redirectedTo(() =>
+      sendMessageAction(
+        { fieldErrors: {} },
+        form({ workspace_id: WORKSPACE, conversation_id: "", content: "Hello" }),
+      ),
+    );
+
+    const sentId = sendChatMessage.mock.calls[0][3];
+
+    // The conversation exists — the API persisted it and the question before
+    // calling the provider — so the screen must open it rather than claiming
+    // the message was saved while showing nothing.
+    expect(url).toContain(`/chat?conversation=${sentId}`);
+
+    // And it must carry the reason, or the user arrives at their unanswered
+    // question with no explanation for why it is unanswered.
+    expect(decodeURIComponent(url)).toContain("The AI provider could not be reached");
+  });
+
+  it("revalidates after a failed first turn, because a conversation now exists", async () => {
+    sendChatMessage.mockRejectedValue(new MockApiError(502, "Provider failed"));
+
+    await redirectedTo(() =>
+      sendMessageAction(
+        { fieldErrors: {} },
+        form({ workspace_id: WORKSPACE, conversation_id: "", content: "Hello" }),
+      ),
+    );
+
+    // The conversation list gained an entry even though the turn failed.
+    expect(revalidatePath).toHaveBeenCalledWith("/chat");
+  });
+
+  it("sends a fresh id per new conversation, never a reused one", async () => {
+    await redirectedTo(() =>
+      sendMessageAction(
+        { fieldErrors: {} },
+        form({ workspace_id: WORKSPACE, conversation_id: "", content: "One" }),
+      ),
+    );
+
+    await redirectedTo(() =>
+      sendMessageAction(
+        { fieldErrors: {} },
+        form({ workspace_id: WORKSPACE, conversation_id: "", content: "Two" }),
+      ),
+    );
+
+    // Two separate conversations. Reusing an id would make the second message
+    // land in the first conversation, which is the opposite failure to the one
+    // being fixed and just as wrong.
+    expect(sendChatMessage.mock.calls[0][3]).not.toBe(sendChatMessage.mock.calls[1][3]);
+  });
+});
+
+describe("retrying a failed first turn continues it rather than duplicating it", () => {
+  it("sends the same conversation id the failed attempt created", async () => {
+    sendChatMessage.mockRejectedValue(new MockApiError(502, "Provider failed"));
+
+    const url = await redirectedTo(() =>
+      sendMessageAction(
+        { fieldErrors: {} },
+        form({ workspace_id: WORKSPACE, conversation_id: "", content: "Hello" }),
+      ),
+    );
+
+    // The redirect above put the id in the URL, so the composer on the screen
+    // the user lands on now carries it as its open conversation. The retry is
+    // therefore a reply, not a new conversation.
+    const created = new URL(url, "http://localhost").searchParams.get("conversation");
+
+    expect(created).not.toBeNull();
+
+    sendChatMessage.mockResolvedValue({});
+
+    const state = await sendMessageAction(
+      { fieldErrors: {} },
+      form({ workspace_id: WORKSPACE, conversation_id: created ?? "", content: "Hello" }),
+    );
+
+    // Same conversation, so the question is not stored a second time and the
+    // user does not end up with two conversations asking the same thing.
+    expect(sendChatMessage.mock.calls[1][3]).toBe(created);
+
+    // A reply inside an open conversation returns rather than navigating.
+    expect(state.saved).toBe(true);
   });
 });
 
@@ -129,7 +283,7 @@ describe("a budget refusal is not a provider outage", () => {
 
     const state = await sendMessageAction(
       { fieldErrors: {} },
-      form({ workspace_id: WORKSPACE, conversation_id: "", content: "Hello" }),
+      form({ workspace_id: WORKSPACE, conversation_id: CONVERSATION, content: "More" }),
     );
 
     expect(state.formError).toContain("budget");
@@ -142,7 +296,7 @@ describe("a budget refusal is not a provider outage", () => {
 
     const state = await sendMessageAction(
       { fieldErrors: {} },
-      form({ workspace_id: WORKSPACE, conversation_id: "", content: "Hello" }),
+      form({ workspace_id: WORKSPACE, conversation_id: CONVERSATION, content: "More" }),
     );
 
     expect(state.formError).toContain("Wait a minute");
@@ -175,18 +329,26 @@ describe("what never reaches the API", () => {
 });
 
 describe("a successful turn", () => {
-  it("passes an empty conversation id as undefined, starting a new conversation", async () => {
-    await sendMessageAction(
-      { fieldErrors: {} },
-      form({ workspace_id: WORKSPACE, conversation_id: "", content: "Hello" }),
+  it("names the new conversation itself rather than letting the server choose", async () => {
+    await redirectedTo(() =>
+      sendMessageAction(
+        { fieldErrors: {} },
+        form({ workspace_id: WORKSPACE, conversation_id: "", content: "Hello" }),
+      ),
     );
 
-    expect(sendChatMessage).toHaveBeenCalledWith(
-      "token",
-      WORKSPACE,
-      "Hello",
-      undefined,
-      undefined,
+    const [token, workspace, content, conversationId, projectId] =
+      sendChatMessage.mock.calls[0];
+
+    expect(token).toBe("token");
+    expect(workspace).toBe(WORKSPACE);
+    expect(content).toBe("Hello");
+    expect(projectId).toBeUndefined();
+
+    // A real id, not undefined: the action must know where the conversation
+    // will be before it calls, which is what makes the failure path work.
+    expect(conversationId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
     );
   });
 
@@ -208,7 +370,7 @@ describe("a successful turn", () => {
   it("revalidates the screen so the new turn renders", async () => {
     await sendMessageAction(
       { fieldErrors: {} },
-      form({ workspace_id: WORKSPACE, conversation_id: "", content: "Hello" }),
+      form({ workspace_id: WORKSPACE, conversation_id: CONVERSATION, content: "More" }),
     );
 
     expect(revalidatePath).toHaveBeenCalledWith("/chat");
