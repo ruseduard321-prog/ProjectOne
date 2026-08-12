@@ -163,14 +163,25 @@ def test_a_message_cannot_be_edited_by_its_author(
     # from the original text, so a rewritten history describes a conversation
     # that never happened.
     #
-    # Refused by `messages_soft_delete_member`'s WITH CHECK, which admits only an
-    # update whose row ends up soft-deleted. PostgreSQL raises rather than
-    # matching zero rows, because the row *was* visible and the resulting row is
-    # what failed the check -- a louder and more honest refusal than a silent
-    # no-op, and the reason the policy is scoped rather than simply absent.
+    # **Two independent guards refuse this statement, and which one fires first
+    # changed with `b4e8c02d71fa`.** It used to raise `InsufficientPrivilege`
+    # from `messages_soft_delete_member`'s WITH CHECK, because a row left with a
+    # null `deleted_at` fails the policy. Now `app_messages_immutable` runs first
+    # -- BEFORE triggers fire before the policy's WITH CHECK is evaluated -- and
+    # raises `CheckViolation` instead.
+    #
+    # Accepting either is deliberate rather than a loosened assertion. The
+    # property under test is "an edit is refused", and this test must keep
+    # meaning that whichever layer does the refusing; pinning it to one exception
+    # would make it fail if the *other* guard were removed, which is precisely
+    # backwards. That the trigger now wins is asserted directly by
+    # `test_a_message_cannot_be_rewritten_while_being_soft_deleted`, which covers
+    # the case the policy alone never caught.
     alice, _bob, alice_conversation, _b = seeded_chat
 
-    with admin_connection.transaction(), pytest.raises(psycopg.errors.InsufficientPrivilege):
+    refusal = (psycopg.errors.InsufficientPrivilege, psycopg.errors.CheckViolation)
+
+    with admin_connection.transaction(), pytest.raises(refusal):
         cursor = as_user(admin_connection, alice.user_id)
         cursor.execute(
             "UPDATE public.messages SET content = 'rewritten' WHERE conversation_id = %s",
