@@ -631,7 +631,25 @@ export interface ApiChatMessage {
   readonly model: string | null;
   readonly token_count: number;
   readonly created_at: string;
+  /**
+   * Where this question is in being answered, or null on a reply.
+   *
+   * **This is what makes an unanswered question visible.** The field existed in
+   * the database from the start but stopped at the API, so a turn whose
+   * provider call failed rendered identically to an answered one — manual
+   * testing found three such questions stranded in a transcript with no way to
+   * reach them.
+   *
+   * `pending` is the retryable state: no provider holds the turn, and
+   * `retryTurnAction` can answer this exact question. `in_progress` means a
+   * call is in flight *or* a process died holding the claim; the two are
+   * indistinguishable without a lease, which STEP-23 deliberately excludes.
+   */
+  readonly turn_status: ApiTurnStatus | null;
 }
+
+/** Where a question is in being answered. Mirrors `ck_messages_turn_status_valid`. */
+export type ApiTurnStatus = "pending" | "in_progress" | "completed";
 
 /** One conversation, without its messages. */
 export interface ApiConversation {

@@ -63,6 +63,10 @@ function field(data: FormData, name: string): string {
  *    contacted. Nothing is broken; the workspace is out of budget, and the
  *    remedy is an owner changing it in Settings.
  *  - **429** — rate limited. Distinct from 402: this is requests, not cost.
+ *  - **409** — the turn is already claimed, by a concurrent Retry or by a call
+ *    still in flight. Not a failure of the user's action: the answer is coming,
+ *    or another click is fetching it. Saying "try again" here would invite the
+ *    user to pile up requests against a turn that already has an owner.
  *  - **404** — the conversation is gone, most likely deleted in another tab.
  *  - **403** — the caller's role does not permit this.
  */
@@ -88,6 +92,15 @@ function toFormState(error: unknown): FormState {
       return {
         fieldErrors: {},
         formError: "Too many messages in a short time. Wait a minute and try again.",
+        requestId: error.requestId,
+      };
+    }
+
+    if (error.status === 409) {
+      return {
+        fieldErrors: {},
+        formError:
+          "This message is already being answered. Reload in a moment to see the reply.",
         requestId: error.requestId,
       };
     }
@@ -279,6 +292,77 @@ export async function sendMessageAction(
   if (isNewConversation) {
     redirect(`${CHAT_PATH}?conversation=${conversationId}`);
   }
+
+  return { fieldErrors: {}, saved: true };
+}
+
+/**
+ * Answer a question that is already stored, without asking it again.
+ *
+ * ## Why this exists as a separate action
+ *
+ * `sendMessageAction` always starts with `startChatTurn`, so every resend mints
+ * a *new* user message. That is correct for sending — a resend is a new send —
+ * but it made a failed turn unrecoverable: manual testing produced three
+ * identical `pending` questions in one conversation, none of which anything
+ * would ever answer, because nothing on the screen could name an existing turn.
+ *
+ * This action names one. It calls **only** `completeChatTurn`, for a
+ * `user_message_id` the transcript already rendered, so:
+ *
+ *  - no second user message is written — there is no `startChatTurn` here;
+ *  - the conversation id and the user message id are both unchanged, because
+ *    both are read from the stored question rather than generated;
+ *  - the turn that failed is the turn that gets answered.
+ *
+ * ## Concurrency is the server's, not this action's
+ *
+ * Two Retry clicks race to the same endpoint, and nothing here serialises them.
+ * They do not need to: the API claims the turn with a conditional UPDATE
+ * committed before any network call, so exactly one caller reaches a provider
+ * and the loser gets 409 — one invocation, one reply, one charge. Adding a
+ * client-side guard would only hide the second click; the guarantee has to hold
+ * against two browsers anyway.
+ *
+ * A 409 is therefore not a failure to report as one. It means the turn is
+ * already being answered — by the other click, or by a call still in flight —
+ * and the honest message says exactly that rather than implying the retry broke
+ * something.
+ *
+ * ## Failure leaves it retryable
+ *
+ * An ordinary provider failure releases the claim server-side, so the turn
+ * returns to `pending` and the button the user just pressed is still the right
+ * button. Nothing is written, nothing is lost, and the reason renders in the
+ * form's error region beside the question it belongs to.
+ */
+export async function retryTurnAction(
+  _previous: FormState,
+  data: FormData,
+): Promise<FormState> {
+  const workspaceId = field(data, "workspace_id");
+  const conversationId = field(data, "conversation_id");
+  const userMessageId = field(data, "user_message_id");
+
+  const accessToken = await resolveAccessToken();
+
+  if (accessToken === undefined) {
+    return SESSION_LOST;
+  }
+
+  try {
+    await completeChatTurn(accessToken, workspaceId, conversationId, userMessageId);
+  } catch (error) {
+    return toFormState(error);
+  }
+
+  /*
+   * No redirect: the conversation is already open at the right URL, and this
+   * turn is one of several in it. Revalidating re-renders the transcript with
+   * the reply in place and the Retry control gone, because the question is now
+   * `completed`.
+   */
+  revalidatePath(CHAT_PATH);
 
   return { fieldErrors: {}, saved: true };
 }

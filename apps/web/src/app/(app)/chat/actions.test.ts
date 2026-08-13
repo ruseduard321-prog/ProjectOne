@@ -85,7 +85,7 @@ async function redirectedTo(run: () => Promise<unknown>): Promise<string> {
   throw new Error("expected the action to redirect, but it returned normally");
 }
 
-const { deleteConversationAction, sendMessageAction } = await import(
+const { deleteConversationAction, retryTurnAction, sendMessageAction } = await import(
   "@/app/(app)/chat/actions"
 );
 
@@ -404,6 +404,120 @@ describe("a successful turn", () => {
     );
 
     expect(revalidatePath).toHaveBeenCalledWith("/chat");
+  });
+});
+
+describe("retrying a failed turn answers that turn, and never asks again", () => {
+  /*
+   * The defect these cover: every resend went through `sendMessageAction`,
+   * which always calls `startChatTurn` first. Manual testing produced three
+   * identical questions in one conversation, each `pending`, none of which
+   * anything would ever answer — the turn was retryable by contract and
+   * unreachable in practice.
+   */
+
+  it("never stores a second question", async () => {
+    await retryTurnAction(
+      { fieldErrors: {} },
+      form({
+        workspace_id: WORKSPACE,
+        conversation_id: CONVERSATION,
+        user_message_id: USER_MESSAGE,
+      }),
+    );
+
+    // **The assertion the whole defect reduces to.** A retry that starts a turn
+    // is a new question wearing a retry's label.
+    expect(startChatTurn).not.toHaveBeenCalled();
+  });
+
+  it("answers the existing turn, naming both ids unchanged", async () => {
+    await retryTurnAction(
+      { fieldErrors: {} },
+      form({
+        workspace_id: WORKSPACE,
+        conversation_id: CONVERSATION,
+        user_message_id: USER_MESSAGE,
+      }),
+    );
+
+    // Same conversation, same user message — read from the stored question
+    // rather than generated, which is what makes this a retry at all.
+    expect(completeChatTurn).toHaveBeenCalledWith(
+      "token",
+      WORKSPACE,
+      CONVERSATION,
+      USER_MESSAGE,
+    );
+  });
+
+  it("re-renders the transcript so the reply and the Retry control update", async () => {
+    const state = await retryTurnAction(
+      { fieldErrors: {} },
+      form({
+        workspace_id: WORKSPACE,
+        conversation_id: CONVERSATION,
+        user_message_id: USER_MESSAGE,
+      }),
+    );
+
+    expect(state.saved).toBe(true);
+    expect(revalidatePath).toHaveBeenCalledWith("/chat");
+  });
+
+  it("stays retryable after another provider failure", async () => {
+    completeChatTurn.mockRejectedValue(new MockApiError(502, "Provider failed"));
+
+    const state = await retryTurnAction(
+      { fieldErrors: {} },
+      form({
+        workspace_id: WORKSPACE,
+        conversation_id: CONVERSATION,
+        user_message_id: USER_MESSAGE,
+      }),
+    );
+
+    // The API releases the claim, so the turn returns to `pending` and the
+    // button the user just pressed is still the right button. No new question
+    // was stored on the way to failing, either.
+    expect(state.formError).toContain("Provider failed");
+    expect(state.saved).toBeUndefined();
+    expect(startChatTurn).not.toHaveBeenCalled();
+  });
+
+  it("does not tell the user to retry a turn something else already holds", async () => {
+    completeChatTurn.mockRejectedValue(new MockApiError(409, "This message is already"));
+
+    const state = await retryTurnAction(
+      { fieldErrors: {} },
+      form({
+        workspace_id: WORKSPACE,
+        conversation_id: CONVERSATION,
+        user_message_id: USER_MESSAGE,
+      }),
+    );
+
+    // A second concurrent Retry loses the claim race. That is the mechanism
+    // working, not a failure of the user's action — so the wording says the
+    // answer is coming rather than inviting them to pile on more requests.
+    expect(state.formError).toContain("already being answered");
+    expect(state.formError).not.toContain("try");
+  });
+
+  it("reports a lost session without calling the API", async () => {
+    resolveAccessToken.mockResolvedValue(undefined);
+
+    const state = await retryTurnAction(
+      { fieldErrors: {} },
+      form({
+        workspace_id: WORKSPACE,
+        conversation_id: CONVERSATION,
+        user_message_id: USER_MESSAGE,
+      }),
+    );
+
+    expect(completeChatTurn).not.toHaveBeenCalled();
+    expect(state.formError).toContain("session has expired");
   });
 });
 

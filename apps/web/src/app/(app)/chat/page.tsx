@@ -159,7 +159,11 @@ function ChatScreen({
               }
             />
           ) : (
-            <Transcript messages={open.messages} />
+            <Transcript
+              messages={open.messages}
+              workspaceId={workspaceId}
+              conversationId={open.conversation.id}
+            />
           )}
 
           {/*

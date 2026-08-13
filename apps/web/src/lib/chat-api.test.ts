@@ -89,6 +89,9 @@ function message(role: "user" | "assistant"): ApiChatMessage {
     model: role === "assistant" ? "gpt-4o-mini" : null,
     token_count: role === "assistant" ? 42 : 0,
     created_at: "2026-08-11T10:00:00+00:00",
+    // A completed question, which is what a turn that returned a reply is. Only
+    // a user message carries a status; a reply's is null by constraint.
+    turn_status: role === "user" ? "completed" : null,
   };
 }
 

@@ -148,6 +148,19 @@ Recorded during expansion, while the context was loaded.
 >
 > **The common thread across all four defects in this step**: every one was invisible to the tests covering it, because the fakes have no transactions and no concurrency. `test_a_failed_turn_still_keeps_the_users_question` passed throughout, against a dict. That is why `test_chat_turn_claims.py` exists and why it is CI-only.
 
+> [!bug] The third manual finding: a retryable turn nothing could reach
+> Item 7b failed, and it failed *because* 7a's fix worked. The question survived the provider failure exactly as promised — and then nothing on the screen could name it.
+>
+> **The symptom.** Three failed sends left three identical `pending` questions in one conversation, each stored correctly, none with a reply, and none distinguishable in the transcript from an answered one. The database was right; the screen was silent.
+>
+> **The cause was a field that stopped at the API.** `turn_status` was written by the first migration, read by `ConversationRepository`, and then simply not carried by `MessageResponse`. The transcript therefore rendered an unanswered question identically to an answered one, and every "retry" went through `sendMessageAction` — which begins with `startChatTurn` and so **stores a new question every time**. A resend is a new send; there was no path that answered a turn that already existed.
+>
+> **Why the guarantee was technically kept and practically worthless.** The contract said a failed turn is retryable, and it was: the claim was released, the row was `pending`, the completion endpoint would have answered it. But nothing rendered the state and nothing offered the id, so the only reachable action created a fourth question instead of answering the first. *A turn that is retryable by contract and invisible on screen is not retryable in any sense the user can use.*
+>
+> **The fix is small because the state already existed.** `turn_status` is carried through to the client, the transcript marks any non-`completed` question as unanswered, and a `retryTurnAction` calls **only** the completion endpoint for a `user_message_id` the transcript already holds. No new user message, same conversation id, same turn key.
+>
+> **The pattern, for the fourth time in this step:** every test passed. `test_chat_turn_claims.py` proved the turn was claimable; `actions.test.ts` proved a failure reported honestly. Neither could see that the two halves never met, because no test rendered a `pending` question and asked what a user could do about it.
+
 ## The two-request contract
 
 A turn is two calls, and the split is load-bearing rather than stylistic.
@@ -158,6 +171,26 @@ A turn is two calls, and the split is load-bearing rather than stylistic.
 | 2 | `POST /workspaces/{id}/chat/conversations/{id}/completion` | **Yes** | Question stays stored; claim released; turn retryable |
 
 **The turn key is the user message id, not the conversation id.** A conversation holds many turns; keying idempotency on the conversation would make a legitimate follow-up question look like a retry of the previous one and refuse it.
+
+### Sending and retrying are different operations
+
+This distinction is the fix for the third manual finding, and it is worth stating precisely because the two look identical on screen:
+
+| | Sending | Retrying |
+|---|---|---|
+| Action | `sendMessageAction` | `retryTurnAction` |
+| Calls | `startChatTurn`, then `completeChatTurn` | `completeChatTurn` **only** |
+| New user message | Yes — a resend is a new question | **No** |
+| Turn key | Freshly minted | The existing `user_message_id` |
+| Offered when | Always | Only on a `pending` question |
+
+**A question's state is visible in the transcript**, because a state the user cannot see is one they cannot act on:
+
+- **`pending`** — rendered as unanswered, with a **Retry** control. No provider holds the turn.
+- **`in_progress`** — rendered as being answered, with **no** Retry. A call is in flight, or a process died holding the claim; without a lease the two are indistinguishable, and offering a button that may pay twice is worse than offering none. The message says to contact support if it persists.
+- **`completed`** — nothing rendered. Annotating the ordinary case would bury the exceptional one.
+
+**Concurrency is the server's, not the button's.** Nothing serialises a double click, and nothing needs to: the claim is a conditional UPDATE committed before any network call, so one Retry wins and the rest receive 409 — reported as *"already being answered"* rather than as a failure inviting another click. The guarantee has to hold against two browsers regardless, so a client-side guard would only hide the second click, never remove the race.
 
 ### Guarantees, stated exactly
 
@@ -196,20 +229,20 @@ Recorded against a `next dev` server on `http://localhost:3000`, 2026-08-11.
 | 4 | Signed-in empty state ("No conversations yet") | **Pass**, 2026-08-12. |
 | 5 | Transcript renders a user/assistant exchange with attribution | **Pass.** Automatic navigation to the new conversation, both bubbles, provider/model/token metadata shown. |
 | 6 | Composer pending state ("Sending…") during a turn | **Not clearly observed.** The turn completed faster than the pending state could be seen. Behaviour is `SettingsForm`'s, already shipped on settings and projects. |
-| 7a | A provider failure renders beside the transcript, keeping the saved question | **Failed, then fixed — awaiting retest.** The question was not persisted at all; see the callout above. Fixed by the two-request split; needs re-running against the restored key. |
-| 7b | Retry continues the same conversation without duplicating | **Blocked on 7a — awaiting retest.** |
+| 7a | A provider failure renders beside the transcript, keeping the saved question | **Failed, then fixed — awaiting retest.** The question was not persisted at all; see the callout above. Fixed by the two-request split; needs re-running against a valid key. |
+| 7b | **Retry answers the existing question** — same conversation id, same user message id, no second question stored | **Failed, then fixed — awaiting retest.** Every resend created a new user turn; three `pending` questions accumulated with no way to reach them. Fixed by surfacing `turn_status` and adding `retryTurnAction`. |
 | 8 | Loading skeleton shape matches the loaded screen | **Partial.** Persistence after a hard refresh passed; the skeleton itself was too brief to observe. |
 
-### What items 4–8 are actually blocked on
+### What the remaining items are blocked on
 
-Both servers run correctly against the shared development database — the API answers `/health` with 200, and `/chat` redirects an unauthenticated request to `/sign-in` (item 1, re-confirmed). Two things are missing, and neither is a code defect:
+Items 4 and 5 passed against the shared development database on 2026-08-12/13, with a session, a BYOK OpenAI credential and a €1 spend ceiling all configured — so the earlier configuration blockers are resolved.
 
-1. **A session.** The development project has two accounts (`owner.test@projectone.dev`, `step16.confirmed@gmail.com`) whose passwords are not in the repository, and Claude does not enter credentials or create accounts. **The project owner must sign in**, after which items 4, 7 and 8 are immediately checkable.
-2. **A provider credential.** `provider_credentials` is empty and no `OPENAI_API_KEY`/`ANTHROPIC_API_KEY` is set, so a turn cannot reach a model. Items 5 and 6 need a key configured in Settings (BYOK) for the workspace. Without one, a turn fails at the provider — which exercises item 7's path rather than items 5–6.
+**7a and 7b are blocked on a valid provider key, not on code.** The last three attempts returned `401 Unauthorized` from OpenAI (request ids `e4a3e7e4`, `7a266f26`, `2fce302a`), which is authentication rather than permission: the stored key is no longer accepted, most likely rotated or revoked upstream. Two failure-injection routes were tried and are recorded because both are instructive:
 
-Also absent: `ai_budgets` and `ai_shutdown_switches` are both empty, so the workspace has no explicit spend ceiling. Worth setting one before running a turn, given [[CLAUDE|CLAUDE.md]] §15a.
+1. **Restricting the key's scope did not work.** Setting *Threads* to none leaves `/v1/chat/completions` untouched — that endpoint is governed by model capabilities, and a scope refusal would be `403` in any case.
+2. **A hosts-file redirect does work**, and is the recommended method: pointing `api.openai.com` at `127.0.0.1` produces a genuine connection failure at the network layer without touching the stored credential, so the same key remains available for the 7b retry.
 
-**These are configuration steps for the owner, not outstanding work in the step.** They are the reason this step is not `Done`.
+Spend at the time of writing: **3 records, $0.008460 total**, one per successful call and none for any failed attempt — the invariant held throughout, including across the three failures that produced no charge.
 
 ## Definition of Done
 
@@ -222,12 +255,13 @@ A user holds a conversation with an AI inside their workspace, the conversation 
 Per [[Execution Protocol#Step Completion]], this step stays **`In Progress`** until every gate is satisfied:
 
 - [x] Requirements implemented — all 8 tasks.
-- [x] Local validation passed — api 419 passed, web 146 passed, lint/format/type-check/build clean.
+- [x] Local validation passed — api 423 passed, web 163 passed, lint/format/type-check/build clean.
 - [x] Documentation updated in the same change.
 - [x] Message immutability enforced by `b4e8c02d71fa`, proven against the live development database.
 - [x] First-turn navigation and retry made coherent, with tests on both sides.
+- [x] A failed turn is visible and retryable *on screen*, answering the existing question rather than asking a new one.
 - [ ] **Required CI green**, including the database-backed suite this machine cannot run.
-- [ ] **Manual checklist items 4–8** — blocked on an owner sign-in and a configured provider key, not on code.
+- [ ] **Manual checklist items 6, 7a, 7b, 8** — 7a/7b blocked on a valid provider key, not on code.
 - [ ] Review conversations resolved.
 - [ ] **Owner approval** — this step carries a gate.
 

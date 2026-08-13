@@ -369,3 +369,122 @@ def test_every_question_is_an_independent_turn(
     # The second question in the same conversation is claimable on its own.
     second = repository.claim(alice.workspace_id, second_question)
     assert second is not None
+
+
+def test_a_retried_turn_answers_the_same_question_and_adds_none(
+    admin_connection: psycopg.Connection,
+    tenants: tuple[Identity, Identity],
+    repository: ChatTurnRepository,
+) -> None:
+    """Retry answers the stored question rather than asking a new one.
+
+    **The defect manual testing caught, asserted where it actually lives.**
+    Every resend went through the send path, which stores a question before
+    answering one -- so three failed attempts left three identical `pending`
+    rows in one conversation and no reply to any of them. The turn was
+    retryable by contract and unreachable in practice.
+
+    The sequence below is the fixed one: fail, release, claim the *same* id,
+    answer it. What makes it a retry rather than a resend is that the message
+    count does not move.
+    """
+    alice, _bob = tenants
+    conversation_id, user_message_id = _question(admin_connection, alice, "ask once")
+
+    def message_count() -> int:
+        with admin_connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT count(*) FROM public.messages WHERE conversation_id = %s",
+                (conversation_id,),
+            )
+            row = cursor.fetchone()
+            assert row is not None
+            return int(row[0])
+
+    assert message_count() == 1
+
+    # A provider failure: claimed, then released, leaving the turn retryable.
+    failed = repository.claim(alice.workspace_id, user_message_id)
+    assert failed is not None
+    assert repository.release(alice.workspace_id, failed) is True
+    assert repository.status_of(alice.workspace_id, user_message_id) == PENDING
+
+    # Still one message. The failure stored nothing and lost nothing.
+    assert message_count() == 1
+
+    # The retry: the same turn key, claimed again by a fresh holder.
+    retried = repository.claim(alice.workspace_id, user_message_id)
+    assert retried is not None
+    assert retried.user_message_id == user_message_id
+
+    with admin_connection.cursor() as cursor:
+        cursor.execute(
+            "INSERT INTO public.messages "
+            "(workspace_id, conversation_id, role, content, reply_to) "
+            "VALUES (%s, %s, 'assistant', 'answered', %s)",
+            (alice.workspace_id, conversation_id, user_message_id),
+        )
+    admin_connection.commit()
+
+    assert repository.complete(alice.workspace_id, retried) is True
+    assert repository.status_of(alice.workspace_id, user_message_id) == COMPLETED
+
+    # Two messages: the original question and its reply. **Not four** -- which
+    # is what the resend path produced, and the number that made the defect
+    # visible on screen.
+    assert message_count() == 2
+
+    with admin_connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT count(*) FROM public.messages WHERE conversation_id = %s AND role = 'user'",
+            (conversation_id,),
+        )
+        row = cursor.fetchone()
+        assert row is not None
+        assert int(row[0]) == 1, "a retry must not store a second question"
+
+
+def test_concurrent_retries_of_one_question_yield_one_answer(
+    admin_connection: psycopg.Connection,
+    tenants: tuple[Identity, Identity],
+    repository: ChatTurnRepository,
+) -> None:
+    """Two Retry clicks are one provider call, one reply, one charge.
+
+    Nothing in the UI serialises a double click, and it does not need to: the
+    guarantee has to hold against two browsers anyway. This is the same claim
+    race as `test_only_one_of_many_concurrent_callers_may_invoke_a_provider`,
+    asserted through the path a *retry* takes -- a turn that was already
+    claimed and released once, which is the state a failed turn is in when the
+    user reaches for the button.
+    """
+    alice, _bob = tenants
+    _conversation_id, user_message_id = _question(admin_connection, alice, "retry me")
+
+    # Put the turn in the state a provider failure leaves it in.
+    first = repository.claim(alice.workspace_id, user_message_id)
+    assert first is not None
+    assert repository.release(alice.workspace_id, first) is True
+
+    winners: list[uuid.UUID] = []
+    lock = threading.Lock()
+
+    def retry() -> None:
+        claim = repository.claim(alice.workspace_id, user_message_id)
+
+        if claim is not None:
+            with lock:
+                winners.append(claim.claim_token)
+
+    threads = [threading.Thread(target=retry) for _ in range(4)]
+
+    for thread in threads:
+        thread.start()
+
+    for thread in threads:
+        thread.join()
+
+    # Exactly one Retry reaches a provider. The losers get 409, which the UI
+    # reports as "already being answered" rather than inviting another click.
+    assert len(winners) == 1, f"expected one retry to win, got {len(winners)}"
+    assert repository.status_of(alice.workspace_id, user_message_id) == IN_PROGRESS

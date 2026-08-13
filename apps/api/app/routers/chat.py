@@ -55,6 +55,7 @@ from app.schemas.chat import (
     MessageSendRequest,
     PendingTurnResponse,
     TurnResponse,
+    TurnStatus,
 )
 from app.services.chat_service import ConversationNotFoundError
 
@@ -97,6 +98,9 @@ def _message_response(message: ChatMessage) -> MessageResponse:
         model=message.model,
         token_count=message.token_count,
         created_at=message.created_at.isoformat(),
+        # Narrowed from the repository's `str` for the same reason `role` is: the
+        # value came from a row `ck_messages_turn_status_valid` already checked.
+        turn_status=None if message.turn_status is None else TurnStatus(message.turn_status),
     )
 
 

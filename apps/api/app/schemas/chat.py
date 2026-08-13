@@ -54,6 +54,24 @@ class MessageRole(StrEnum):
     ASSISTANT = "assistant"
 
 
+class TurnStatus(StrEnum):
+    """Where a question is in being answered.
+
+    Three values, mirroring `ck_messages_turn_status_valid` exactly -- the same
+    closed-vocabulary rule `MessageRole` follows, and for the same reason: the
+    database constrains this set, so the outermost schema enumerates the same
+    set rather than passing bounded free text to the client.
+
+    Only a *user* message carries one. An assistant reply is not a turn awaiting
+    execution, so its status is null -- `ck_messages_turn_state_matches_role`
+    enforces that pairing in the schema itself.
+    """
+
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+
+
 class MessageSendRequest(BaseModel):
     """One user message, optionally continuing an existing conversation."""
 
@@ -133,6 +151,22 @@ class MessageResponse(BaseModel):
     model: str | None
     token_count: int
     created_at: str
+
+    #: Where this question is in being answered, or null on a reply.
+    #:
+    #: **Carried because a question the client cannot see is unanswered is a
+    #: question nothing will ever answer.** STEP-23 stored `turn_status` from the
+    #: start but stopped it at the repository, so a turn whose provider call
+    #: failed sat `pending` in the database while the transcript rendered it
+    #: identically to an answered one. Manual testing found three such rows
+    #: accumulated with no way to reach them -- the turn was retryable by
+    #: contract and unreachable in practice.
+    #:
+    #: `pending` means claimable: no provider holds it, and the completion
+    #: endpoint will answer it. `in_progress` means one is in flight, or a
+    #: process died holding the claim -- the two are indistinguishable without a
+    #: lease, which STEP-23 excludes. `completed` means a reply exists.
+    turn_status: TurnStatus | None
 
 
 class ConversationResponse(BaseModel):
