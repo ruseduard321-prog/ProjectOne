@@ -253,9 +253,11 @@ Items 7a and 7b were re-run on 2026-08-13 against a genuine provider outage, for
 
 **Items 4, 5, 7a and 7b passed.** Items 6 and 8 are *not clearly observed* rather than failing: both are transient visual states (the composer's "Sending…" and the route's loading skeleton) that completed faster than they could be seen. The behaviour is `SettingsForm`'s and `loading.tsx`'s, already shipped and observed on the settings and projects screens.
 
-**Test data was removed after the retest.** Both test conversations and all 13 messages are deleted; `conversations` and `messages` are empty. The five `ai_spend_records` were **deliberately kept** as the audit trail for the §15a invariant — one charge per successful call, none for any failure — along with the workspace, its membership, the project, the BYOK credential and the €1 ceiling.
+**Test data was removed after the retest.** Both test conversations and all 13 messages are deleted; `conversations` and `messages` are empty. The five `ai_spend_records` were **deliberately kept** as the audit trail for the §15a invariant — one charge per successful call, none for any failure — along with the workspace, its membership, the project, the BYOK credential and the $1.00 USD ceiling.
 
-Final spend across the whole step: **5 records, $0.037280**, against a €1 ceiling. Every successful call is charged exactly once; no failed call is charged at all.
+Final spend across the whole step: **5 records, $0.037280 USD**, against a **$1.00 USD** ceiling. Every successful call is charged exactly once; no failed call is charged at all.
+
+**The platform's spend unit is USD throughout**, and this note previously said "€1" in error. The ledger column is `ai_spend_records.cost_usd`, the ceiling is `ai_budgets.limit_usd`, and the Settings field is labelled *Spending limit (USD)* — there is no currency conversion anywhere in the system, and no other unit is stored. A ceiling written in another symbol would misstate what was actually configured and enforced.
 
 ## Definition of Done
 
