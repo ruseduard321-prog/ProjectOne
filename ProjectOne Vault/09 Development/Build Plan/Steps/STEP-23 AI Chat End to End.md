@@ -229,20 +229,33 @@ Recorded against a `next dev` server on `http://localhost:3000`, 2026-08-11.
 | 4 | Signed-in empty state ("No conversations yet") | **Pass**, 2026-08-12. |
 | 5 | Transcript renders a user/assistant exchange with attribution | **Pass.** Automatic navigation to the new conversation, both bubbles, provider/model/token metadata shown. |
 | 6 | Composer pending state ("Sending…") during a turn | **Not clearly observed.** The turn completed faster than the pending state could be seen. Behaviour is `SettingsForm`'s, already shipped on settings and projects. |
-| 7a | A provider failure renders beside the transcript, keeping the saved question | **Failed, then fixed — awaiting retest.** The question was not persisted at all; see the callout above. Fixed by the two-request split; needs re-running against a valid key. |
-| 7b | **Retry answers the existing question** — same conversation id, same user message id, no second question stored | **Failed, then fixed — awaiting retest.** Every resend created a new user turn; three `pending` questions accumulated with no way to reach them. Fixed by surfacing `turn_status` and adding `retryTurnAction`. |
+| 7a | A provider failure renders beside the transcript, keeping the saved question | **Pass**, 2026-08-13 22:16 (request `f2a30fd3`). Failed first, then fixed by the two-request split, then confirmed against a real forced outage. Honest 502 after three bounded attempts, question visible, Retry beneath it, conversation id unchanged. **No spend recorded.** |
+| 7b | **Retry answers the existing question** — same conversation id, same user message id, no second question stored | **Pass**, 2026-08-13 22:18 (request `e8692489`). Retry pressed, not Send: no `POST /chat/conversations` ran, so no second question was stored. One provider call, one reply (`cc5ebaa1`) linked to the same question (`b23f9faf`), turn `completed`, claim cleared, one spend record. |
 | 8 | Loading skeleton shape matches the loaded screen | **Partial.** Persistence after a hard refresh passed; the skeleton itself was too brief to observe. |
 
-### What the remaining items are blocked on
+### What the forced-outage retest proved
 
-Items 4 and 5 passed against the shared development database on 2026-08-12/13, with a session, a BYOK OpenAI credential and a €1 spend ceiling all configured — so the earlier configuration blockers are resolved.
+Items 7a and 7b were re-run on 2026-08-13 against a genuine provider outage, forced by pointing `api.openai.com` at `127.0.0.1` in the Windows hosts file. Both passed, and the evidence is worth recording because this is the pair that failed twice.
 
-**7a and 7b are blocked on a valid provider key, not on code.** The last three attempts returned `401 Unauthorized` from OpenAI (request ids `e4a3e7e4`, `7a266f26`, `2fce302a`), which is authentication rather than permission: the stored key is no longer accepted, most likely rotated or revoked upstream. Two failure-injection routes were tried and are recorded because both are instructive:
+| Property | Evidence |
+|---|---|
+| Same question reused | `b23f9faf` stored once at 22:15:59; no `POST /chat/conversations` between the 22:16 failure and the 22:18 retry |
+| Exactly one reply | `cc5ebaa1` — the only row whose `reply_to` names that question |
+| Turn settled cleanly | `turn_status = completed`, `claim_token` NULL |
+| One invocation, one charge | One `200 OK` to OpenAI, one spend record (527 tokens, $0.021940) |
+| Failure cost nothing | Three bounded attempts, breaker tripped, 502 — **no `ai_spend_recorded`** |
 
-1. **Restricting the key's scope did not work.** Setting *Threads* to none leaves `/v1/chat/completions` untouched — that endpoint is governed by model capabilities, and a scope refusal would be `403` in any case.
-2. **A hosts-file redirect does work**, and is the recommended method: pointing `api.openai.com` at `127.0.0.1` produces a genuine connection failure at the network layer without touching the stored credential, so the same key remains available for the 7b retry.
+`claimed_at` remains populated on a completed turn by design: the migration keeps it as an operator diagnostic, and only `claim_token` is cleared on settle.
 
-Spend at the time of writing: **3 records, $0.008460 total**, one per successful call and none for any failed attempt — the invariant held throughout, including across the three failures that produced no charge.
+**Two failure-injection methods were tried, and only one works.** Restricting the OpenAI key's *Threads* scope does not affect `/v1/chat/completions` (that is governed by model capabilities, and a scope refusal would be `403` anyway). A hosts-file redirect does work — but on Windows the hosts file may carry the **ReadOnly** attribute, in which case `Add-Content` fails *silently* and the block appears applied while DNS still resolves normally. Verify with `Select-String` before trusting it; an unverified block produced two false "bypass" reports during this step.
+
+### What remains open
+
+**Items 4, 5, 7a and 7b passed.** Items 6 and 8 are *not clearly observed* rather than failing: both are transient visual states (the composer's "Sending…" and the route's loading skeleton) that completed faster than they could be seen. The behaviour is `SettingsForm`'s and `loading.tsx`'s, already shipped and observed on the settings and projects screens.
+
+**Test data was removed after the retest.** Both test conversations and all 13 messages are deleted; `conversations` and `messages` are empty. The five `ai_spend_records` were **deliberately kept** as the audit trail for the §15a invariant — one charge per successful call, none for any failure — along with the workspace, its membership, the project, the BYOK credential and the €1 ceiling.
+
+Final spend across the whole step: **5 records, $0.037280**, against a €1 ceiling. Every successful call is charged exactly once; no failed call is charged at all.
 
 ## Definition of Done
 
@@ -260,8 +273,9 @@ Per [[Execution Protocol#Step Completion]], this step stays **`In Progress`** un
 - [x] Message immutability enforced by `b4e8c02d71fa`, proven against the live development database.
 - [x] First-turn navigation and retry made coherent, with tests on both sides.
 - [x] A failed turn is visible and retryable *on screen*, answering the existing question rather than asking a new one.
-- [ ] **Required CI green**, including the database-backed suite this machine cannot run.
-- [ ] **Manual checklist items 6, 7a, 7b, 8** — 7a/7b blocked on a valid provider key, not on code.
+- [x] **Required CI green** on `8895962` — all three jobs, including the database-backed `api` suite this machine cannot run.
+- [x] **Manual checklist items 4, 5, 7a, 7b** — passed against a real database and a genuine forced provider outage. Items 6 and 8 are transient visual states that could not be observed; behaviour is shared with already-shipped screens.
+- [x] Test data removed; spend audit trail retained deliberately.
 - [ ] Review conversations resolved.
 - [ ] **Owner approval** — this step carries a gate.
 

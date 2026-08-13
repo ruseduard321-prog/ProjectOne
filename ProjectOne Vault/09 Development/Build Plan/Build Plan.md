@@ -326,7 +326,11 @@ The lesson worth carrying: **all three were invisible locally and only reachable
 
 **STEP-22 carried an owner approval gate** (Critical — AI/agent architecture, database schema, multi-tenancy, public API contract). The owner **approved it on 2026-08-11**, including its validated implementation and green CI, and authorized STEP-23 to proceed. The gate is closed.
 
-**STEP-23 carries its own owner approval gate**, for the same categories plus a public API contract. It is `In Progress` on `step-23-ai-chat` with an open Pull Request; it is not `Done` until required CI is green, the outstanding manual browser checks are completed in a database-backed environment, review is resolved, and the owner approves.
+**STEP-23 carries its own owner approval gate**, for the same categories plus a public API contract. It is `In Progress` on `step-23-ai-chat` with an open Pull Request.
+
+Required CI is green on `8895962` (all three jobs, including the database-backed suite), and the manual browser checklist is complete against the shared development database — including items 7a and 7b, re-run against a genuine forced provider outage after three separate defects that only manual testing exposed. Test data has been removed; the AI spend audit trail was kept deliberately.
+
+**What remains is review resolution and the owner's approval.** It is not `Done` until both are satisfied — and the owner merges, not Claude.
 
 **A long-term UI vision now exists, and it changes nothing in this plan** (2026-08-03). The project owner supplied [[Design Backlog and UI Vision]] — a premium-AI-OS design direction plus a Dashboard concept mockup. It is filed as **informational only** by explicit owner instruction: **not a step, not a roadmap change, not an architecture change, and overriding no engineering document.** No step was added, renumbered or rescheduled, and the [[Roadmap]] is untouched.
 
