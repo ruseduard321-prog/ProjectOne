@@ -1,18 +1,18 @@
 ---
 title: STEP-23 AI Chat End to End
 category: Development/Build Step
-status: draft
-version: "2.0"
-last_updated: 2026-08-08
+status: stable
+version: "3.0"
+last_updated: 2026-08-14
 tags: [engineering, workflow, build-step, ai, frontend]
 step_id: STEP-23
-step_status: In Progress
+step_status: Done
 detail_level: full
 ---
 
 # STEP-23 — AI Chat End to End
 
-**Status:** In Progress
+**Status:** Done
 **Detail level:** full — expanded by [[STEP-22 Minimum Workflow Engine]], per [[Execution Protocol]].
 
 ## Goal
@@ -298,7 +298,7 @@ A user holds a conversation with an AI inside their workspace, the conversation 
 
 ### Completion state
 
-Per [[Execution Protocol#Step Completion]], this step stays **`In Progress`** until every gate is satisfied:
+Per [[Execution Protocol#Step Completion]], every gate is now satisfied:
 
 - [x] Requirements implemented — all 8 tasks.
 - [x] Local validation passed — api 428 passed, web 163 passed, lint/format/type-check/build clean.
@@ -307,11 +307,16 @@ Per [[Execution Protocol#Step Completion]], this step stays **`In Progress`** un
 - [x] First-turn navigation and retry made coherent, with tests on both sides.
 - [x] A failed turn is visible and retryable *on screen*, answering the existing question rather than asking a new one.
 - [x] A turn can only be answered through the conversation that holds it — the claim predicate includes `conversation_id`.
-- [x] **Required CI green** on `8895962` — all three jobs, including the database-backed `api` suite this machine cannot run.
+- [x] **Required CI green** on `6f30b62` — all three jobs, including the database-backed `api` suite this machine cannot run.
 - [x] **Manual checklist items 4, 5, 7a, 7b** — passed against a real database and a genuine forced provider outage. Items 6 and 8 are transient visual states that could not be observed; behaviour is shared with already-shipped screens.
+- [x] The spend boundary is the provider's return — a failure after the charge never releases the turn.
 - [x] Test data removed; spend audit trail retained deliberately.
-- [ ] Review conversations resolved.
-- [ ] **Owner approval** — this step carries a gate.
+- [x] Review conversations resolved.
+- [x] **Owner approval granted 2026-08-14.** The gate is closed.
+
+**The owner approved this step on 2026-08-14**, closing the Critical gate it carries (AI architecture, database schema, multi-tenancy, public API contract). Approval followed five defects found after the first green pipeline — three by manual browser testing, two by review — every one of them in a failure path no test was asserting against.
+
+**The Pull Request is not merged by Claude.** Merging is the owner's action, and `main` is reached only through it ([[Branch and Pull Request Workflow]]).
 
 ---
 
