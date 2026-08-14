@@ -10,7 +10,7 @@ aliases: ["Implementation Plan", "Build Roadmap", "Step Index"]
 
 # ProjectOne Build Plan
 
-The ordered execution index taking ProjectOne from an empty repository to a verified, production-quality product. **32 sequential steps** (28 numbered, plus four inserted by owner decision: STEP-11a, STEP-16a, STEP-12a, STEP-16b), each sized for a single Claude Code session.
+The ordered execution index taking ProjectOne from an empty repository to a verified, production-quality product. **33 sequential steps** (28 numbered, plus five inserted by owner decision: STEP-11a, STEP-16a, STEP-12a, STEP-16b, STEP-25a), each sized for a single Claude Code session.
 
 **Public release is not a step in this plan.** It is unscheduled by owner decision on 2026-08-14, and a numbered release step will be created later — using the next available number — only once the owner decides the application is ready. The earlier `STEP-26 First Public Release` material is preserved, unnumbered and non-binding, as [[Public Release Draft - Unscheduled]].
 
@@ -65,7 +65,8 @@ Status appears in two places — the step note and the row below — and they mu
 | STEP-23 | [[STEP-23 AI Chat End to End]] | Done | full |
 | STEP-24 | [[STEP-24 Dashboard]] | Done | full |
 | STEP-16b | [[STEP-16b Auth Refresh Outage Handling]] | Done | full |
-| STEP-25 | [[STEP-25 Foundation Audit and Internal Readiness]] | Not Started | outline |
+| STEP-25 | [[STEP-25 Foundation Audit and Internal Readiness]] | Done | full |
+| STEP-25a | [[STEP-25a Foundation Remediation]] | Not Started | full |
 | STEP-26 | [[STEP-26 Product Design System and Screen Blueprints]] | Not Started | outline |
 | STEP-27 | [[STEP-27 Product-wide UI Rebuild]] | Not Started | outline |
 | STEP-28 | [[STEP-28 Full Product Verification Polish and Hardening]] | Not Started | outline |
@@ -378,6 +379,20 @@ Adding and removing steps is a plan change rather than an execution detail ([[Ex
 The cause sat four frames above the dashboard, in `resolveAccessToken`: a bare `catch {}` cleared the session for **every** refresh failure, including one where the API was simply unreachable. `api.ts` already separates `ApiError` (a request was judged) from `ApiUnreachableError` (none completed) precisely so an outage is not mistaken for a rejection — the catch discarded that. The result destroyed a still-valid refresh credential and told the user their session had ended.
 
 The fix re-throws `ApiUnreachableError` and leaves every other error on the existing path. The gate lives in `(app)/layout.tsx`, so all four authenticated routes were affected identically, and the **root `app/error.tsx`** is the boundary that catches it — a route-level boundary cannot, because it is nested inside the layout that failed. `auth.ts` had no test file at all, which is how this shipped; it has one now.
+
+**Foundation has been audited, and the audit found one thing that blocks design** ([[STEP-25 Foundation Audit and Internal Readiness]], `Done` and **owner-approved on 2026-08-15**). Eleven scope areas assessed, **17 findings accepted — 1 Critical, 3 High, 9 Medium, 4 Low** — plus 16 areas recorded as verified-no-finding with the method that verified each. The record is [[Foundation Audit Findings]].
+
+**The Critical finding is a credential reaching logs.** A PostgreSQL connection URI's password survives redaction and is written into a log through the traceback's own source line — reachable via exactly the wrong-credential case [[DOC-02 Validate the Request-Path Credential at Startup]] describes. It was found by *executing* the redaction filter rather than reading it, which is the lesson STEP-23 already recorded in a different form: green CI proves the assertions that were written.
+
+**One severity was corrected by evidence, in the owner's review.** The audit initially rated the RLS finding High, on the grounds that isolation could not be proven — the audit machine has no PostgreSQL, so 306 of 734 API tests skip. The owner rejected the reasoning: *do not conflate "cannot run locally" with "not verified anywhere."* Re-checked, the API job runs a disposable `postgres:17` container and sets `PROJECTONE_REQUIRE_DATABASE_TESTS`, and `conftest.py` answers that flag with `pytest.fail` rather than `pytest.skip` — *refusing to skip them silently*. A green API job is therefore only reachable if the isolation tests ran. **Tenant isolation is proven**; what remains is a local false-confidence gap, now Medium.
+
+**Two capabilities remain genuinely unproven anywhere**, and are not claimed otherwise: migration downgrades (CI applies migrations forward only and never exercises the reverse) and backup restore (no disposable database was available; per the owner's D1 the drill was **not simulated**). [[Backup and Disaster Recovery]] still states RPO and RTO should be defined without defining them.
+
+**The audit fixed nothing, deliberately.** An audit that remediates what it finds has changed the system it was measuring. No application code, migration, CI configuration or database was touched, no vault link was repaired and no schema note was created — and the shared Supabase database was never connected to at any point.
+
+**Remediation is a step, not a footnote.** [[STEP-25a Foundation Remediation]] was inserted by owner decision on 2026-08-15 between STEP-25 and [[STEP-26 Product Design System and Screen Blueprints]], carrying nine findings with **FA-05 first** — an active leak outranks a missing capability, because one is happening and the other has not yet happened. Eight lower-severity findings were deferred to [[STEP-28 Full Product Verification Polish and Hardening]] or a later remediation rather than folded in, since a remediation step that absorbs every open item stops being one.
+
+**Design does not begin until that Critical finding is closed.** [[STEP-26 Product Design System and Screen Blueprints]] stays `Not Started` at `outline` and is expanded by the step immediately preceding it — now STEP-25a. Expanding it earlier would have written a design plan against a foundation still carrying a credential leak.
 
 ---
 

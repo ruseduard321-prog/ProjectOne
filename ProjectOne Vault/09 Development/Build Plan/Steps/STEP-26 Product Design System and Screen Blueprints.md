@@ -105,6 +105,6 @@ Not yet expanded.
 
 ## Navigation
 
-- **Previous:** [[STEP-25 Foundation Audit and Internal Readiness]]
+- **Previous:** [[STEP-25a Foundation Remediation]]
 - **Next:** [[STEP-27 Product-wide UI Rebuild]]
 - **Parent:** [[Build Plan]]
