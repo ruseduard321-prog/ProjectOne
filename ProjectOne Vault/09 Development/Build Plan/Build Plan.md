@@ -63,7 +63,7 @@ Status appears in two places — the step note and the row below — and they mu
 | STEP-21 | [[STEP-21 Projects UI]] | Done | full |
 | STEP-22 | [[STEP-22 Minimum Workflow Engine]] | Done | full |
 | STEP-23 | [[STEP-23 AI Chat End to End]] | Done | full |
-| STEP-24 | [[STEP-24 Dashboard]] | In Progress | full |
+| STEP-24 | [[STEP-24 Dashboard]] | Done | full |
 | STEP-16b | [[STEP-16b Auth Refresh Outage Handling]] | Done | full |
 | STEP-25 | [[STEP-25 Foundation Audit and Internal Readiness]] | Not Started | outline |
 | STEP-26 | [[STEP-26 Product Design System and Screen Blueprints]] | Not Started | outline |
@@ -360,6 +360,12 @@ The vault, Claude OS and AI operating capabilities are built and validated ([[En
 Every Project Bible note is still `status: draft` at v0.1 — the *specification* is transcribed, not accepted. Treat drafts as the best current source of truth and flag genuine ambiguity per [[CLAUDE|CLAUDE.md]] §33 rather than resolving it silently mid-step.
 
 [[ADR-001 Technology Stack]] is the first and only ADR, written by STEP-02 and `Accepted` by the project owner on 2026-07-31. Its owner approval gate is cleared, so the stack is settled and STEP-03 onward may proceed ([[CLAUDE|CLAUDE.md]] §7).
+
+**Foundation's build sequence is complete.** [[STEP-24 Dashboard]] was approved by the project owner on 2026-08-15, closing STEP-01 through STEP-24 plus the four inserted steps. The application has a dashboard, projects, AI chat, settings, authentication, a workflow engine and AI spend governance, all against a live API.
+
+Two requirements were **deferred, not dropped**: the loading skeleton's reflow behaviour and [[Dashboard]]'s timed 30-second criterion. Both judge a visual design that [[STEP-27 Product-wide UI Rebuild]] replaces, so they are inherited as mandatory gates by [[STEP-26 Product Design System and Screen Blueprints]] and [[STEP-27 Product-wide UI Rebuild]] rather than answered against a layout that is about to change. Foundation shipped the functional product; the visual verdict belongs to the steps that own the design.
+
+A second finding is carried forward: the **root error boundary's retry does not retry**. STEP-24 found the defect, fixed the four route boundaries it owns, and left `app/error.tsx` as another step's code — it is recorded as a finding for [[STEP-25 Foundation Audit and Internal Readiness]].
 
 **The remaining plan was restructured by owner decision on 2026-08-14.** STEP-24 was in progress; everything after it changed shape. `STEP-25 Launch Readiness Criteria` was reworked into [[STEP-25 Foundation Audit and Internal Readiness]] — an audit of what Foundation actually built, rather than a definition of release criteria. Three steps follow it: [[STEP-26 Product Design System and Screen Blueprints]], [[STEP-27 Product-wide UI Rebuild]] and [[STEP-28 Full Product Verification Polish and Hardening]].
 

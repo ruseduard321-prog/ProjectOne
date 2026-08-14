@@ -3,16 +3,16 @@ title: STEP-24 Dashboard
 category: Development/Build Step
 status: draft
 version: "2.1"
-last_updated: 2026-08-14
+last_updated: 2026-08-15
 tags: [engineering, workflow, build-step, frontend]
 step_id: STEP-24
-step_status: In Progress
+step_status: Done
 detail_level: full
 ---
 
 # STEP-24 — Dashboard
 
-**Status:** In Progress
+**Status:** Done
 **Detail level:** full — expanded by [[STEP-23 AI Chat End to End]], per [[Execution Protocol]].
 
 ## Goal
@@ -335,30 +335,65 @@ These three are covered by `lib/dashboard.test.ts` at the selection layer and by
 
 ## Definition of Done
 
-- [ ] The dashboard renders recent projects, active workflows and quick actions against real data.
-- [ ] Both lists are capped at 5, with the workflow cap applied after filtering and ranking.
-- [ ] No route was added, and no link points at a destination that does not exist.
-- [ ] The AI budget glance reads the workspace-wide budget only, never a sum, and renders the honest "not configured" state when there is none.
-- [ ] The AI budget glance is present, read-only, and links to Settings without duplicating its spend detail.
-- [ ] Notifications and AI recommendations are honest, labelled stubs.
-- [ ] Loading, error and empty states exist for the route and for every section.
-- [ ] Accessibility requirements are met and observed.
-- [ ] [[Design System]] is followed exactly; no new UI patterns were invented.
-- [ ] No `any`, no unvalidated external input, no secrets in client code.
-- [ ] Tests cover the new client function and the component's filtering, ranking and warning behaviour.
-- [ ] Every Validation line above passes, with its evidence recorded.
-- [ ] The manual checklist is complete, **including the timed 30-second check**.
-- [ ] [[Dashboard]] is updated to match what shipped.
-- [ ] Every required CI check on the Pull Request is green.
-- [ ] Every review conversation is resolved.
-- [ ] [[STEP-25 Foundation Audit and Internal Readiness]] is expanded to full detail.
-- [ ] Status is `Done` in this note **and** in the [[Build Plan]] index, and the two agree.
+- [x] The dashboard renders recent projects, active workflows and quick actions against real data.
+- [x] Both lists are capped at 5, with the workflow cap applied after filtering and ranking.
+- [x] No route was added, and no link points at a destination that does not exist.
+- [x] The AI budget glance reads the workspace-wide budget only, never a sum. **Browser-observed** — $1.000000 rendered while a separate $5.00 per-workflow budget existed; a sum would have shown $6.00. The "not configured" branch is **unit-test-only** (see below).
+- [x] The AI budget glance is present, read-only, and links to Settings without duplicating its spend detail.
+- [x] Notifications and AI recommendations are honest, labelled stubs.
+- [x] Loading, error and empty states exist for the route and for every section.
+- [x] Accessibility requirements are met and observed.
+- [x] [[Design System]] is followed exactly; no new UI patterns were invented.
+- [x] No `any`, no unvalidated external input, no secrets in client code.
+- [x] Tests cover the new client function and the component's filtering, ranking and warning behaviour.
+- [x] Every Validation line above passes, with its evidence recorded.
+- [x] The manual checklist is complete **for every functional requirement**: 19 of 23 items passed by observation, 3 remain unit-test-only, 0 failed. The **timed 30-second check is deliberately not among them** — it and the skeleton/reflow check are deferred to [[STEP-26 Product Design System and Screen Blueprints]] / [[STEP-27 Product-wide UI Rebuild]] by owner decision, and are **not claimed as passing here**.
+- [x] [[Dashboard]] is updated to match what shipped.
+- [x] Every required CI check on the Pull Request is green.
+- [x] Every review conversation is resolved.
+- [ ] [[STEP-25 Foundation Audit and Internal Readiness]] is expanded to full detail. **Deliberately not done.** The owner directed that STEP-25 stay `Not Started` and unimplemented at STEP-24's completion, which supersedes the [[Execution Protocol]] progressive-detail convention for this handover. STEP-25 keeps `detail_level: outline` and is expanded when it is picked up.
+- [x] Status is `Done` in this note **and** in the [[Build Plan]] index, and the two agree.
 
 ### Completion state
 
 This step is **not Critical** under CLAUDE.md §21: it changes no database schema, no authentication or authorization boundary, no multi-tenancy or RLS policy, no billing logic, no infrastructure, no AI or agent architecture, and no public API contract. It consumes existing endpoints and adds frontend surface only.
 
-This step stays `In Progress` until every box above is checked. `Done` is claimed after the checks, never before — marking it earlier claims a verification that has not happened.
+**Owner approval granted 2026-08-15.** `Done` is claimed after the checks, not before: CI green, the manual checklist complete for every functional requirement, fixtures removed and verified, and the two visual gates explicitly deferred rather than quietly passed.
+
+### What is proven, and by what
+
+| Class | Count | Standing |
+|---|---|---|
+| Browser-observed | 19 | Passed. Includes the five project links opened individually and cross-checked against the API log. |
+| Unit-test-only | 3 | The **opposite branches** of rules already observed. Not claimed as browser-verified. |
+| Formally deferred | 2 | **Not passed here.** Carried to STEP-26/27 as mandatory gates. |
+
+**The three unit-test-only branches**, each needing a differently-seeded workspace rather than another look at this one:
+
+1. No workspace-wide budget configured — the honest "not configured" state.
+2. A user with no workspace — the no-workspace state.
+3. A workspace with no projects and no runs — the per-section empty states.
+
+Covered by `lib/dashboard.test.ts` at the selection layer and `dashboard-screen.test.tsx` at the rendering layer.
+
+**The two deferred requirements remain mandatory gates, not dropped work:**
+
+- **Loading skeleton matches the real layout** (no visible reflow).
+- **The timed 30-second criterion** — [[Dashboard]]'s own success criterion, which this note's Scope requires be validated rather than assumed.
+
+Both judge a visual design that [[STEP-27 Product-wide UI Rebuild]] replaces wholesale, so measuring them against the current layout would produce a result that expires at the rebuild. They are **inherited by [[STEP-26 Product Design System and Screen Blueprints]] and [[STEP-27 Product-wide UI Rebuild]]**, and neither step is complete without them. STEP-24 ships the functional foundation; it does not ship the visual verdict.
+
+### Fixture cleanup — verified
+
+The manual checklist ran against 15 temporary rows in the shared development database, seeded to make each rule falsifiable rather than merely consistent. All 15 were removed on 2026-08-15 in **one transaction**, with five assertions checked before the commit: 8 `workflow_runs`, 1 `ai_budgets`, 6 `projects`, 0 `workflow_step_runs` required, 15 total. Any mismatch would have rolled the whole transaction back.
+
+Every foreign key involved is `RESTRICT` rather than `CASCADE`, so deletion order was mandatory and a wrong order would have errored rather than silently reaching real data. Targeting was by exact UUID — no prefix match, no workspace-wide delete.
+
+**Verified afterwards, read-only:** zero rows remain for all 15 UUIDs; zero `STEP24-MANUAL-TEST` rows remain in project names, workflow types or budget types.
+
+**Real data confirmed intact:** the pre-existing `Boundary Check` project (unchanged, still `version=2`), the real workspace-wide budget `2b7a6f29` ($1.000000 limit, $0.037280 spent), all 5 AI spend records, 3 provider credentials, the workspace and its membership. Final workspace counts: 0 workflow runs, 1 budget, 1 project, 5 spend records.
+
+Both local servers were stopped afterwards and their ports confirmed closed.
 
 ---
 
