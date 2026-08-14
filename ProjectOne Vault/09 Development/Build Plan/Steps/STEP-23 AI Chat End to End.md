@@ -93,6 +93,8 @@ Recorded during expansion, while the context was loaded.
 | Another tenant's turn cannot be claimed | `test_another_tenants_turn_cannot_be_claimed` | **CI only** |
 | **A question cannot be answered through another conversation** | `test_a_question_cannot_be_claimed_through_another_conversation`; service half in `test_a_question_cannot_be_answered_through_another_conversation` | **CI only** + Local |
 | A turn is invisible through the wrong conversation (404, not 409) | `test_a_turn_is_invisible_through_the_wrong_conversation` | **CI only** |
+| **A failure after the provider was charged never releases the turn** | `test_a_reply_that_cannot_be_stored_leaves_the_turn_stuck_not_retryable`, `test_retrying_a_stranded_turn_is_refused_rather_than_charged_again` | Local + CI |
+| A failure before the provider returns releases it and charges nothing | `test_a_provider_failure_returns_the_turn_and_charges_nothing` | Local + CI |
 | Spend attributed | `AIService` `workflow_type="chat"`, metered by `test_ai_spend_isolation.py` | **CI only** |
 | Loading / empty / error states | `loading.tsx`, `error.tsx`, `EmptyState` branches in `page.tsx` | Build + CI |
 
@@ -176,7 +178,18 @@ Recorded during expansion, while the context was loaded.
 >
 > **`status_of` was scoped the same way**, and there the consequence was disclosure rather than a stuck turn: it decides 404 vs 409, so an unscoped lookup would answer 409 for a question in another conversation — confirming an id exists that, as far as the named conversation is concerned, does not.
 >
-> **A second gap found while fixing the first.** Persisting the reply sat outside the release block, on the reasoning that a turn with an answer in hand was as good as done. It is not: a failure there left the turn claimed and unreleased with the charge already incurred. It now runs inside the block. Releasing is strictly safer, because the reply was *not* stored — a retry answers a question that still has no answer rather than duplicating one.
+> **A second gap found while fixing the first — and the wrong fix for it.** Persisting the reply sat outside the release block, so a failure there left the turn claimed and unreleased. My first correction widened the block to cover it. **Review caught that this was worse than the problem it solved:** by the time `add_message` runs, the provider has answered and the workspace has been charged, so releasing the claim lets Retry invoke and charge a *second* time for one question — breaking the "one charge per turn" guarantee with the very code meant to protect the turn.
+>
+> **The provider's return is a spend boundary, and the exception handling now says so.** Two blocks, not one:
+>
+> | Failure | Claim | Why |
+> |---|---|---|
+> | Governance refusal, context assembly, provider failure — **before** the call returns | **Released** → `pending` | Nothing was spent; the user may retry freely |
+> | Reply persistence, turn completion, anything **after** the call returns | **Held** → stays `in_progress` | Money is already spent; releasing would buy the same answer twice |
+>
+> A turn stranded that way is the documented post-provider crash window reached by a different route: the external side effect completed, the reply was not durably recorded. It gets the same honest treatment — visibly stuck, answering 409, never silently retried. It logs `chat_turn_stranded_after_provider_charge` with workspace, conversation, user message, provider, model and token count: the identifiers an operator needs to reconcile by hand, and no message content, reply text or credential.
+>
+> Both regression tests were verified to **fail against the widened block** before being accepted, so they assert the boundary rather than restating the implementation.
 
 ## The two-request contract
 
@@ -288,7 +301,7 @@ A user holds a conversation with an AI inside their workspace, the conversation 
 Per [[Execution Protocol#Step Completion]], this step stays **`In Progress`** until every gate is satisfied:
 
 - [x] Requirements implemented — all 8 tasks.
-- [x] Local validation passed — api 425 passed, web 163 passed, lint/format/type-check/build clean.
+- [x] Local validation passed — api 428 passed, web 163 passed, lint/format/type-check/build clean.
 - [x] Documentation updated in the same change.
 - [x] Message immutability enforced by `b4e8c02d71fa`, proven against the live development database.
 - [x] First-turn navigation and retry made coherent, with tests on both sides.

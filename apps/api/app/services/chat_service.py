@@ -293,18 +293,19 @@ class ChatService:
         if claim is None:
             raise self._not_claimable(workspace_id, conversation_id, user_message_id)
 
-        # Everything below runs with the claim committed and no transaction of
-        # ours open. A failure must release it, or the turn is stranded in
-        # exactly the state this step refuses to recover from automatically.
+        # **The provider's return is the boundary, and it is a spend boundary.**
         #
-        # **Persisting the reply is inside this block, not after it.** It used
-        # to sit outside, on the reasoning that once a provider had answered the
-        # turn was as good as done -- which is wrong in the one case that
-        # matters. A failure to store the reply left the turn claimed and
-        # unreleased, indistinguishable from a crash, while the charge had
-        # already been incurred. Releasing there is safe and strictly better:
-        # the reply was *not* stored, so a retry answers a question that still
-        # has no answer rather than duplicating one.
+        # Before it, nothing external has happened: a governance refusal or a
+        # provider failure costs nothing, the reservation is settled by
+        # `AIService`'s own `finally`, and the turn must go back to `pending` so
+        # the user can retry.
+        #
+        # After it, money has been spent. Releasing there would let Retry invoke
+        # and charge a *second* time for one question -- the "one charge per
+        # turn" guarantee broken by the very code meant to protect the turn.
+        # That is why the two are separate blocks rather than one: an earlier
+        # revision widened this into a single `try` and, in closing a stuck-turn
+        # hole, opened a double-charge one. Caught in review.
         try:
             request = CompletionRequest(
                 messages=self._context_for(workspace_id, conversation),
@@ -316,7 +317,29 @@ class ChatService:
                 request=request,
                 actor_id=actor_id,
             )
+        except Exception:
+            # Nothing was spent, so the turn is safe to hand back.
+            #
+            # A release that itself fails is swallowed: the original failure is
+            # what the caller needs to hear, and a turn left claimed is the
+            # documented stuck state rather than a new kind of one.
+            try:
+                self._turns.release(workspace_id, claim)
+            except Exception:  # pragma: no cover - defensive
+                logger.warning(
+                    log_context(
+                        event="chat_turn_release_failed",
+                        workspace_id=workspace_id,
+                        conversation_id=conversation_id,
+                        user_message_id=user_message_id,
+                    )
+                )
 
+            raise
+
+        # Past this line the provider has answered and the workspace has been
+        # charged. **No failure below releases the claim.**
+        try:
             assistant_message = self._conversations.add_message(
                 workspace_id=workspace_id,
                 conversation_id=conversation.id,
@@ -327,30 +350,34 @@ class ChatService:
                 token_count=response.usage.total_tokens,
                 reply_to=user_message_id,
             )
+
+            # After the reply is stored, never before: a turn marked complete
+            # without one could never be retried and would have no answer.
+            self._turns.complete(workspace_id, claim)
         except Exception:
-            # Released rather than left claimed: an ordinary failure must leave
-            # the turn retryable. The spend reservation is settled by
-            # `AIService`'s own `finally`, so no charge leaks either.
+            # The turn stays `in_progress` on purpose. It is the same situation
+            # as a process dying after the provider accepted the request -- the
+            # external side effect completed and the reply was not durably
+            # recorded -- so it gets the same honest treatment: visibly stuck,
+            # answering 409, never silently retried into a second charge.
             #
-            # A release that itself fails is swallowed: the original failure is
-            # what the caller needs to hear, and a turn left claimed is the
-            # documented stuck state rather than a new one.
-            try:
-                self._turns.release(workspace_id, claim)
-            except Exception:  # pragma: no cover - defensive
-                logger.warning(
-                    log_context(
-                        event="chat_turn_release_failed",
-                        workspace_id=workspace_id,
-                        conversation_id=conversation_id,
-                    )
+            # Logged with the identifiers an operator needs to reconcile it by
+            # hand. No message content, no provider key, no reply text: this is
+            # a pointer to the row, not a copy of it.
+            logger.error(
+                log_context(
+                    event="chat_turn_stranded_after_provider_charge",
+                    workspace_id=workspace_id,
+                    conversation_id=conversation_id,
+                    user_message_id=user_message_id,
+                    provider=response.provider,
+                    model=response.model,
+                    tokens=response.usage.total_tokens,
                 )
+            )
 
             raise
 
-        # After the reply is stored, never before: a turn marked complete
-        # without one could never be retried and would have no answer.
-        self._turns.complete(workspace_id, claim)
         self._conversations.touch(workspace_id, conversation.id)
 
         logger.info(

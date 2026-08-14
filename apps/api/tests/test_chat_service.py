@@ -772,3 +772,128 @@ def test_a_long_title_is_truncated_on_a_word_boundary() -> None:
     assert len(title) <= 61
     # Truncated mid-word would leave a severed fragment before the ellipsis.
     assert not title.removesuffix("…").endswith("wor")
+
+
+def _spend_records(service: ChatService) -> list[object]:
+    """Every spend record written through the governed path.
+
+    Reached through the service's own collaborators rather than a fixture,
+    because the assertion these tests make is precisely that the *service* did
+    not cause a second charge -- so the count has to come from the same object
+    the service spent through.
+    """
+    return service._ai._spend._repository.records  # noqa: SLF001 - asserting spend
+
+
+def test_a_provider_failure_returns_the_turn_and_charges_nothing() -> None:
+    # The first half of the spend boundary: **before** the provider returns,
+    # nothing external has happened, so the turn goes back to `pending` and the
+    # user may retry at no cost.
+    provider = FakeProvider("openai", fail_with=ProviderUnavailableError("down", "openai"))
+    service, store, _, workspace = build((provider,))
+    actor = uuid.uuid4()
+
+    pending = service.start_turn(workspace, "Hello", actor)
+
+    with pytest.raises(AllProvidersFailedError):
+        service.complete_turn(
+            workspace_id=workspace,
+            conversation_id=pending.conversation.id,
+            user_message_id=pending.user_message.id,
+            actor_id=actor,
+        )
+
+    turns = service._turns  # noqa: SLF001 - asserting the collaborator's state
+    assert turns.status[pending.user_message.id] == "pending"
+    assert pending.user_message.id not in turns.tokens
+    assert _spend_records(service) == []
+    assert [m for m in store.messages if m.role == "assistant"] == []
+
+
+def test_a_reply_that_cannot_be_stored_leaves_the_turn_stuck_not_retryable() -> None:
+    # **The regression this test exists for.**
+    #
+    # An earlier revision widened the release block to cover persisting the
+    # reply. That closed a stuck-turn hole and opened a worse one: by the time
+    # `add_message` runs the provider has answered and the workspace has been
+    # charged, so releasing the claim would let Retry invoke and charge a
+    # *second* time for one question.
+    #
+    # This is the documented post-provider crash window, reached by a different
+    # route: the external side effect completed and the reply was not durably
+    # recorded. It gets the same treatment -- visibly stuck, never silently
+    # retried.
+    provider = FakeProvider("openai")
+    service, store, _, workspace = build((provider,))
+    actor = uuid.uuid4()
+
+    pending = service.start_turn(workspace, "Hello", actor)
+
+    # Fail only the assistant insert, leaving the user message path intact.
+    def refuse_reply(*args: object, **kwargs: object) -> ChatMessage:
+        if kwargs.get("role") == "assistant":
+            raise psycopg.errors.CheckViolation("reply refused")
+
+        raise AssertionError("only the reply should be written here")
+
+    store.add_message = refuse_reply  # type: ignore[assignment,method-assign]
+
+    with pytest.raises(psycopg.errors.CheckViolation):
+        service.complete_turn(
+            workspace_id=workspace,
+            conversation_id=pending.conversation.id,
+            user_message_id=pending.user_message.id,
+            actor_id=actor,
+        )
+
+    turns = service._turns  # noqa: SLF001 - asserting the collaborator's state
+
+    # Stuck, deliberately: not returned to `pending`, so nothing can retry it.
+    assert turns.status[pending.user_message.id] == "in_progress"
+    assert pending.user_message.id not in turns.releases
+
+    # One call, one charge -- the guarantee the widened block had broken.
+    assert provider.calls == 1
+    assert len(_spend_records(service)) == 1
+
+    # And no fabricated answer anywhere.
+    assert [m for m in store.messages if m.role == "assistant"] == []
+
+
+def test_retrying_a_stranded_turn_is_refused_rather_than_charged_again() -> None:
+    # The user-facing half: a turn stranded after a charge answers 409, which
+    # the UI reports as "already being answered". It must not reach a provider.
+    provider = FakeProvider("openai")
+    service, store, _, workspace = build((provider,))
+    actor = uuid.uuid4()
+
+    pending = service.start_turn(workspace, "Hello", actor)
+
+    def refuse_reply(*args: object, **kwargs: object) -> ChatMessage:
+        raise psycopg.errors.CheckViolation("reply refused")
+
+    store.add_message = refuse_reply  # type: ignore[assignment,method-assign]
+
+    with pytest.raises(psycopg.errors.CheckViolation):
+        service.complete_turn(
+            workspace_id=workspace,
+            conversation_id=pending.conversation.id,
+            user_message_id=pending.user_message.id,
+            actor_id=actor,
+        )
+
+    calls_after_first = provider.calls
+    charges_after_first = len(_spend_records(service))
+
+    # The retry the user would press.
+    with pytest.raises(TurnNotClaimableError):
+        service.complete_turn(
+            workspace_id=workspace,
+            conversation_id=pending.conversation.id,
+            user_message_id=pending.user_message.id,
+            actor_id=actor,
+        )
+
+    # Refused before reaching a provider: still one call, still one charge.
+    assert provider.calls == calls_after_first == 1
+    assert len(_spend_records(service)) == charges_after_first == 1
