@@ -182,7 +182,7 @@ Recorded on 2026-08-14 against commit `a30f406`:
 | Line | Evidence |
 |---|---|
 | Type-check and lint pass | `npm run typecheck` clean; `npm run lint` clean at `--max-warnings=0` |
-| Unit tests pass | `npm run test` — 192 passed across 17 files, including the 29 new cases in `lib/dashboard.test.ts` and `lib/workflows-api.test.ts` |
+| Unit tests pass | `npm run test` — 219 passed across 18 files: the 29 selection and client cases in `lib/dashboard.test.ts` and `lib/workflows-api.test.ts`, plus the 27 rendering cases in `dashboard-screen.test.tsx` |
 | Full suite does not regress STEP-22/23 | Same run: every pre-existing file still passes |
 | No route was added | `npm run build` route list is `/`, `/_not-found`, `/chat`, `/dashboard`, `/health`, `/projects`, `/projects/[projectId]`, `/session/expired`, `/settings`, `/sign-in`, `/sign-up` — identical to before this step |
 | Renders against a running API | **Not yet proven.** Needs a seeded workspace; owner observation. |
@@ -192,6 +192,10 @@ Recorded on 2026-08-14 against commit `a30f406`:
 | CI green | See the step's Pull Request. |
 
 The lines marked not yet proven are the reason this step is not `Done`. They require a running API and a seeded workspace, which is what the manual checklist below exists to cover — asserting them from a passing unit suite would be exactly the assumption this section forbids.
+
+**A coverage gap was found in review and closed.** The first implementation tested only the selection functions, which proved what the page *decides* and nothing about what it *renders*. The two are separable: with the breaker warning's markup disabled outright, the entire suite still passed, because `hasOpenBreaker` kept returning `true` and nothing asserted that any element consumed it. `dashboard-screen.test.tsx` closes this by rendering `DashboardScreen` through `renderToStaticMarkup` and asserting the markup — no DOM environment and no React Testing Library, since the page is a Server Component and `react-dom` is already a dependency. The same mutation now fails four tests.
+
+Both layers are kept deliberately: the selection tests state each rule precisely and fail readably when a rule is wrong; the rendering tests prove the rules reach the screen. Neither subsumes the other.
 
 ## Manual Browser Test Checklist
 

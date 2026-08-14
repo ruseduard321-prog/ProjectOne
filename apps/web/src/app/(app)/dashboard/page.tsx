@@ -98,10 +98,17 @@ interface DashboardScreenProps {
  * The rendered screen, separated from the data fetching above it.
  *
  * The same split `/projects` and `/settings` use: the layout is readable without
- * the awaits, and the selection rules it calls are asserted directly in
- * `lib/dashboard.test.ts` rather than through a rendered tree.
+ * the awaits, and the layout can be rendered against fixed props.
+ *
+ * **Exported for testing**, which the sibling components deliberately are not.
+ * `dashboard-screen.test.tsx` renders this one root through
+ * `renderToStaticMarkup` and asserts the markup, because asserting the selection
+ * rules alone proved too little: the breaker warning could be deleted outright
+ * and `lib/dashboard.test.ts` stayed green, since `hasOpenBreaker` kept
+ * returning true whether or not anything rendered its result. One export is
+ * enough to close that, so only one is made.
  */
-function DashboardScreen({
+export function DashboardScreen({
   workspaceName,
   otherWorkspaceCount,
   projects,
