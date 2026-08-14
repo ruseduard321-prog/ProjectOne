@@ -10,7 +10,7 @@ aliases: ["Implementation Plan", "Build Roadmap", "Step Index"]
 
 # ProjectOne Build Plan
 
-The ordered execution index taking ProjectOne from an empty repository to a verified, production-quality product. **31 sequential steps** (28 numbered, plus three inserted by owner decision: STEP-11a, STEP-16a, STEP-12a), each sized for a single Claude Code session.
+The ordered execution index taking ProjectOne from an empty repository to a verified, production-quality product. **32 sequential steps** (28 numbered, plus four inserted by owner decision: STEP-11a, STEP-16a, STEP-12a, STEP-16b), each sized for a single Claude Code session.
 
 **Public release is not a step in this plan.** It is unscheduled by owner decision on 2026-08-14, and a numbered release step will be created later — using the next available number — only once the owner decides the application is ready. The earlier `STEP-26 First Public Release` material is preserved, unnumbered and non-binding, as [[Public Release Draft - Unscheduled]].
 
@@ -64,6 +64,7 @@ Status appears in two places — the step note and the row below — and they mu
 | STEP-22 | [[STEP-22 Minimum Workflow Engine]] | Done | full |
 | STEP-23 | [[STEP-23 AI Chat End to End]] | Done | full |
 | STEP-24 | [[STEP-24 Dashboard]] | In Progress | full |
+| STEP-16b | [[STEP-16b Auth Refresh Outage Handling]] | Done | full |
 | STEP-25 | [[STEP-25 Foundation Audit and Internal Readiness]] | Not Started | outline |
 | STEP-26 | [[STEP-26 Product Design System and Screen Blueprints]] | Not Started | outline |
 | STEP-27 | [[STEP-27 Product-wide UI Rebuild]] | Not Started | outline |
@@ -365,6 +366,12 @@ Every Project Bible note is still `status: draft` at v0.1 — the *specification
 The substantive change is that **public release left the plan.** `STEP-26 First Public Release` is no longer a numbered step; its material is preserved unnumbered and non-binding as [[Public Release Draft - Unscheduled]], and a release step will be created later using the next available number, once the owner decides the product is ready. Three prior positions are superseded and recorded as such rather than deleted: that Foundation ended at STEP-26, that UI polish would follow the public release, and the dark/blue/KPI-card visual direction.
 
 Adding and removing steps is a plan change rather than an execution detail ([[Execution Protocol#Future Step Synchronization]]), so it was made by explicit owner instruction and not by a session restructuring the plan on its own initiative.
+
+**An outage was being reported as a signed-out session** (STEP-16b — a step inserted by owner decision on 2026-08-14, since the fix changes shared authentication behaviour rather than any dashboard surface). STEP-24's manual checklist stopped the API to exercise the dashboard's error boundary; the boundary never rendered, the browser landed on `/sign-in`, and the session cookies were gone.
+
+The cause sat four frames above the dashboard, in `resolveAccessToken`: a bare `catch {}` cleared the session for **every** refresh failure, including one where the API was simply unreachable. `api.ts` already separates `ApiError` (a request was judged) from `ApiUnreachableError` (none completed) precisely so an outage is not mistaken for a rejection — the catch discarded that. The result destroyed a still-valid refresh credential and told the user their session had ended.
+
+The fix re-throws `ApiUnreachableError` and leaves every other error on the existing path. The gate lives in `(app)/layout.tsx`, so all four authenticated routes were affected identically, and the **root `app/error.tsx`** is the boundary that catches it — a route-level boundary cannot, because it is nested inside the layout that failed. `auth.ts` had no test file at all, which is how this shipped; it has one now.
 
 ---
 
