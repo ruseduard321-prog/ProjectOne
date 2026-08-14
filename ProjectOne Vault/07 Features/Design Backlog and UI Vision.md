@@ -2,12 +2,12 @@
 title: Design Backlog and UI Vision
 category: Design
 status: reference
-version: "1.0"
-last_updated: 2026-08-03
+version: "2.0"
+last_updated: 2026-08-14
 tags: [design, documentation, frontend]
 aliases: ["Design Backlog", "UI Vision", "ProjectOne Design Backlog & UI Vision"]
 source_pdf: "[[12 Assets/PDF/ProjectOne_Design_Backlog_Vision_v1.0.pdf|ProjectOne_Design_Backlog_Vision_v1.0.pdf]]"
-authority: informational
+authority: informational (partly superseded 2026-08-14)
 ---
 
 # ProjectOne Design Backlog & UI Vision v1.0
@@ -21,6 +21,17 @@ authority: informational
 > - **It does not override any engineering document.** Where it and [[Design System]], the [[Engineering Handbook MOC|Engineering Handbook]] or [[CLAUDE|CLAUDE.md]] appear to disagree, **they win and this note yields** — see [[#Where This Sits in the Hierarchy]].
 > - **It is the authoritative long-term UI/UX vision.** Within that single scope — where the interface is eventually going — it is the reference to design against.
 
+> [!warning] Partly superseded on 2026-08-14 — read this first
+> By owner decision, these parts of this note are **no longer current** and are kept only as history:
+>
+> - **Its [[#Visual Rules]] and the dark/premium-AI-OS direction.** The active visual direction is a warm ivory/cream canvas, matte-black navigation, burnt-orange/vermilion accent, editorial typography and cinematic production cues — explicitly *not* a dark interface, *not* blue/purple AI gradients, *not* glassmorphism-heavy, and *not* a generic KPI-card dashboard. It is recorded in [[STEP-26 Product Design System and Screen Blueprints]], with its own concept reference (`ProjectOne_Product_Design_Direction_v1.0.png`), and lands in [[Design System]] there.
+> - **Its [[#Concept Mockup]].** That mockup illustrates the superseded dark direction. It is left in place as history; the current reference is the one in [[STEP-26 Product Design System and Screen Blueprints]].
+> - **Its [[#Foundation Rule]] and [[#Implementation Policy During Foundation]].** Design work is no longer deferred until after a public release. It is scheduled *before* release consideration, as [[STEP-26 Product Design System and Screen Blueprints]] and [[STEP-27 Product-wide UI Rebuild]].
+>
+> What remains current: this note's **design philosophy** (premium software rather than generic admin panel), its **subordinate rank** to [[Design System]] and the engineering documents, and its **UI Polish Backlog** as a collection point.
+>
+> The superseded text is left in place unedited. Erasing it would hide that the question was asked and answered differently once, which is exactly the context a future reader needs.
+
 ## Purpose
 
 This document defines the long-term UI vision for ProjectOne. It is intentionally separate from the engineering roadmap. It must never introduce new architecture, database changes or backend behavior. Its only responsibility is visual quality and user experience.
@@ -32,6 +43,9 @@ ProjectOne should feel like a premium AI operating system rather than a generic 
 See also: [[Design System]] §1–§3 · [[Design System#14. Long-Term Vision]]
 
 ## Foundation Rule
+
+> [!warning] Superseded 2026-08-14 — retained as history
+> Replaced by the sequence [[STEP-25 Foundation Audit and Internal Readiness]] → [[STEP-26 Product Design System and Screen Blueprints]] → [[STEP-27 Product-wide UI Rebuild]] → [[STEP-28 Full Product Verification Polish and Hardening]]. Design now precedes release consideration, and public release is unscheduled ([[Public Release Draft - Unscheduled]]).
 
 Finish Foundation (STEP-26) first. During Foundation, collect design ideas only. After Foundation, execute one dedicated UI Polish sprint that upgrades every screen consistently.
 
@@ -51,6 +65,9 @@ See also: [[Dashboard]] — the Project Bible specification for what the Dashboa
 
 ## Visual Rules
 
+> [!warning] Superseded 2026-08-14 — retained as history
+> The direction below is **no longer active**. See the banner at the top of this note and [[STEP-26 Product Design System and Screen Blueprints]] for the current one.
+
 Dark interface, rounded corners (12-16px), restrained color palette, premium typography, consistent spacing, subtle blur, micro-animations (150-200ms), polished empty/loading states, high-quality charts and tables.
 
 > [!note] These are directional, not token values
@@ -61,6 +78,9 @@ Dark interface, rounded corners (12-16px), restrained color palette, premium typ
 Only presentation may change. Business logic, APIs, authentication, AI routing, database schema, billing and architecture must remain untouched. This document is a design backlog, not a roadmap step.
 
 ## Concept Mockup
+
+> [!warning] Superseded 2026-08-14 — retained as history
+> This mockup illustrates the **dark** direction withdrawn on 2026-08-14. The current concept reference is `ProjectOne_Product_Design_Direction_v1.0.png`, embedded in [[STEP-26 Product Design System and Screen Blueprints]]. Both images are kept: comparing them is the clearest record of what changed.
 
 A single concept mockup of the Dashboard accompanies this document, illustrating the vision above as one composed screen.
 
@@ -93,17 +113,17 @@ The document's own Foundation Rule, restated as the operating instruction it bec
 - **Reference only.** Steps STEP-19–STEP-26 may consult this note for direction. They build against [[Design System]].
 - **Do not redesign existing pages because of this document.** A screen already shipped is not out of compliance for failing to match a vision explicitly scheduled for later. Rework triggered by this note during Foundation is out of scope under [[CLAUDE|CLAUDE.md]] §29 and §35.
 - **Collect, don't act.** Where a Foundation step surfaces a concrete UI improvement traceable to this vision, record it in [[#UI Polish Backlog]] below and continue. Collecting is the instruction; acting on it is not.
-- **After Foundation, it leads.** Once [[STEP-26 First Public Release]] is `Done`, this becomes the primary reference for a dedicated **UI Polish phase** that upgrades every screen in one consistent pass — one sprint rather than screen-by-screen drift, which is the whole reason for deferring it.
+- **After Foundation, it leads.** Once `STEP-26 First Public Release` is `Done`, this becomes the primary reference for a dedicated **UI Polish phase** that upgrades every screen in one consistent pass — one sprint rather than screen-by-screen drift, which is the whole reason for deferring it. *(Superseded: that step no longer exists and the one-pass rebuild is now [[STEP-27 Product-wide UI Rebuild]], designed by [[STEP-26 Product Design System and Screen Blueprints]].)*
 
 The reasoning is worth keeping: polishing screens while the surfaces beneath them are still being built means polishing twice, and a consistent visual pass is only possible once there is a complete set of screens to be consistent *across*.
 
 ## UI Polish Backlog
 
-Candidate improvements collected during Foundation, each traceable to this vision. **Nothing here is scheduled**; this is a collection point, not a queue, and it is read by the UI Polish phase after [[STEP-26 First Public Release]].
+Candidate improvements collected during Foundation, each traceable to this vision. **Nothing here is scheduled**; this is a collection point, not a queue. It is now read by [[STEP-26 Product Design System and Screen Blueprints]] when the blueprints are drawn — still a collection point, but one that is consumed earlier than originally planned.
 
 | # | Candidate | Source | Raised by |
 |---|---|---|---|
-| — | *(none collected yet)* | — | — |
+| 1 | **Active workflow rows are hard to tell apart at a glance.** During manual testing all five rows rendered the same workflow-type name, so status and timestamp were the only distinguishing content. A row does not surface which *project* it belongs to, which is what a user scanning "what needs attention" is most likely looking for. The data is available — runs carry a project reference. This is presentation, not selection: the ordering was verified correct. | [[#Design Philosophy]] — information hierarchy | [[STEP-24 Dashboard]] |
 
 To add an entry: name the improvement, link the section of this note it traces to, and name the step that surfaced it. Do not implement it.
 
@@ -114,4 +134,4 @@ To add an entry: name the improvement, link the section of this note it traces t
 - **Previous:** [[Design System]]
 - **Next:** —
 - **Parent:** [[Design MOC]]
-- **Related Notes:** [[Design System]] · [[Dashboard]] · [[Frontend Architecture]] · [[Roadmap]] · [[Build Plan]] · [[STEP-26 First Public Release]]
+- **Related Notes:** [[Design System]] · [[Dashboard]] · [[Frontend Architecture]] · [[Roadmap]] · [[Build Plan]] · [[STEP-26 Product Design System and Screen Blueprints]] · [[STEP-27 Product-wide UI Rebuild]]

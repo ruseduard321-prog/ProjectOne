@@ -792,3 +792,78 @@ export function deleteConversation(
     accessToken,
   });
 }
+
+/**
+ * Where a workflow run is, as the API's `RunStatus` writes it.
+ *
+ * The vocabulary is the server's — `app/workflows/models.py`, matching
+ * `ck_workflow_runs_status_valid`. Declared as a union rather than inferred as
+ * `string` so a status the API stopped sending becomes a compile error here
+ * instead of a branch that silently never matches.
+ */
+export type ApiRunStatus = "pending" | "running" | "awaiting_approval" | "completed" | "failed";
+
+/** Where one step of a run is, as the API's `StepStatus` writes it. */
+export type ApiStepStatus =
+  | "pending"
+  | "running"
+  | "awaiting_approval"
+  | "completed"
+  | "failed";
+
+/** One step of a run, as `WorkflowStepRunResponse` returns it. */
+export interface ApiWorkflowStepRun {
+  readonly step_index: number;
+  readonly step_name: string;
+  readonly status: ApiStepStatus;
+  readonly detail: string | null;
+  readonly tokens_used: number;
+  readonly started_at: string | null;
+  readonly finished_at: string | null;
+}
+
+/**
+ * One workflow run and its steps, as `WorkflowRunResponse` returns it.
+ *
+ * ## `started_at` is nullable and `created_at` is not
+ *
+ * A pending run has been persisted but has not begun, so it has a creation time
+ * and no start time. Rendering the one under the other's label states something
+ * untrue about precisely the runs where "how long has this been waiting" is the
+ * question being asked — see {@link runTimestamp}.
+ */
+export interface ApiWorkflowRun {
+  readonly id: string;
+  readonly workspace_id: string;
+  readonly workflow_type: string;
+  /** The definition version this run *executed*, not the current one. */
+  readonly definition_version: number;
+  readonly status: ApiRunStatus;
+  readonly project_id: string | null;
+  /** Why the run failed, or which step it waits on. Null on a healthy run. */
+  readonly detail: string | null;
+  readonly triggered_by: string;
+  readonly started_at: string | null;
+  readonly finished_at: string | null;
+  readonly created_at: string;
+  readonly steps: readonly ApiWorkflowStepRun[];
+}
+
+/**
+ * Recent runs in a workspace, newest first, each with its steps.
+ *
+ * Bounded by the repository's own limit — this client sends no pagination
+ * parameters, because the endpoint takes none. The dashboard's cap on how many
+ * it *displays* is a presentation rule and lives with the presentation
+ * (`lib/dashboard.ts`), not here.
+ */
+export function listWorkflowRuns(
+  accessToken: string,
+  workspaceId: string,
+): Promise<ApiWorkflowRun[]> {
+  return apiRequest<ApiWorkflowRun[]>({
+    path: `/workspaces/${workspaceId}/workflows/runs`,
+    method: "GET",
+    accessToken,
+  });
+}

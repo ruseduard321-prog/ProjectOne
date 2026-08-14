@@ -2,6 +2,8 @@
 
 import { useEffect } from "react";
 
+import { useErrorRecovery } from "@/lib/error-recovery";
+
 /**
  * Error boundary for the settings screen.
  *
@@ -18,8 +20,10 @@ import { useEffect } from "react";
  * server log entry.
  *
  * This page reads provider credentials and spend, so the most likely failure is
- * the API being unreachable — which `reset()` genuinely recovers from, making
- * the retry affordance real rather than decorative.
+ * the API being unreachable — which {@link useErrorRecovery} genuinely recovers
+ * from, making the retry affordance real rather than decorative. `reset()` alone
+ * would not: it clears client state and re-renders the cached payload, which
+ * still holds the failure.
  */
 export default function SettingsError({
   error,
@@ -28,6 +32,8 @@ export default function SettingsError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const retry = useErrorRecovery(reset);
+
   useEffect(() => {
     console.error("Settings screen failed to render", error);
   }, [error]);
@@ -47,7 +53,7 @@ export default function SettingsError({
 
         <button
           type="button"
-          onClick={reset}
+          onClick={retry}
           className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-contrast transition-colors hover:bg-accent-hover"
         >
           Try again

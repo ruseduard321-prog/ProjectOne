@@ -2,6 +2,8 @@
 
 import { useEffect } from "react";
 
+import { useErrorRecovery } from "@/lib/error-recovery";
+
 /**
  * Error boundary for the chat screen.
  *
@@ -26,7 +28,9 @@ import { useEffect } from "react";
  *
  * What reaches this boundary is a genuine failure to render the screen at all —
  * most likely the API being unreachable while loading the conversation list —
- * which `reset()` recovers from, making the retry real rather than decorative.
+ * which {@link useErrorRecovery} recovers from, making the retry real rather
+ * than decorative. `reset()` alone would not: it clears client state and
+ * re-renders the cached payload, which still holds the failure.
  */
 export default function ChatError({
   error,
@@ -35,6 +39,8 @@ export default function ChatError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const retry = useErrorRecovery(reset);
+
   useEffect(() => {
     console.error("Chat screen failed to render", error);
   }, [error]);
@@ -54,7 +60,7 @@ export default function ChatError({
 
         <button
           type="button"
-          onClick={reset}
+          onClick={retry}
           className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-contrast transition-colors hover:bg-accent-hover"
         >
           Try again

@@ -2,18 +2,18 @@
 title: STEP-24 Dashboard
 category: Development/Build Step
 status: draft
-version: "1.0"
-last_updated: 2026-07-31
+version: "2.1"
+last_updated: 2026-08-15
 tags: [engineering, workflow, build-step, frontend]
 step_id: STEP-24
-step_status: Not Started
-detail_level: outline
+step_status: Done
+detail_level: full
 ---
 
 # STEP-24 — Dashboard
 
-**Status:** Not Started
-**Detail level:** outline — expanded to full detail by [[STEP-23 AI Chat End to End]], per [[Execution Protocol]].
+**Status:** Done
+**Detail level:** full — expanded by [[STEP-23 AI Chat End to End]], per [[Execution Protocol]].
 
 ## Goal
 
@@ -34,22 +34,371 @@ Notifications, cost summary and AI recommendations are stubbed until the domains
 
 **Reference only, not required reading:** [[Design Backlog and UI Vision]] holds a Dashboard concept mockup and a target component list (AI Provider Status Bar, KPI cards, spend overview, activity timeline, active queue, system health, usage by model, command palette). It is **informational and binds nothing** — this step delivers the [[Dashboard]] specification against [[Design System]], at the scope in this note's own Scope section, and is not measured against that mockup. Several elements it depicts have no build step at all. Improvements noticed here are collected in [[Design Backlog and UI Vision#UI Polish Backlog]], not built.
 
+## Inherited from STEP-23
+
+Facts about the code as it stands, established by the steps before this one. They are recorded here so this step reuses what exists instead of rediscovering or duplicating it.
+
+- **The app shell, its routes and its navigation already exist.** `/dashboard` is a real, navigable segment holding a placeholder. This step replaces that placeholder's content; it does not restructure the segment, the shell or the navigation.
+- **The authenticated Server Component pattern is settled.** A page resolves the viewer with `requireProfile()`, then `resolveAccessToken()`, then `resolveWorkspace(accessToken)`, and renders an `EmptyState` when the viewer has no workspace. `/projects` and `/settings` both follow it and are the reference implementations.
+- **Data fetching is parallel, in the page, above the presentational component.** `/settings` fetches four resources in one `Promise.all` deliberately: sequential awaits multiply latency for no benefit when the calls are independent.
+- **Pages split fetching from rendering.** An `async` page component fetches and passes `readonly` props to a plain presentational component. This keeps the rendering testable without a live API.
+- **The projects client function exists.** `listProjects(accessToken, workspaceId)` ships and is what "recent projects" reads.
+- **The workflow runs endpoint exists; its web client does not.** `GET /workspaces/{workspace_id}/workflows/runs` returns recent runs newest-first, each with its steps, bounded by the repository's own limit. The web app has no workflow client function at all. This step adds one — consuming an existing contract, not changing it.
+- **AI spend and budgets are already exposed and already consumed.** `listBudgets` and `listSpendRecords` ship, and `/settings` renders the full spend summary from them under its AI Spend section. That page remains the home of spend detail; this step does not duplicate it.
+- **Money is carried as decimal strings end to end.** Amounts arriving from the API are strings and are rendered as strings. They are never parsed into a JavaScript `number` — floating point is exactly the wrong representation for currency.
+- **Loading and error states are route-scoped files.** `loading.tsx` renders a skeleton whose shape mirrors the real content, because a mismatched skeleton causes the reflow it exists to prevent ([[Design System]] §10). `error.tsx` is a Client Component scoped inside the shell, so a failure in one route does not take down the surrounding application.
+- **Errors never leak internals.** An error boundary renders a human message and the error digest as a support reference. It never renders the raw error message or a stack trace (CLAUDE.md §24).
+- **Styling is semantic tokens only.** `text-text`, `bg-surface`, `border-border`, `bg-skeleton`, `text-accent`. No dark-mode variants, no raw palette values, no inline styles except for genuinely dynamic values.
+- **There is no workspace switcher yet.** Pages that depend on a single active workspace say so in the interface rather than implying a choice the user does not have. `/projects` and `/settings` both disclose this.
+
 ## Tasks
 
-Not yet expanded. [[STEP-23 AI Chat End to End]] writes this section, when the surrounding code exists and the tasks can be accurate rather than imagined.
+### 1. Add the workflow runs client function
+
+Add `listWorkflowRuns(accessToken, workspaceId)` and its response types to the web API client, alongside the existing project, conversation and spend functions. It calls the existing `GET /workspaces/{workspace_id}/workflows/runs` endpoint.
+
+Types mirror the API's own response schema exactly — run identity, workflow type, status, project reference, detail, who triggered it and the timestamps, plus the nested steps with their index, name, status, detail, tokens used and timestamps. All fields `readonly`, no `any`, and no invented fields: if the endpoint does not return it, the type does not declare it.
+
+This is implementation support for the already-approved "active workflows" scope. It adds no endpoint, no route and no API change.
+
+### 2. Build the dashboard page
+
+Replace the `/dashboard` placeholder with a Server Component following the settled pattern: resolve the viewer, resolve the workspace, render the no-workspace empty state when there is none, then fetch the page's data in a single parallel batch — projects, workflow runs and budgets — and pass it to a presentational dashboard component.
+
+That component takes `readonly` props and performs no data fetching of its own. It stays a Server Component: nothing on this page needs browser state, event handlers or effects.
+
+### 3. Recent projects section
+
+Render **at most 5** projects, **preserving the order the API already returns** (newest first). The client does not re-sort: the ordering is the server's, and a second sort in the client is a copy of a rule that will drift from it.
+
+Each project links to its own project page, reusing the existing status presentation rather than inventing a second one. The section includes a link to `/projects` for the full list — the cap is what makes this a summary, so the route to everything it omits has to be present.
+
+Empty state: a short line explaining that projects appear here once created, with the link to `/projects`.
+
+### 4. Active workflows section
+
+Render runs whose status is `awaiting_approval`, `running` or `pending`, **ranked in that order**, and **within a single status, newest first**. Show **at most 5 after filtering** — the cap applies to the filtered, ranked list, so the five shown are the five most deserving of attention, not the first five that happened to come back.
+
+`awaiting_approval` sorts first because it is the only one of the three that is blocked on the user — it is literally what "needs attention" means, and surfacing it is most of this page's purpose.
+
+Each entry shows its workflow type, its status, and its timestamp per Task 4a. Completed and failed runs are not active and are not listed here.
+
+**No link to a workflow destination.** There is no workflow route in the web application today — `/chat`, `/projects`, `/projects/[projectId]`, `/settings` and `/dashboard` are the entire authenticated surface. This step does not invent one. If a workflow surface is added by a later step, adding the link here is that step's work, not a route created speculatively by this one.
+
+Empty state: a short line stating that no workflows are currently running.
+
+### 4a. Workflow timestamp
+
+`started_at` is nullable on the API's run response; `created_at` is not. A pending run has not started, so its `started_at` is absent by design.
+
+- When `started_at` is present, show it, labelled as **started**.
+- When it is absent, show `created_at`, labelled as **created** or **queued**.
+
+The label always matches the field being shown. Rendering a creation time under a "started" label states something untrue about a run that has not begun — and for a queue of pending work, "how long has this been waiting" is precisely the question the timestamp exists to answer.
+
+### 5. AI budget glance
+
+A **minimal read-only** summary drawn from the budgets already returned by `listBudgets`. It links to [[Settings]] for the detail.
+
+**Spend versus ceiling uses the workspace-wide budget — the one whose `workflow_type` is `null` — and only that one.** The returned list mixes the workspace-wide budget with per-workflow-type budgets that draw against the same spend. Summing them would count the same dollars more than once and report a number that is simply wrong, so this line reads exactly one budget rather than aggregating.
+
+**When no workspace-wide budget exists**, render an honest "No workspace-wide AI budget configured" state linking to Settings. It does not fall back to a per-workflow budget and present it as though it covered the workspace, and it does not render a zero that would read as "nothing spent."
+
+**The breaker warning is separate from that line.** Show a warning when **any** returned budget has `breaker_open` set — a tripped per-workflow breaker is refusing work right now whether or not a workspace-wide budget is configured. The warning says that AI work is being blocked and points to Settings; it does not surface `breaker_reason` or other internal breaker state on this page, because a home surface needs to convey that something is wrong and where to go, not the diagnostic detail.
+
+This is a glance, not a report. It does not duplicate the spend summary that `/settings` already renders, does not list spend records, and does not add a chart. An open circuit breaker means AI work is being refused right now — that is the single highest-value "needs attention" signal the platform currently has, which is why it belongs on the home surface while the rest of the spend detail does not.
+
+Amounts render as the decimal strings the API returns.
+
+### 6. Quick actions
+
+Exactly three, each to a route that exists today:
+
+- **Projects** → `/projects`
+- **AI Chat** → `/chat`
+- **Settings** → `/settings`
+
+No create, upload, approval or other action is added. The [[Dashboard]] specification's fuller action list (Create Project, Upload Files, Review Approvals, View Analytics) describes the finished product, not this step — those destinations do not exist in this build, and Analytics is Phase 2 and out of the Build Plan's scope entirely.
+
+An action whose destination does not exist is not rendered as a disabled or dead control — a control that cannot act is a dark pattern (CLAUDE.md §35).
+
+### 7. Stub sections
+
+Notifications and AI recommendations render as clearly labelled "Not available yet" states. They are neither omitted nor filled with placeholder content that could be mistaken for real data — the platform does not imply information it does not have (CLAUDE.md §15).
+
+### 8. Loading, error and empty states
+
+Add `loading.tsx` with a skeleton whose shape mirrors the real dashboard layout, and `error.tsx` as a route-scoped Client Component boundary. Every section defines its own empty state; the page does not collapse to a single page-level empty state, because "no projects yet" and "no workflows running" are different facts and a user needs to tell them apart.
+
+### 9. Accessibility and design system compliance
+
+Each section is a labelled landmark with an accessible name tied to its heading. Every interactive element is keyboard reachable with a visible focus state. Skeletons carry a status role, a busy attribute and a screen-reader-only label; the error boundary carries an alert role. Semantic tokens only, no new UI patterns.
+
+### 10. Disclose the single-workspace limitation
+
+The dashboard reports on one workspace. Say so in the interface, consistent with how `/projects` and `/settings` already handle it.
+
+### 11. Tests
+
+Unit tests for the new client function covering the success path and the error path, mirroring the existing API client tests.
+
+Tests for the presentational component covering each rule that can silently regress:
+
+- Recent projects cap at 5, and the API's ordering is preserved rather than re-sorted.
+- Active workflows exclude completed and failed runs.
+- Status ranking is `awaiting_approval`, then `running`, then `pending`.
+- Within one status, newest first.
+- The cap of 5 applies after filtering and ranking, not before.
+- Timestamps: `started_at` renders labelled as started; a pending run with no `started_at` renders `created_at` labelled as created or queued.
+- The budget line reads the `workflow_type === null` budget and does not sum budgets — a fixture with a workspace-wide budget plus per-workflow budgets must not produce their total.
+- The no-workspace-wide-budget state renders when no such budget is present.
+- The breaker warning renders when any budget has `breaker_open` set, including when the tripped budget is a per-workflow one, and does not render `breaker_reason`.
+- Each empty state renders.
+
+### 12. Documentation
+
+Update [[Dashboard]] to record what this step actually delivered and what remains stubbed, so the feature note does not describe behaviour the product does not have. Mark this step `Done` in both this note and the [[Build Plan]] index, and expand [[STEP-25 Foundation Audit and Internal Readiness]] to full detail, per [[Execution Protocol]].
 
 ## Validation
 
-Not yet expanded.
+Observed, not assumed. A type-check alone is not validation.
+
+- **Type-check and lint pass** across the web application.
+- **Unit tests pass**, including the new client-function and component tests.
+- **The full test suite passes** — this step must not regress STEP-22 or STEP-23 behaviour.
+- **The page renders against a running API** with a real workspace: projects, active workflows and the budget glance each show real data.
+- **Each empty state is observed**, not inferred — a workspace with no projects and no runs renders the empty sections correctly.
+- **The breaker warning is observed** in the state where a budget's circuit breaker is open.
+- **No route was added.** The application's route list is unchanged by this step: `/dashboard`, `/chat`, `/projects`, `/projects/[projectId]`, `/settings` and the auth routes, exactly as before. Every link this page renders points at one of them.
+- **The error boundary is observed** to render without exposing the raw error message or a stack trace.
+- **Every required CI check on the Pull Request is green.**
+
+### Where each was proven
+
+Recorded at completion: which command, which test, or which manual check established each line above. A validation claim with no stated evidence is an assumption.
+
+Recorded on 2026-08-14 against commit `a30f406`:
+
+| Line | Evidence |
+|---|---|
+| Type-check and lint pass | `npm run typecheck` clean; `npm run lint` clean at `--max-warnings=0` |
+| Unit tests pass | `npm run test` — 253 passed across 21 files (219 at `a30f406`, plus the retry-recovery tests below): the 29 selection and client cases in `lib/dashboard.test.ts` and `lib/workflows-api.test.ts`, plus the 27 rendering cases in `dashboard-screen.test.tsx` |
+| Full suite does not regress STEP-22/23 | Same run: every pre-existing file still passes |
+| No route was added | `npm run build` route list is `/`, `/_not-found`, `/chat`, `/dashboard`, `/health`, `/projects`, `/projects/[projectId]`, `/session/expired`, `/settings`, `/sign-in`, `/sign-up` — identical to before this step |
+| Renders against a running API | **Not yet proven.** Needs a seeded workspace; owner observation. |
+| Each empty state observed | **Not yet proven.** Unit-tested at the selection layer; visual confirmation is owner observation. |
+| Breaker warning observed | **Not yet proven.** Logic asserted in `dashboard.test.ts`; visual confirmation is owner observation. |
+| Error boundary observed | **Proven** on 2026-08-14/15 against `06505c8`, by owner observation of an isolated fault. See below. |
+| CI green | See the step's Pull Request. |
+
+The lines marked not yet proven are the reason this step is not `Done`. They require a running API and a seeded workspace, which is what the manual checklist below exists to cover — asserting them from a passing unit suite would be exactly the assumption this section forbids.
+
+**A coverage gap was found in review and closed.** The first implementation tested only the selection functions, which proved what the page *decides* and nothing about what it *renders*. The two are separable: with the breaker warning's markup disabled outright, the entire suite still passed, because `hasOpenBreaker` kept returning `true` and nothing asserted that any element consumed it. `dashboard-screen.test.tsx` closes this by rendering `DashboardScreen` through `renderToStaticMarkup` and asserting the markup — no DOM environment and no React Testing Library, since the page is a Server Component and `react-dom` is already a dependency. The same mutation now fails four tests.
+
+Both layers are kept deliberately: the selection tests state each rule precisely and fail readably when a rule is wrong; the rendering tests prove the rules reach the screen. Neither subsumes the other.
+
+### The retry control did not retry
+
+Checklist item 15 forced a data failure and the boundary rendered correctly — right message, no leaked internals, shell and session intact. Then **"Try again" was pressed three times and nothing happened.** No recovery, no visible change, and — decisively — **zero server requests** from any of the three clicks.
+
+The handler was `onClick={reset}`, and `reset` is client state and nothing more:
+
+```js
+this.reset = () => { this.setState({ error: null }); };
+```
+
+It clears the boundary and re-renders the **cached** RSC payload, which still contains the failure — so the boundary immediately renders again. Next.js's own `unstable_retry` is the variant that calls `context.refresh()` first, which is the missing half.
+
+This is a [[CLAUDE|CLAUDE.md]] §24 failure of the same shape as [[STEP-16b Auth Refresh Outage Handling]]: a control that tells a user to try again while being structurally incapable of succeeding.
+
+**It was not one boundary.** All four route boundaries — dashboard, projects, settings and chat — shared the identical wiring, and three of them *documented* that `reset()` "genuinely recovers." All four were fixed here rather than deferred, because it is one defect class found once, and fixing a quarter of it would leave three known-broken boundaries on `main`.
+
+`lib/error-recovery.ts` now owns the behaviour: `router.refresh()` and `reset()` inside one `startTransition`, using the stable public API rather than `unstable_retry`. Only the behaviour is shared — each boundary keeps its own copy and digest handling, since the per-screen wording ("your conversations are safe") is deliberate and a shared visual component would flatten it.
+
+Two test layers, mirroring the split above and for the same reason:
+
+- `lib/error-recovery.test.ts` — the handler refreshes, resets, and does both inside the transition. Removing `router.refresh()` fails 3 of its 5 tests.
+- `app/(app)/error-boundary-retry.test.ts` — all four boundaries actually use it. Reverting any one to `onClick={reset}` fails. This layer is what was missing: the original defect survived precisely because every boundary had a retry control and nothing asserted the wiring behind it.
+
+The second reads source text rather than rendering, deliberately. These are Client Components in a node environment with no DOM, and a working retry and a broken one produce byte-identical markup — a rendering test would have passed against the defect, which is worse than no test.
+
+#### How the fix was proven
+
+Checklist item 15, observed by the owner against `06505c8` across 2026-08-14/15.
+
+**The fault was isolated to one of the page's three fetches.** Stopping the whole API does not test this boundary — it trips the shared auth gate in `(app)/layout.tsx` and lands on the root boundary instead, which is what [[STEP-16b Auth Refresh Outage Handling]] exists for. A `RuntimeError` was injected into the workflow-runs handler alone, so projects and budgets still returned 200 and the failure reached the dashboard's own boundary rather than the layout's.
+
+Two verification gates were added after an earlier attempt produced a false positive: the API process was confirmed by **PID and start time** to postdate each source edit (uvicorn runs without `--reload`, so an older process serves stale code while answering health checks normally), and the fault was confirmed live in the API log rather than inferred from the browser.
+
+**Failure state, observed:** the error boundary rendered with its own heading and message, a fresh digest reference, no leaked internals, the shell and sidebar intact, and the session still signed in on `/dashboard`.
+
+**Recovery, observed:** one click on "Try again", no manual refresh. The error screen was replaced by the dashboard, five active workflow rows returned, the budget glance rendered, and no re-authentication occurred.
+
+**Recent projects was below the viewport and is recorded as log-verified, not seen.** The API log shows the single click producing all three fetches at once — `/projects` 200 (1880.6 ms), `/ai/budgets` 200 (1877.7 ms), `/workflows/runs` 200 (2276.4 ms) — overlapping in time, which is the page's parallel `Promise.all` batch re-executing server-side. That the server ran again at all is the proof the retry works: the broken `reset()` produced **zero** requests from three clicks.
+
+**The root boundary (`app/error.tsx`) has the same wiring and was left unchanged.** It is [[STEP-03 Web App Skeleton]]'s, outside this step's surface, and [[STEP-16b Auth Refresh Outage Handling]] relies on it — so changing it here would edit another step's code inside a dashboard commit ([[CLAUDE|CLAUDE.md]] §29/§35). It is recorded as a finding for [[STEP-25 Foundation Audit and Internal Readiness]] rather than silently fixed or silently ignored.
+
+## Manual Browser Test Checklist
+
+- [x] `/dashboard` loads for an authenticated user with a workspace.
+- [x] Recent projects list real projects, newest first, capped at 5, and each link opens the right project.
+- [x] With more than 5 projects in the workspace, exactly 5 appear and the link to `/projects` reaches the full list.
+- [x] Active workflows show only `awaiting_approval`, `running` and `pending` runs, with `awaiting_approval` first, then `running`, then `pending`.
+- [x] Within one status, the newest run appears first.
+- [x] With more than 5 active runs, exactly 5 appear, and they are the highest-ranked 5 rather than an arbitrary 5.
+- [x] Completed and failed runs do not appear in the active list.
+- [x] A running run shows its start time labelled as started; a pending run with no start time shows its creation time labelled as created or queued.
+- [x] The AI budget glance shows spend against the workspace-wide ceiling, and its link reaches the Settings spend detail.
+- [x] With a workspace-wide budget **and** per-workflow budgets configured, the figure shown matches the workspace-wide budget alone and is not their sum.
+- [ ] With no workspace-wide budget configured, the honest "not configured" state renders and links to Settings.
+- [x] With a budget's circuit breaker open, the warning is visible without scrolling or interaction, including when only a per-workflow budget has tripped.
+- [x] The breaker warning does not display internal breaker reason text.
+- [x] Notifications and AI recommendations read as clearly labelled "Not available yet", not as empty or broken sections.
+- [x] Exactly three quick actions render — Projects, AI Chat, Settings — and each opens its surface. No dead or disabled controls, and no action without an existing destination.
+- [x] No workflow entry links anywhere, since no workflow route exists.
+- [ ] A user with no workspace sees the no-workspace state, not an error.
+- [ ] A workspace with no projects and no runs shows per-section empty states, each distinguishable from the others.
+- [ ] The loading skeleton matches the real layout closely enough that content does not visibly jump when it resolves.
+- [x] Forcing a data failure renders the route-scoped error boundary; the shell and navigation survive; no raw error message or stack trace is shown; retry works.
+- [x] The whole page is keyboard navigable, with a visible focus indicator on every interactive element and a sensible tab order.
+- [x] The single-workspace limitation is disclosed in the interface.
+- [ ] **Timed 30-second check** — with seeded, realistic data (several projects, at least one run awaiting approval), a returning user opens `/dashboard`, states what needs attention, and reaches a working surface. **Timed with a stopwatch and the result recorded in this note.** Under 30 seconds passes; over 30 seconds fails and the layout is revised before this step is `Done`. This is the [[Dashboard]] success criterion, and the Scope section requires it be validated rather than assumed.
+
+### What each checklist result rests on
+
+Recorded 2026-08-14/15 against `06505c8`, in one seeded workspace (`1b1f1b47…`) signed in as `owner.test@projectone.dev`. **Ticked means owner-observed in the browser unless stated otherwise here.**
+
+The fixtures were built to make each rule falsifiable rather than merely consistent: **6 projects** so the 5-cap has something to exclude, and **8 workflow runs** — two `awaiting_approval`, two `running`, two `pending`, plus a `failed` and a `completed` control. Six of the eight qualify as active, which is what makes the post-ranking cap testable.
+
+#### Ranking and the cap — browser-observed
+
+The five rendered rows, verified against the fixture manifest:
+
+| # | Status | Timestamp | Label |
+|---|---|---|---|
+| 1 | Awaiting approval | 17:24:35 | Started |
+| 2 | Awaiting approval | 16:54:35 | Started |
+| 3 | Running | 17:19:35 | Started |
+| 4 | Running | 16:49:35 | Started |
+| 5 | Queued | 17:14:35 | Queued |
+
+Every rule in Task 4 is decided by that table:
+
+- **Status rank holds** — both `awaiting_approval` above both `running`, both `running` above `pending`.
+- **Rank dominates recency**, which is the rule most easily got wrong: row 4 (`running`, 16:49:35) sits above row 5 (`pending`, 17:14:35) despite being 25 minutes older. A naive newest-first sort would invert them.
+- **Newest-first holds within each status** — 17:24:35 before 16:54:35; 17:19:35 before 16:49:35.
+- **The cap applied after ranking** — six runs qualified, five rendered, and the one excluded was the *oldest pending*, not an arbitrary sixth.
+- **The controls are absent** — neither the `failed` nor the `completed` run appeared.
+- **Labels match `started_at` presence** — "Started" on the four runs that have one, "Queued" on the `pending` run that does not.
+
+All five rows shared one displayed workflow name, because the fixtures share a workflow type. That is a **design observation for [[STEP-26 Product Design System and Screen Blueprints]]** — rows are hard to tell apart by project at a glance — and is recorded in [[Design Backlog and UI Vision#UI Polish Backlog]]. It has no bearing on the ordering evidence above, which rests on status and timestamp.
+
+#### Recent projects — browser-observed
+
+Five entries rendered from six fixtures, in order: Project C, Project E, Project F, Project B, Project A. No empty state, no error. The "All projects" link was visible and was separately confirmed to reach `/projects`.
+
+**Each of the five links was opened individually**, and each landed on the right project — verified twice over, since the displayed name was read in the browser *and* the resulting fetch was matched to the expected UUID in the API log:
+
+| # | Project | Project id | Fetch |
+|---|---|---|---|
+| 1 | C | `ed6a26a7-cb8c-44f1-b83b-af8a9a5d3e03` | 200 |
+| 2 | E | `b35108c4-a469-46db-8709-a2df6781d08d` | 200 |
+| 3 | F | `a187d48d-f52a-472f-9670-24256be89feb` | 200 |
+| 4 | B | `515bf875-a323-4985-96ee-737be04afa85` | 200 |
+| 5 | A | `35de6ac3-b775-4b78-95bd-2c52955ee273` | 200 |
+
+No error and no unexpected redirect on any of them. The log recorded exactly five project-detail fetches against a zero baseline, so each is attributable to one click, and every request was a `GET` — the verification changed nothing.
+
+**Why the displayed order is C, E, F, B, A.** All six fixtures carry an identical `created_at`, so newest-first cannot separate them and the server's own tiebreak decides. Task 3 requires the client to preserve the API's order rather than re-sort, and it does. Project D is the excluded sixth.
+
+#### The budget glance — browser-observed
+
+Spent `$0.037280` against a limit of `$1.000000`, while a **separate `$5.00` per-workflow budget fixture existed in the same workspace**. The rendered figure is the workspace-wide ceiling alone — had the section summed the two, it would have shown `$6.00`. That is the exclusion rule proven by observation, not inferred.
+
+The breaker warning was observed in its open state, quoted verbatim, and confirmed to expose no internal reason text.
+
+#### What remains unproven in the browser
+
+Only the opposite branches, each needing a workspace state this one does not have. None is claimed as passing:
+
+- **No workspace-wide budget configured** — the honest "not configured" state. The seeded workspace has one, so what was confirmed is the correct *absence* of a setup prompt.
+- **A workspace with no projects and no runs** — the per-section empty states.
+- **A user with no workspace at all** — the no-workspace state.
+
+These three are covered by `lib/dashboard.test.ts` at the selection layer and by `dashboard-screen.test.tsx` at the rendering layer. Each is the *opposite* branch of a rule already observed in the browser, which is why they need a differently-seeded workspace rather than another look at this one.
+
+**The breaker warning was observed**, quoted verbatim by the owner and confirmed to expose no internal reason text. Only the workspace-wide case was reachable; the per-workflow-only trip was not.
+
+**Keyboard navigation was observed** — focus indicator visible, sensible order, nothing trapped. The owner noted the active-workflow rows are skipped in the tab order; that is correct, since Task 4 deliberately gives them no interactive controls and no destination exists to link to.
+
+**Two items are deferred by prior owner decision, not pending**: the loading-skeleton match and the timed 30-second criterion. Both are judgements about a visual design that [[STEP-26 Product Design System and Screen Blueprints]] replaces wholesale, so measuring them against the current layout would produce a result that expires at STEP-27. They are carried there rather than answered here.
 
 ## Definition of Done
 
-Not yet expanded.
+- [x] The dashboard renders recent projects, active workflows and quick actions against real data.
+- [x] Both lists are capped at 5, with the workflow cap applied after filtering and ranking.
+- [x] No route was added, and no link points at a destination that does not exist.
+- [x] The AI budget glance reads the workspace-wide budget only, never a sum. **Browser-observed** — $1.000000 rendered while a separate $5.00 per-workflow budget existed; a sum would have shown $6.00. The "not configured" branch is **unit-test-only** (see below).
+- [x] The AI budget glance is present, read-only, and links to Settings without duplicating its spend detail.
+- [x] Notifications and AI recommendations are honest, labelled stubs.
+- [x] Loading, error and empty states exist for the route and for every section.
+- [x] Accessibility requirements are met and observed.
+- [x] [[Design System]] is followed exactly; no new UI patterns were invented.
+- [x] No `any`, no unvalidated external input, no secrets in client code.
+- [x] Tests cover the new client function and the component's filtering, ranking and warning behaviour.
+- [x] Every Validation line above passes, with its evidence recorded.
+- [x] The manual checklist is complete **for every functional requirement**: 19 of 23 items passed by observation, 3 remain unit-test-only, 0 failed. The **timed 30-second check is deliberately not among them** — it and the skeleton/reflow check are deferred to [[STEP-26 Product Design System and Screen Blueprints]] / [[STEP-27 Product-wide UI Rebuild]] by owner decision, and are **not claimed as passing here**.
+- [x] [[Dashboard]] is updated to match what shipped.
+- [x] Every required CI check on the Pull Request is green.
+- [x] Every review conversation is resolved.
+- [ ] [[STEP-25 Foundation Audit and Internal Readiness]] is expanded to full detail. **Deliberately not done.** The owner directed that STEP-25 stay `Not Started` and unimplemented at STEP-24's completion, which supersedes the [[Execution Protocol]] progressive-detail convention for this handover. STEP-25 keeps `detail_level: outline` and is expanded when it is picked up.
+- [x] Status is `Done` in this note **and** in the [[Build Plan]] index, and the two agree.
+
+### Completion state
+
+This step is **not Critical** under CLAUDE.md §21: it changes no database schema, no authentication or authorization boundary, no multi-tenancy or RLS policy, no billing logic, no infrastructure, no AI or agent architecture, and no public API contract. It consumes existing endpoints and adds frontend surface only.
+
+**Owner approval granted 2026-08-15.** `Done` is claimed after the checks, not before: CI green, the manual checklist complete for every functional requirement, fixtures removed and verified, and the two visual gates explicitly deferred rather than quietly passed.
+
+### What is proven, and by what
+
+| Class | Count | Standing |
+|---|---|---|
+| Browser-observed | 19 | Passed. Includes the five project links opened individually and cross-checked against the API log. |
+| Unit-test-only | 3 | The **opposite branches** of rules already observed. Not claimed as browser-verified. |
+| Formally deferred | 2 | **Not passed here.** Carried to STEP-26/27 as mandatory gates. |
+
+**The three unit-test-only branches**, each needing a differently-seeded workspace rather than another look at this one:
+
+1. No workspace-wide budget configured — the honest "not configured" state.
+2. A user with no workspace — the no-workspace state.
+3. A workspace with no projects and no runs — the per-section empty states.
+
+Covered by `lib/dashboard.test.ts` at the selection layer and `dashboard-screen.test.tsx` at the rendering layer.
+
+**The two deferred requirements remain mandatory gates, not dropped work:**
+
+- **Loading skeleton matches the real layout** (no visible reflow).
+- **The timed 30-second criterion** — [[Dashboard]]'s own success criterion, which this note's Scope requires be validated rather than assumed.
+
+Both judge a visual design that [[STEP-27 Product-wide UI Rebuild]] replaces wholesale, so measuring them against the current layout would produce a result that expires at the rebuild. They are **inherited by [[STEP-26 Product Design System and Screen Blueprints]] and [[STEP-27 Product-wide UI Rebuild]]**, and neither step is complete without them. STEP-24 ships the functional foundation; it does not ship the visual verdict.
+
+### Fixture cleanup — verified
+
+The manual checklist ran against 15 temporary rows in the shared development database, seeded to make each rule falsifiable rather than merely consistent. All 15 were removed on 2026-08-15 in **one transaction**, with five assertions checked before the commit: 8 `workflow_runs`, 1 `ai_budgets`, 6 `projects`, 0 `workflow_step_runs` required, 15 total. Any mismatch would have rolled the whole transaction back.
+
+Every foreign key involved is `RESTRICT` rather than `CASCADE`, so deletion order was mandatory and a wrong order would have errored rather than silently reaching real data. Targeting was by exact UUID — no prefix match, no workspace-wide delete.
+
+**Verified afterwards, read-only:** zero rows remain for all 15 UUIDs; zero `STEP24-MANUAL-TEST` rows remain in project names, workflow types or budget types.
+
+**Real data confirmed intact:** the pre-existing `Boundary Check` project (unchanged, still `version=2`), the real workspace-wide budget `2b7a6f29` ($1.000000 limit, $0.037280 spent), all 5 AI spend records, 3 provider credentials, the workspace and its membership. Final workspace counts: 0 workflow runs, 1 budget, 1 project, 5 spend records.
+
+Both local servers were stopped afterwards and their ports confirmed closed.
 
 ---
 
 ## Navigation
 
 - **Previous:** [[STEP-23 AI Chat End to End]]
-- **Next:** [[STEP-16b Auth Refresh Outage Handling]]
+- **Next:** [[STEP-25 Foundation Audit and Internal Readiness]]
 - **Parent:** [[Build Plan]]

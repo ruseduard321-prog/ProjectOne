@@ -110,7 +110,7 @@ All probe rows removed and the database confirmed back to its prior contents by 
 ### Deliberate limitations
 
 - **An owner can currently zero their own `spent_usd`.** PostgreSQL policies are per-row, not per-column, and the UPDATE policy must exist for configuration. The mitigation is that the immutable ledger — not this counter — is what a billing reconciliation reads. `test_a_tenant_cannot_clear_its_own_running_total` documents the exposure honestly rather than asserting a protection that does not exist. Closing it is a column-level grant belonging to [[STEP-19 Settings and BYOK UI]].
-- **No budget is configured by default**, so a new workspace is unmetered. Refusing every call on a platform that has not asked anyone to set a limit is the wrong default; whether it stays that way is a launch decision ([[STEP-25 Launch Readiness Criteria]]).
+- **No budget is configured by default**, so a new workspace is unmetered. Refusing every call on a platform that has not asked anyone to set a limit is the wrong default; whether it stays that way is a launch decision ([[STEP-25 Foundation Audit and Internal Readiness]]).
 - **Anomaly detection runs inline** after each recorded call, adding two queries to the settle path. Near-real-time as §15a requires; a background evaluation is the natural evolution once a scheduler exists.
 - **Alerting is an `ERROR` log line**, not a pager. Routing it is infrastructure ([[Infrastructure]]), not application code.
 - **`test_ai_spend_isolation.py` (30 tests) is skipped by design** without `PROJECTONE_TEST_DATABASE_URL` — it creates and destroys rows, so it belongs in CI against a throwaway container, never the development project. Its coverage was obtained here by the live behavioural proof above.

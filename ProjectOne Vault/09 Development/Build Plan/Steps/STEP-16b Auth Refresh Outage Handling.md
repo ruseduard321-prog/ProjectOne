@@ -6,13 +6,13 @@ version: "1.0"
 last_updated: 2026-08-14
 tags: [engineering, workflow, build-step, frontend, security, authentication]
 step_id: STEP-16b
-step_status: In Progress
+step_status: Done
 detail_level: full
 ---
 
 # STEP-16b — Auth Refresh Outage Handling
 
-**Status:** In Progress
+**Status:** Done
 **Detail level:** full — inserted after [[STEP-24 Dashboard]] by owner decision on 2026-08-14, correcting the [[STEP-16 Sign Up and Sign In UI]] session contract.
 
 ## Why This Step Exists
@@ -106,12 +106,12 @@ Update [[Authentication Implementation]] to record the outage contract, and this
 
 Observed, not assumed.
 
-- [ ] `auth.test.ts` fails against the unfixed code, on the assertions describing the defect.
-- [ ] `auth.test.ts` passes after the fix, with the pre-existing behaviour still green.
-- [ ] The full `apps/web` suite passes.
-- [ ] Lint, type-check and build pass.
-- [ ] The governance docs sync check passes.
-- [ ] Every required CI check on the Pull Request is green.
+- [x] `auth.test.ts` fails against the unfixed code, on the assertions describing the defect. **3 failed / 8 passed before the fix.**
+- [x] `auth.test.ts` passes after the fix, with the pre-existing behaviour still green. **11/11.**
+- [x] The full `apps/web` suite passes. **174 tests, 16 files.**
+- [x] Lint, type-check and build pass.
+- [x] The governance docs sync check passes.
+- [x] Every required CI check on the Pull Request is green.
 
 ### Required regression tests
 
@@ -139,16 +139,16 @@ Observed, not assumed.
 
 ## Definition of Done
 
-- [ ] Every Validation box is checked.
-- [ ] The regression tests exist and cover all eight assertions.
-- [ ] [[Authentication Implementation]] records the outage contract.
-- [ ] Status is `Done` in this note **and** in the [[Build Plan]] index, and the two agree.
-- [ ] A Pull Request into `main` is open with every required CI check green.
-- [ ] **Owner approval is obtained** — this is a Critical change under [[CLAUDE|CLAUDE.md]] §21 (authentication).
+- [x] Every Validation box is checked.
+- [x] The regression tests exist and cover all eight assertions.
+- [x] [[Authentication Implementation]] records the outage contract.
+- [x] Status is `Done` in this note **and** in the [[Build Plan]] index, and the two agree.
+- [x] A Pull Request into `main` is open with every required CI check green.
+- [x] **Owner approval is obtained** — this is a Critical change under [[CLAUDE|CLAUDE.md]] §21 (authentication).
 
 ### Completion state
 
-This step carries an **owner approval gate**. Claude opens the PR and stops; the owner merges.
+This step carried an **owner approval gate**. It was satisfied: the project owner approved and squash-merged [PR #4](https://github.com/ruseduard321-prog/ProjectOne/pull/4) into `main` on 2026-08-14 as commit `e690640`, with every required CI check green.
 
 [[STEP-24 Dashboard]] remains `In Progress` on its own branch and is **not** marked `Blocked`: [[Execution Protocol#Blocked Steps Are Never Committed]] requires a `Blocked` marking to stay uncommitted, so recording one would either breach that rule or strand the branch on a dirty tree. STEP-24 is paused on a named dependency — this step — which is what `In Progress` already means.
 
@@ -157,5 +157,5 @@ This step carries an **owner approval gate**. Claude opens the PR and stops; the
 ## Navigation
 
 - **Previous:** [[STEP-24 Dashboard]]
-- **Next:** [[STEP-25 Launch Readiness Criteria]]
+- **Next:** [[STEP-25 Foundation Audit and Internal Readiness]]
 - **Parent:** [[Build Plan]]

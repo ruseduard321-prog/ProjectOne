@@ -16,7 +16,7 @@ aliases: ["Design Map of Content"]
 
 ## Long-Term Direction
 
-- [[Design Backlog and UI Vision]] — where the interface is eventually going. **Informational only**, and deliberately so: it is not a specification, not a [[Build Plan]] step, changes no architecture and overrides no engineering document. During Foundation it is a reference and a collection point; after [[STEP-26 First Public Release]] it becomes the primary reference for a dedicated UI Polish phase. Where it and [[Design System]] disagree, the Design System wins.
+- [[Design Backlog and UI Vision]] — the earlier long-term UI direction, **partly superseded on 2026-08-14**. Its dark-interface visual rules and its deferral of design work until after release are no longer current; its design philosophy and its subordinate rank to [[Design System]] still are. The active visual direction and the per-page blueprints live in [[STEP-26 Product Design System and Screen Blueprints]]. Where it and [[Design System]] disagree, the Design System wins.
 
 ## Applied In
 
