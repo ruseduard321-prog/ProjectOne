@@ -37,6 +37,12 @@ Areas in scope, each assessed against the canonical document that governs it:
 - **Accessibility risks** — recorded as findings that feed STEP-26's accessibility rules.
 - **Incomplete product behaviour** — every stub, deferred item and honest-placeholder shipped during Foundation, collected in one place.
 
+### Findings carried in from earlier steps
+
+Recorded where they were found, so the audit begins from what is already known rather than rediscovering it:
+
+- **The root error boundary's retry does not retry.** `app/error.tsx` wires its button to `reset()` alone, which clears client state and re-renders the cached payload — the failure is still in it, so nothing recovers. [[STEP-24 Dashboard]] found this defect, fixed it in the four route boundaries it owns, and deliberately left the root boundary alone as another step's code ([[CLAUDE|CLAUDE.md]] §29/§35). It matters more than the others: it is the boundary [[STEP-16b Auth Refresh Outage Handling]] relies on for outage recovery, and its manual checklist recorded "a working retry control" against the same wiring now known to be inert. The fix is the existing `lib/error-recovery.ts`.
+
 **Explicitly out of scope.** This step does **not** publish the application, does **not** deploy to production, and does **not** claim release readiness. Public release is unscheduled and is not a numbered step in this plan — see [[Public Release Draft - Unscheduled]]. Findings that require substantial remediation become their own numbered steps by owner decision; this step does not silently fix them.
 
 ## Prerequisites

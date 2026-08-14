@@ -2,6 +2,8 @@
 
 import { useEffect } from "react";
 
+import { useErrorRecovery } from "@/lib/error-recovery";
+
 /**
  * Error boundary for the projects screens.
  *
@@ -18,8 +20,10 @@ import { useEffect } from "react";
  * **A project that does not exist does not reach here.** The detail page
  * converts the API's 404 into `notFound()`, so a stale link renders the
  * not-found page rather than this. What reaches this boundary is a genuine
- * failure — most likely the API being unreachable — which `reset()` recovers
- * from, making the retry real rather than decorative.
+ * failure — most likely the API being unreachable — which {@link useErrorRecovery}
+ * recovers from, making the retry real rather than decorative. `reset()` alone
+ * would not: it clears client state and re-renders the cached payload, which
+ * still holds the failure.
  */
 export default function ProjectsError({
   error,
@@ -28,6 +32,8 @@ export default function ProjectsError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const retry = useErrorRecovery(reset);
+
   useEffect(() => {
     console.error("Projects screen failed to render", error);
   }, [error]);
@@ -47,7 +53,7 @@ export default function ProjectsError({
 
         <button
           type="button"
-          onClick={reset}
+          onClick={retry}
           className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-contrast transition-colors hover:bg-accent-hover"
         >
           Try again

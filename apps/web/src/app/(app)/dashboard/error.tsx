@@ -2,6 +2,8 @@
 
 import { useEffect } from "react";
 
+import { useErrorRecovery } from "@/lib/error-recovery";
+
 /**
  * Error boundary for the dashboard.
  *
@@ -17,9 +19,13 @@ import { useEffect } from "react";
  * log entry.
  *
  * This page fetches three independent resources, so any one of them failing
- * lands here. `reset()` retries all three, which is the honest recovery: the
+ * lands here. The retry refetches all three, which is the honest recovery: the
  * boundary cannot know which one failed, and offering a partial retry would
  * imply knowledge it does not have.
+ *
+ * Recovery goes through {@link useErrorRecovery} rather than `reset` alone.
+ * `reset()` only clears client state and re-renders the cached payload — the
+ * failure is still in it, so the boundary renders again and nothing changes.
  */
 export default function DashboardError({
   error,
@@ -28,6 +34,8 @@ export default function DashboardError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const retry = useErrorRecovery(reset);
+
   useEffect(() => {
     console.error("Dashboard failed to render", error);
   }, [error]);
@@ -47,7 +55,7 @@ export default function DashboardError({
 
         <button
           type="button"
-          onClick={reset}
+          onClick={retry}
           className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-contrast transition-colors hover:bg-accent-hover"
         >
           Try again

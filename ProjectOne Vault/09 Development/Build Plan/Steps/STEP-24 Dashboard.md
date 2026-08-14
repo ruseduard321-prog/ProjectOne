@@ -182,7 +182,7 @@ Recorded on 2026-08-14 against commit `a30f406`:
 | Line | Evidence |
 |---|---|
 | Type-check and lint pass | `npm run typecheck` clean; `npm run lint` clean at `--max-warnings=0` |
-| Unit tests pass | `npm run test` — 219 passed across 18 files: the 29 selection and client cases in `lib/dashboard.test.ts` and `lib/workflows-api.test.ts`, plus the 27 rendering cases in `dashboard-screen.test.tsx` |
+| Unit tests pass | `npm run test` — 253 passed across 21 files (219 at `a30f406`, plus the retry-recovery tests below): the 29 selection and client cases in `lib/dashboard.test.ts` and `lib/workflows-api.test.ts`, plus the 27 rendering cases in `dashboard-screen.test.tsx` |
 | Full suite does not regress STEP-22/23 | Same run: every pre-existing file still passes |
 | No route was added | `npm run build` route list is `/`, `/_not-found`, `/chat`, `/dashboard`, `/health`, `/projects`, `/projects/[projectId]`, `/session/expired`, `/settings`, `/sign-in`, `/sign-up` — identical to before this step |
 | Renders against a running API | **Not yet proven.** Needs a seeded workspace; owner observation. |
@@ -196,6 +196,33 @@ The lines marked not yet proven are the reason this step is not `Done`. They req
 **A coverage gap was found in review and closed.** The first implementation tested only the selection functions, which proved what the page *decides* and nothing about what it *renders*. The two are separable: with the breaker warning's markup disabled outright, the entire suite still passed, because `hasOpenBreaker` kept returning `true` and nothing asserted that any element consumed it. `dashboard-screen.test.tsx` closes this by rendering `DashboardScreen` through `renderToStaticMarkup` and asserting the markup — no DOM environment and no React Testing Library, since the page is a Server Component and `react-dom` is already a dependency. The same mutation now fails four tests.
 
 Both layers are kept deliberately: the selection tests state each rule precisely and fail readably when a rule is wrong; the rendering tests prove the rules reach the screen. Neither subsumes the other.
+
+### The retry control did not retry
+
+Checklist item 15 forced a data failure and the boundary rendered correctly — right message, no leaked internals, shell and session intact. Then **"Try again" was pressed three times and nothing happened.** No recovery, no visible change, and — decisively — **zero server requests** from any of the three clicks.
+
+The handler was `onClick={reset}`, and `reset` is client state and nothing more:
+
+```js
+this.reset = () => { this.setState({ error: null }); };
+```
+
+It clears the boundary and re-renders the **cached** RSC payload, which still contains the failure — so the boundary immediately renders again. Next.js's own `unstable_retry` is the variant that calls `context.refresh()` first, which is the missing half.
+
+This is a [[CLAUDE|CLAUDE.md]] §24 failure of the same shape as [[STEP-16b Auth Refresh Outage Handling]]: a control that tells a user to try again while being structurally incapable of succeeding.
+
+**It was not one boundary.** All four route boundaries — dashboard, projects, settings and chat — shared the identical wiring, and three of them *documented* that `reset()` "genuinely recovers." All four were fixed here rather than deferred, because it is one defect class found once, and fixing a quarter of it would leave three known-broken boundaries on `main`.
+
+`lib/error-recovery.ts` now owns the behaviour: `router.refresh()` and `reset()` inside one `startTransition`, using the stable public API rather than `unstable_retry`. Only the behaviour is shared — each boundary keeps its own copy and digest handling, since the per-screen wording ("your conversations are safe") is deliberate and a shared visual component would flatten it.
+
+Two test layers, mirroring the split above and for the same reason:
+
+- `lib/error-recovery.test.ts` — the handler refreshes, resets, and does both inside the transition. Removing `router.refresh()` fails 3 of its 5 tests.
+- `app/(app)/error-boundary-retry.test.ts` — all four boundaries actually use it. Reverting any one to `onClick={reset}` fails. This layer is what was missing: the original defect survived precisely because every boundary had a retry control and nothing asserted the wiring behind it.
+
+The second reads source text rather than rendering, deliberately. These are Client Components in a node environment with no DOM, and a working retry and a broken one produce byte-identical markup — a rendering test would have passed against the defect, which is worse than no test.
+
+**The root boundary (`app/error.tsx`) has the same wiring and was left unchanged.** It is [[STEP-03 Web App Skeleton]]'s, outside this step's surface, and [[STEP-16b Auth Refresh Outage Handling]] relies on it — so changing it here would edit another step's code inside a dashboard commit ([[CLAUDE|CLAUDE.md]] §29/§35). It is recorded as a finding for [[STEP-25 Foundation Audit and Internal Readiness]] rather than silently fixed or silently ignored.
 
 ## Manual Browser Test Checklist
 
