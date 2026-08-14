@@ -11,7 +11,13 @@
 
 import { redirect } from "next/navigation";
 
-import { ApiError, type ApiProfile, readProfile, refreshSession } from "@/lib/api";
+import {
+  ApiError,
+  type ApiProfile,
+  ApiUnreachableError,
+  readProfile,
+  refreshSession,
+} from "@/lib/api";
 import { readClientAddress } from "@/lib/client-address";
 import { SESSION_EXPIRED_PATH, SIGN_IN_PATH } from "@/lib/routes";
 import { clearSession, readAccessToken, readRefreshToken, writeSession } from "@/lib/session";
@@ -49,7 +55,16 @@ export async function resolveAccessToken(): Promise<string | undefined> {
     );
 
     return session.access_token;
-  } catch {
+  } catch (error) {
+    // An unreachable API judged nothing, so it says nothing about this token.
+    // Clearing here would sign a user out for an outage and destroy a
+    // credential that is still good — and the redirect that follows would tell
+    // them their session ended when the service was merely down. Propagate
+    // instead, so the failure surfaces as the outage it is (CLAUDE.md §24).
+    if (error instanceof ApiUnreachableError) {
+      throw error;
+    }
+
     // A refresh token the provider will not honour is spent: it has been
     // revoked, rotated, or has expired. Clearing it here stops every subsequent
     // request retrying a credential that is never going to work again.

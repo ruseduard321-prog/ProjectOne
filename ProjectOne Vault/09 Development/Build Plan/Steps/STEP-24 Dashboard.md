@@ -51,5 +51,5 @@ Not yet expanded.
 ## Navigation
 
 - **Previous:** [[STEP-23 AI Chat End to End]]
-- **Next:** [[STEP-25 Launch Readiness Criteria]]
+- **Next:** [[STEP-16b Auth Refresh Outage Handling]]
 - **Parent:** [[Build Plan]]

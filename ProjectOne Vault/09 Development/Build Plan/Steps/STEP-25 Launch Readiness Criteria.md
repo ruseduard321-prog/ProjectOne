@@ -50,6 +50,6 @@ Not yet expanded.
 
 ## Navigation
 
-- **Previous:** [[STEP-24 Dashboard]]
+- **Previous:** [[STEP-16b Auth Refresh Outage Handling]]
 - **Next:** [[STEP-26 First Public Release]]
 - **Parent:** [[Build Plan]]

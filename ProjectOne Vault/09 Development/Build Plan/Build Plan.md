@@ -2,7 +2,7 @@
 title: Build Plan
 category: Development
 status: stable
-version: "2.9"
+version: "3.0"
 last_updated: 2026-08-14
 tags: [engineering, documentation, workflow]
 aliases: ["Implementation Plan", "Build Roadmap", "Step Index"]
@@ -10,7 +10,7 @@ aliases: ["Implementation Plan", "Build Roadmap", "Step Index"]
 
 # ProjectOne Build Plan
 
-The ordered execution index taking ProjectOne from an empty repository to first public release. **29 sequential steps** (26 planned, plus three inserted by owner decision: STEP-11a, STEP-16a, STEP-12a), each sized for a single Claude Code session.
+The ordered execution index taking ProjectOne from an empty repository to first public release. **30 sequential steps** (26 planned, plus four inserted by owner decision: STEP-11a, STEP-16a, STEP-12a, STEP-16b), each sized for a single Claude Code session.
 
 **Steps execute in table order, not in numeric order.** A step numbered `Na` is placed where it belongs in the *dependency* sequence, while its number records which step's contract it amends. STEP-12a amends STEP-12's middleware contract but runs after STEP-16a, because the regression it fixes was only introduced by STEP-16.
 
@@ -62,6 +62,7 @@ Status appears in two places — the step note and the row below — and they mu
 | STEP-22 | [[STEP-22 Minimum Workflow Engine]] | Done | full |
 | STEP-23 | [[STEP-23 AI Chat End to End]] | Done | full |
 | STEP-24 | [[STEP-24 Dashboard]] | Not Started | outline |
+| STEP-16b | [[STEP-16b Auth Refresh Outage Handling]] | In Progress | full |
 | STEP-25 | [[STEP-25 Launch Readiness Criteria]] | Not Started | outline |
 | STEP-26 | [[STEP-26 First Public Release]] | Not Started | outline |
 
@@ -347,6 +348,12 @@ The vault, Claude OS and AI operating capabilities are built and validated ([[En
 Every Project Bible note is still `status: draft` at v0.1 — the *specification* is transcribed, not accepted. Treat drafts as the best current source of truth and flag genuine ambiguity per [[CLAUDE|CLAUDE.md]] §33 rather than resolving it silently mid-step.
 
 [[ADR-001 Technology Stack]] is the first and only ADR, written by STEP-02 and `Accepted` by the project owner on 2026-07-31. Its owner approval gate is cleared, so the stack is settled and STEP-03 onward may proceed ([[CLAUDE|CLAUDE.md]] §7).
+
+**An outage was being reported as a signed-out session** (STEP-16b — a step inserted by owner decision on 2026-08-14, since the fix changes shared authentication behaviour rather than any dashboard surface). STEP-24's manual checklist stopped the API to exercise the dashboard's error boundary; the boundary never rendered, the browser landed on `/sign-in`, and the session cookies were gone.
+
+The cause sat four frames above the dashboard, in `resolveAccessToken`: a bare `catch {}` cleared the session for **every** refresh failure, including one where the API was simply unreachable. `api.ts` already separates `ApiError` (a request was judged) from `ApiUnreachableError` (none completed) precisely so an outage is not mistaken for a rejection — the catch discarded that. The result destroyed a still-valid refresh credential and told the user their session had ended.
+
+The fix re-throws `ApiUnreachableError` and leaves every other error on the existing path. The gate lives in `(app)/layout.tsx`, so all four authenticated routes were affected identically, and the **root `app/error.tsx`** is the boundary that catches it — a route-level boundary cannot, because it is nested inside the layout that failed. `auth.ts` had no test file at all, which is how this shipped; it has one now.
 
 ---
 
