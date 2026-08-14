@@ -297,6 +297,20 @@ All five rows shared one displayed workflow name, because the fixtures share a w
 
 Five entries rendered from six fixtures, in order: Project C, Project E, Project F, Project B, Project A. No empty state, no error. The "All projects" link was visible and was separately confirmed to reach `/projects`.
 
+**Each of the five links was opened individually**, and each landed on the right project — verified twice over, since the displayed name was read in the browser *and* the resulting fetch was matched to the expected UUID in the API log:
+
+| # | Project | Project id | Fetch |
+|---|---|---|---|
+| 1 | C | `ed6a26a7-cb8c-44f1-b83b-af8a9a5d3e03` | 200 |
+| 2 | E | `b35108c4-a469-46db-8709-a2df6781d08d` | 200 |
+| 3 | F | `a187d48d-f52a-472f-9670-24256be89feb` | 200 |
+| 4 | B | `515bf875-a323-4985-96ee-737be04afa85` | 200 |
+| 5 | A | `35de6ac3-b775-4b78-95bd-2c52955ee273` | 200 |
+
+No error and no unexpected redirect on any of them. The log recorded exactly five project-detail fetches against a zero baseline, so each is attributable to one click, and every request was a `GET` — the verification changed nothing.
+
+**Why the displayed order is C, E, F, B, A.** All six fixtures carry an identical `created_at`, so newest-first cannot separate them and the server's own tiebreak decides. Task 3 requires the client to preserve the API's order rather than re-sort, and it does. Project D is the excluded sixth.
+
 #### The budget glance — browser-observed
 
 Spent `$0.037280` against a limit of `$1.000000`, while a **separate `$5.00` per-workflow budget fixture existed in the same workspace**. The rendered figure is the workspace-wide ceiling alone — had the section summed the two, it would have shown `$6.00`. That is the exclusion rule proven by observation, not inferred.
@@ -310,9 +324,8 @@ Only the opposite branches, each needing a workspace state this one does not hav
 - **No workspace-wide budget configured** — the honest "not configured" state. The seeded workspace has one, so what was confirmed is the correct *absence* of a setup prompt.
 - **A workspace with no projects and no runs** — the per-section empty states.
 - **A user with no workspace at all** — the no-workspace state.
-- **Each project link opening the right project** — the links render and the list order is verified; individual destinations were not each opened.
 
-These are covered by `lib/dashboard.test.ts` at the selection layer and by `dashboard-screen.test.tsx` at the rendering layer.
+These three are covered by `lib/dashboard.test.ts` at the selection layer and by `dashboard-screen.test.tsx` at the rendering layer. Each is the *opposite* branch of a rule already observed in the browser, which is why they need a differently-seeded workspace rather than another look at this one.
 
 **The breaker warning was observed**, quoted verbatim by the owner and confirmed to expose no internal reason text. Only the workspace-wide case was reachable; the per-workflow-only trip was not.
 
