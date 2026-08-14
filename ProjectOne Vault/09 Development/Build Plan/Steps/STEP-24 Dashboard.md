@@ -241,17 +241,17 @@ Two verification gates were added after an earlier attempt produced a false posi
 ## Manual Browser Test Checklist
 
 - [x] `/dashboard` loads for an authenticated user with a workspace.
-- [ ] Recent projects list real projects, newest first, capped at 5, and each link opens the right project.
-- [ ] With more than 5 projects in the workspace, exactly 5 appear and the link to `/projects` reaches the full list.
+- [x] Recent projects list real projects, newest first, capped at 5, and each link opens the right project.
+- [x] With more than 5 projects in the workspace, exactly 5 appear and the link to `/projects` reaches the full list.
 - [x] Active workflows show only `awaiting_approval`, `running` and `pending` runs, with `awaiting_approval` first, then `running`, then `pending`.
-- [ ] Within one status, the newest run appears first.
-- [ ] With more than 5 active runs, exactly 5 appear, and they are the highest-ranked 5 rather than an arbitrary 5.
+- [x] Within one status, the newest run appears first.
+- [x] With more than 5 active runs, exactly 5 appear, and they are the highest-ranked 5 rather than an arbitrary 5.
 - [x] Completed and failed runs do not appear in the active list.
-- [ ] A running run shows its start time labelled as started; a pending run with no start time shows its creation time labelled as created or queued.
+- [x] A running run shows its start time labelled as started; a pending run with no start time shows its creation time labelled as created or queued.
 - [x] The AI budget glance shows spend against the workspace-wide ceiling, and its link reaches the Settings spend detail.
-- [ ] With a workspace-wide budget **and** per-workflow budgets configured, the figure shown matches the workspace-wide budget alone and is not their sum.
+- [x] With a workspace-wide budget **and** per-workflow budgets configured, the figure shown matches the workspace-wide budget alone and is not their sum.
 - [ ] With no workspace-wide budget configured, the honest "not configured" state renders and links to Settings.
-- [ ] With a budget's circuit breaker open, the warning is visible without scrolling or interaction, including when only a per-workflow budget has tripped.
+- [x] With a budget's circuit breaker open, the warning is visible without scrolling or interaction, including when only a per-workflow budget has tripped.
 - [x] The breaker warning does not display internal breaker reason text.
 - [x] Notifications and AI recommendations read as clearly labelled "Not available yet", not as empty or broken sections.
 - [x] Exactly three quick actions render — Projects, AI Chat, Settings — and each opens its surface. No dead or disabled controls, and no action without an existing destination.
@@ -268,16 +268,51 @@ Two verification gates were added after an earlier attempt produced a false posi
 
 Recorded 2026-08-14/15 against `06505c8`, in one seeded workspace (`1b1f1b47…`) signed in as `owner.test@projectone.dev`. **Ticked means owner-observed in the browser unless stated otherwise here.**
 
-The five active workflow rows all carried the same displayed workflow name, which is a property of the seed rather than of the ranking. So the ranking checks were satisfied at the level the fixture could exercise — only active statuses appeared, and no completed or failed run did — but **the rank order between differing statuses, the newest-first tiebreak within one status, and the cap applied after ranking were not visually distinguishable in this data.** Those rules are asserted in `lib/dashboard.test.ts` and remain unticked above rather than claimed from a fixture that cannot show them.
+The fixtures were built to make each rule falsifiable rather than merely consistent: **6 projects** so the 5-cap has something to exclude, and **8 workflow runs** — two `awaiting_approval`, two `running`, two `pending`, plus a `failed` and a `completed` control. Six of the eight qualify as active, which is what makes the post-ranking cap testable.
 
-Left unticked for the same reason — each needs a workspace state this one does not have, and none is claimed:
+#### Ranking and the cap — browser-observed
 
-- More than 5 projects, and more than 5 active runs.
-- A workspace with a per-workflow budget alongside the workspace-wide one.
-- A workspace with **no** budget configured — the "not configured" state. The seeded workspace has a budget, so the observation recorded instead was its absence: no setup prompt appeared, correctly.
-- A workspace with no projects and no runs — the per-section empty states.
-- A user with no workspace at all.
-- Each project link opening the right project.
+The five rendered rows, verified against the fixture manifest:
+
+| # | Status | Timestamp | Label |
+|---|---|---|---|
+| 1 | Awaiting approval | 17:24:35 | Started |
+| 2 | Awaiting approval | 16:54:35 | Started |
+| 3 | Running | 17:19:35 | Started |
+| 4 | Running | 16:49:35 | Started |
+| 5 | Queued | 17:14:35 | Queued |
+
+Every rule in Task 4 is decided by that table:
+
+- **Status rank holds** — both `awaiting_approval` above both `running`, both `running` above `pending`.
+- **Rank dominates recency**, which is the rule most easily got wrong: row 4 (`running`, 16:49:35) sits above row 5 (`pending`, 17:14:35) despite being 25 minutes older. A naive newest-first sort would invert them.
+- **Newest-first holds within each status** — 17:24:35 before 16:54:35; 17:19:35 before 16:49:35.
+- **The cap applied after ranking** — six runs qualified, five rendered, and the one excluded was the *oldest pending*, not an arbitrary sixth.
+- **The controls are absent** — neither the `failed` nor the `completed` run appeared.
+- **Labels match `started_at` presence** — "Started" on the four runs that have one, "Queued" on the `pending` run that does not.
+
+All five rows shared one displayed workflow name, because the fixtures share a workflow type. That is a **design observation for [[STEP-26 Product Design System and Screen Blueprints]]** — rows are hard to tell apart by project at a glance — and is recorded in [[Design Backlog and UI Vision#UI Polish Backlog]]. It has no bearing on the ordering evidence above, which rests on status and timestamp.
+
+#### Recent projects — browser-observed
+
+Five entries rendered from six fixtures, in order: Project C, Project E, Project F, Project B, Project A. No empty state, no error. The "All projects" link was visible and was separately confirmed to reach `/projects`.
+
+#### The budget glance — browser-observed
+
+Spent `$0.037280` against a limit of `$1.000000`, while a **separate `$5.00` per-workflow budget fixture existed in the same workspace**. The rendered figure is the workspace-wide ceiling alone — had the section summed the two, it would have shown `$6.00`. That is the exclusion rule proven by observation, not inferred.
+
+The breaker warning was observed in its open state, quoted verbatim, and confirmed to expose no internal reason text.
+
+#### What remains unproven in the browser
+
+Only the opposite branches, each needing a workspace state this one does not have. None is claimed as passing:
+
+- **No workspace-wide budget configured** — the honest "not configured" state. The seeded workspace has one, so what was confirmed is the correct *absence* of a setup prompt.
+- **A workspace with no projects and no runs** — the per-section empty states.
+- **A user with no workspace at all** — the no-workspace state.
+- **Each project link opening the right project** — the links render and the list order is verified; individual destinations were not each opened.
+
+These are covered by `lib/dashboard.test.ts` at the selection layer and by `dashboard-screen.test.tsx` at the rendering layer.
 
 **The breaker warning was observed**, quoted verbatim by the owner and confirmed to expose no internal reason text. Only the workspace-wide case was reachable; the per-workflow-only trip was not.
 

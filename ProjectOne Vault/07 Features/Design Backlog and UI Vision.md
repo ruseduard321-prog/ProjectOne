@@ -123,7 +123,7 @@ Candidate improvements collected during Foundation, each traceable to this visio
 
 | # | Candidate | Source | Raised by |
 |---|---|---|---|
-| — | *(none collected yet)* | — | — |
+| 1 | **Active workflow rows are hard to tell apart at a glance.** During manual testing all five rows rendered the same workflow-type name, so status and timestamp were the only distinguishing content. A row does not surface which *project* it belongs to, which is what a user scanning "what needs attention" is most likely looking for. The data is available — runs carry a project reference. This is presentation, not selection: the ordering was verified correct. | [[#Design Philosophy]] — information hierarchy | [[STEP-24 Dashboard]] |
 
 To add an entry: name the improvement, link the section of this note it traces to, and name the step that surfaced it. Do not implement it.
 
