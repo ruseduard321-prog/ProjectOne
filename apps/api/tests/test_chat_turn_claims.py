@@ -112,13 +112,13 @@ def test_only_one_of_many_concurrent_callers_may_invoke_a_provider(
     PostgreSQL serialises it and exactly one caller may proceed.
     """
     alice, _bob = tenants
-    _conversation_id, user_message_id = _question(admin_connection, alice)
+    conversation_id, user_message_id = _question(admin_connection, alice)
 
     winners: list[uuid.UUID] = []
     lock = threading.Lock()
 
     def attempt() -> None:
-        claim = repository.claim(alice.workspace_id, user_message_id)
+        claim = repository.claim(alice.workspace_id, conversation_id, user_message_id)
 
         if claim is not None:
             with lock:
@@ -133,7 +133,7 @@ def test_only_one_of_many_concurrent_callers_may_invoke_a_provider(
         thread.join()
 
     assert len(winners) == 1, f"expected exactly one claimant, got {len(winners)}"
-    assert repository.status_of(alice.workspace_id, user_message_id) == IN_PROGRESS
+    assert repository.status_of(alice.workspace_id, conversation_id, user_message_id) == IN_PROGRESS
 
 
 def test_a_claim_survives_a_rolled_back_request_transaction(
@@ -152,17 +152,17 @@ def test_a_claim_survives_a_rolled_back_request_transaction(
     the claim, standing in for the failing request.
     """
     alice, _bob = tenants
-    _conversation_id, user_message_id = _question(admin_connection, alice)
+    conversation_id, user_message_id = _question(admin_connection, alice)
 
     with admin_connection.transaction():
-        claim = repository.claim(alice.workspace_id, user_message_id)
+        claim = repository.claim(alice.workspace_id, conversation_id, user_message_id)
         assert claim is not None
 
         # Whatever this request wrote is about to be discarded.
         raise psycopg.Rollback
 
     # The claim is still held: it was never part of that transaction.
-    assert repository.status_of(alice.workspace_id, user_message_id) == IN_PROGRESS
+    assert repository.status_of(alice.workspace_id, conversation_id, user_message_id) == IN_PROGRESS
 
 
 def test_a_released_turn_can_be_claimed_again(
@@ -172,15 +172,15 @@ def test_a_released_turn_can_be_claimed_again(
 ) -> None:
     """An ordinary provider failure must leave the turn retryable."""
     alice, _bob = tenants
-    _conversation_id, user_message_id = _question(admin_connection, alice)
+    conversation_id, user_message_id = _question(admin_connection, alice)
 
-    first = repository.claim(alice.workspace_id, user_message_id)
+    first = repository.claim(alice.workspace_id, conversation_id, user_message_id)
     assert first is not None
 
     assert repository.release(alice.workspace_id, first) is True
-    assert repository.status_of(alice.workspace_id, user_message_id) == PENDING
+    assert repository.status_of(alice.workspace_id, conversation_id, user_message_id) == PENDING
 
-    second = repository.claim(alice.workspace_id, user_message_id)
+    second = repository.claim(alice.workspace_id, conversation_id, user_message_id)
     assert second is not None
     assert second.claim_token != first.claim_token
 
@@ -197,21 +197,21 @@ def test_a_superseded_claim_cannot_settle_the_turn(
     legitimately owns it.
     """
     alice, _bob = tenants
-    _conversation_id, user_message_id = _question(admin_connection, alice)
+    conversation_id, user_message_id = _question(admin_connection, alice)
 
-    stale = repository.claim(alice.workspace_id, user_message_id)
+    stale = repository.claim(alice.workspace_id, conversation_id, user_message_id)
     assert stale is not None
     repository.release(alice.workspace_id, stale)
 
-    current = repository.claim(alice.workspace_id, user_message_id)
+    current = repository.claim(alice.workspace_id, conversation_id, user_message_id)
     assert current is not None
 
     assert repository.complete(alice.workspace_id, stale) is False
     assert repository.release(alice.workspace_id, stale) is False
-    assert repository.status_of(alice.workspace_id, user_message_id) == IN_PROGRESS
+    assert repository.status_of(alice.workspace_id, conversation_id, user_message_id) == IN_PROGRESS
 
     assert repository.complete(alice.workspace_id, current) is True
-    assert repository.status_of(alice.workspace_id, user_message_id) == COMPLETED
+    assert repository.status_of(alice.workspace_id, conversation_id, user_message_id) == COMPLETED
 
 
 def test_another_tenants_turn_cannot_be_claimed(
@@ -226,14 +226,14 @@ def test_another_tenants_turn_cannot_be_claimed(
     is exactly why it is asserted here rather than assumed.
     """
     alice, bob = tenants
-    _conversation_id, bobs_question = _question(admin_connection, bob)
+    bobs_conversation, bobs_question = _question(admin_connection, bob)
 
-    assert repository.claim(alice.workspace_id, bobs_question) is None
-    assert repository.status_of(alice.workspace_id, bobs_question) is None
+    assert repository.claim(alice.workspace_id, bobs_conversation, bobs_question) is None
+    assert repository.status_of(alice.workspace_id, bobs_conversation, bobs_question) is None
 
     # Still claimable by its rightful owner, so the refusal above was scoping
     # rather than the turn being unclaimable for some unrelated reason.
-    assert repository.claim(bob.workspace_id, bobs_question) is not None
+    assert repository.claim(bob.workspace_id, bobs_conversation, bobs_question) is not None
 
 
 def test_a_completed_turn_cannot_be_claimed_again(
@@ -243,13 +243,13 @@ def test_a_completed_turn_cannot_be_claimed_again(
 ) -> None:
     """A double-submitted completion must not reach a provider twice."""
     alice, _bob = tenants
-    _conversation_id, user_message_id = _question(admin_connection, alice)
+    conversation_id, user_message_id = _question(admin_connection, alice)
 
-    claim = repository.claim(alice.workspace_id, user_message_id)
+    claim = repository.claim(alice.workspace_id, conversation_id, user_message_id)
     assert claim is not None
     assert repository.complete(alice.workspace_id, claim) is True
 
-    assert repository.claim(alice.workspace_id, user_message_id) is None
+    assert repository.claim(alice.workspace_id, conversation_id, user_message_id) is None
 
 
 def test_one_turn_admits_one_reply_even_after_it_is_deleted(
@@ -362,12 +362,12 @@ def test_every_question_is_an_independent_turn(
         second_question = row[0]
     admin_connection.commit()
 
-    first = repository.claim(alice.workspace_id, first_question)
+    first = repository.claim(alice.workspace_id, conversation_id, first_question)
     assert first is not None
     assert repository.complete(alice.workspace_id, first) is True
 
     # The second question in the same conversation is claimable on its own.
-    second = repository.claim(alice.workspace_id, second_question)
+    second = repository.claim(alice.workspace_id, conversation_id, second_question)
     assert second is not None
 
 
@@ -404,16 +404,16 @@ def test_a_retried_turn_answers_the_same_question_and_adds_none(
     assert message_count() == 1
 
     # A provider failure: claimed, then released, leaving the turn retryable.
-    failed = repository.claim(alice.workspace_id, user_message_id)
+    failed = repository.claim(alice.workspace_id, conversation_id, user_message_id)
     assert failed is not None
     assert repository.release(alice.workspace_id, failed) is True
-    assert repository.status_of(alice.workspace_id, user_message_id) == PENDING
+    assert repository.status_of(alice.workspace_id, conversation_id, user_message_id) == PENDING
 
     # Still one message. The failure stored nothing and lost nothing.
     assert message_count() == 1
 
     # The retry: the same turn key, claimed again by a fresh holder.
-    retried = repository.claim(alice.workspace_id, user_message_id)
+    retried = repository.claim(alice.workspace_id, conversation_id, user_message_id)
     assert retried is not None
     assert retried.user_message_id == user_message_id
 
@@ -427,7 +427,7 @@ def test_a_retried_turn_answers_the_same_question_and_adds_none(
     admin_connection.commit()
 
     assert repository.complete(alice.workspace_id, retried) is True
-    assert repository.status_of(alice.workspace_id, user_message_id) == COMPLETED
+    assert repository.status_of(alice.workspace_id, conversation_id, user_message_id) == COMPLETED
 
     # Two messages: the original question and its reply. **Not four** -- which
     # is what the resend path produced, and the number that made the defect
@@ -459,10 +459,10 @@ def test_concurrent_retries_of_one_question_yield_one_answer(
     user reaches for the button.
     """
     alice, _bob = tenants
-    _conversation_id, user_message_id = _question(admin_connection, alice, "retry me")
+    conversation_id, user_message_id = _question(admin_connection, alice, "retry me")
 
     # Put the turn in the state a provider failure leaves it in.
-    first = repository.claim(alice.workspace_id, user_message_id)
+    first = repository.claim(alice.workspace_id, conversation_id, user_message_id)
     assert first is not None
     assert repository.release(alice.workspace_id, first) is True
 
@@ -470,7 +470,7 @@ def test_concurrent_retries_of_one_question_yield_one_answer(
     lock = threading.Lock()
 
     def retry() -> None:
-        claim = repository.claim(alice.workspace_id, user_message_id)
+        claim = repository.claim(alice.workspace_id, conversation_id, user_message_id)
 
         if claim is not None:
             with lock:
@@ -487,4 +487,86 @@ def test_concurrent_retries_of_one_question_yield_one_answer(
     # Exactly one Retry reaches a provider. The losers get 409, which the UI
     # reports as "already being answered" rather than inviting another click.
     assert len(winners) == 1, f"expected one retry to win, got {len(winners)}"
-    assert repository.status_of(alice.workspace_id, user_message_id) == IN_PROGRESS
+    assert repository.status_of(alice.workspace_id, conversation_id, user_message_id) == IN_PROGRESS
+
+
+def test_a_question_cannot_be_claimed_through_another_conversation(
+    admin_connection: psycopg.Connection,
+    tenants: tuple[Identity, Identity],
+    repository: ChatTurnRepository,
+) -> None:
+    """**The defect review caught, against the database that exposed it.**
+
+    `conversation_id` and `user_message_id` were validated separately -- each
+    against the workspace, neither against the other. Naming conversation A in
+    the URL and a pending question from conversation B in the body passed both
+    checks, so the claim succeeded, the provider was called and charged against
+    A's context, and only then did `app_messages_reply_eligible` refuse the
+    reply. B's question was left `in_progress`, unanswered, and paid for -- the
+    exact stuck state STEP-23 refuses to recover from automatically.
+
+    Both conversations belong to the **same tenant**, which is what makes this
+    distinct from the cross-tenant test above: RLS and the workspace predicate
+    were both satisfied. Only the relationship between the two ids was wrong.
+
+    The claim must be refused *before* any provider could be reached, so the
+    turn is left exactly as it was.
+    """
+    alice, _bob = tenants
+    conversation_a, _question_a = _question(admin_connection, alice, "asked in A")
+    conversation_b, question_b = _question(admin_connection, alice, "asked in B")
+
+    assert conversation_a != conversation_b
+
+    # The claim that used to succeed.
+    assert repository.claim(alice.workspace_id, conversation_a, question_b) is None
+
+    # Untouched: still pending, still unclaimed. A refused request must not
+    # consume the turn, or the fix would trade a stuck turn for a lost one.
+    with admin_connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT turn_status, claim_token, claimed_at FROM public.messages WHERE id = %s",
+            (question_b,),
+        )
+        row = cursor.fetchone()
+
+    assert row is not None
+    assert row[0] == PENDING
+    assert row[1] is None, "a refused claim must leave no claim token"
+    assert row[2] is None, "a refused claim must leave no claim timestamp"
+
+    # No reply was written for it, by anyone.
+    with admin_connection.cursor() as cursor:
+        cursor.execute("SELECT count(*) FROM public.messages WHERE reply_to = %s", (question_b,))
+        replies = cursor.fetchone()
+        assert replies is not None
+        assert replies[0] == 0
+
+    # Still answerable through its own conversation: the refusal was scoping,
+    # not the turn becoming permanently unclaimable.
+    assert repository.claim(alice.workspace_id, conversation_b, question_b) is not None
+
+
+def test_a_turn_is_invisible_through_the_wrong_conversation(
+    admin_connection: psycopg.Connection,
+    tenants: tuple[Identity, Identity],
+    repository: ChatTurnRepository,
+) -> None:
+    """Naming the wrong conversation reads as absent, never as taken.
+
+    `status_of` decides between 404 and 409. Left unscoped it would find a
+    question belonging to another conversation and answer 409 -- confirming to
+    the caller that an id they guessed exists and is being answered, when as far
+    as the conversation they named is concerned it does not exist at all. That
+    is the same oracle `ConversationNotFoundError` exists to avoid, one level
+    down.
+    """
+    alice, _bob = tenants
+    conversation_a, _question_a = _question(admin_connection, alice, "asked in A")
+    conversation_b, question_b = _question(admin_connection, alice, "asked in B")
+
+    # Absent through the wrong conversation -> the route answers 404.
+    assert repository.status_of(alice.workspace_id, conversation_a, question_b) is None
+
+    # Present through its own -> a genuine 409 when it is already held.
+    assert repository.status_of(alice.workspace_id, conversation_b, question_b) == PENDING

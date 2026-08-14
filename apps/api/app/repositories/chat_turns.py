@@ -98,17 +98,39 @@ class ChatTurnRepository:
         finally:
             connection.close()
 
-    def claim(self, workspace_id: uuid.UUID, user_message_id: uuid.UUID) -> TurnClaim | None:
+    def claim(
+        self,
+        workspace_id: uuid.UUID,
+        conversation_id: uuid.UUID,
+        user_message_id: uuid.UUID,
+    ) -> TurnClaim | None:
         """Take exclusive right to answer one turn, or return None.
 
         **This is the concurrency control**, and it is a conditional UPDATE
         rather than a lock:
 
-            WHERE id = ... AND turn_status = 'pending'
+            WHERE id = ... AND conversation_id = ... AND turn_status = 'pending'
 
         PostgreSQL serialises the update, so exactly one of any number of
         concurrent callers gets a row back. Verified with four concurrent
         callers against a real database: one claimed, three did not.
+
+        **`conversation_id` is part of the predicate, not a check before it**,
+        and that is a fix rather than a flourish. Review found that validating
+        the conversation and the message separately -- each against the
+        workspace, neither against the other -- let a caller name conversation A
+        in the URL and a pending question from conversation B in the body. Both
+        checks passed, the claim succeeded, the provider was called and charged
+        against A's context, and only then did `app_messages_reply_eligible`
+        refuse the reply. The question in B was left `in_progress` with no reply
+        and no release: a stuck turn and a real charge, from a request that
+        should never have reached a provider.
+
+        A separate `SELECT` before the claim would narrow that window without
+        closing it -- the row could change between the check and the update.
+        Folding the predicate into the one atomic statement means a turn is
+        claimable only if it is, at the instant of claiming, a live user message
+        in *this* conversation awaiting an answer.
 
         A unique index on the eventual reply was tried first and **rejected**.
         It prevents a duplicate reply *row*, but only after every caller has
@@ -136,12 +158,13 @@ class ChatTurnRepository:
                     claimed_at = now()
                 WHERE id = %s
                   AND workspace_id = %s
+                  AND conversation_id = %s
                   AND role = 'user'
                   AND turn_status = %s
                   AND deleted_at IS NULL
                 RETURNING id
                 """,
-                (IN_PROGRESS, token, user_message_id, workspace_id, PENDING),
+                (IN_PROGRESS, token, user_message_id, workspace_id, conversation_id, PENDING),
             )
             row = cursor.fetchone()
 
@@ -212,12 +235,25 @@ class ChatTurnRepository:
 
             return cursor.fetchone() is not None
 
-    def status_of(self, workspace_id: uuid.UUID, user_message_id: uuid.UUID) -> str | None:
+    def status_of(
+        self,
+        workspace_id: uuid.UUID,
+        conversation_id: uuid.UUID,
+        user_message_id: uuid.UUID,
+    ) -> str | None:
         """Return a turn's current state, or None when it is not visible here.
 
         Used to answer a second caller honestly: a turn already `completed` has
         its reply returned, and one `in_progress` is reported as such rather
         than being answered twice.
+
+        **Scoped to the conversation for the same reason `claim` is**, and here
+        the consequence is disclosure rather than a stuck turn. This decides
+        between 404 and 409, so a query matching a message in a *different*
+        conversation would answer 409 -- telling the caller that a question they
+        named exists and is being answered, when as far as this conversation is
+        concerned it does not exist at all. Scoping it keeps the two cases
+        honest: not here is 404, here but taken is 409.
         """
         with self._connect() as connection, connection.cursor() as cursor:
             cursor.execute(
@@ -226,10 +262,11 @@ class ChatTurnRepository:
                 FROM public.messages
                 WHERE id = %s
                   AND workspace_id = %s
+                  AND conversation_id = %s
                   AND role = 'user'
                   AND deleted_at IS NULL
                 """,
-                (user_message_id, workspace_id),
+                (user_message_id, workspace_id, conversation_id),
             )
             row = cursor.fetchone()
 

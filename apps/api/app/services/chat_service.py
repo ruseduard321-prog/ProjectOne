@@ -279,14 +279,32 @@ class ChatService:
                 f"Conversation {conversation_id} was not found in this workspace"
             )
 
-        claim = self._turns.claim(workspace_id, user_message_id)
+        # The conversation is part of the claim predicate, not checked before
+        # it. Review found that validating each id against the workspace but
+        # neither against the other let a caller answer conversation B's
+        # question through conversation A's endpoint: both checks passed, the
+        # provider was called and charged against A's context, and the reply was
+        # then refused by `app_messages_reply_eligible` -- leaving B's question
+        # `in_progress`, unanswered, and paid for. A turn is now claimable only
+        # if it is, at the instant of claiming, a live question in *this*
+        # conversation awaiting an answer.
+        claim = self._turns.claim(workspace_id, conversation_id, user_message_id)
 
         if claim is None:
-            raise self._not_claimable(workspace_id, user_message_id)
+            raise self._not_claimable(workspace_id, conversation_id, user_message_id)
 
         # Everything below runs with the claim committed and no transaction of
         # ours open. A failure must release it, or the turn is stranded in
         # exactly the state this step refuses to recover from automatically.
+        #
+        # **Persisting the reply is inside this block, not after it.** It used
+        # to sit outside, on the reasoning that once a provider had answered the
+        # turn was as good as done -- which is wrong in the one case that
+        # matters. A failure to store the reply left the turn claimed and
+        # unreleased, indistinguishable from a crash, while the charge had
+        # already been incurred. Releasing there is safe and strictly better:
+        # the reply was *not* stored, so a retry answers a question that still
+        # has no answer rather than duplicating one.
         try:
             request = CompletionRequest(
                 messages=self._context_for(workspace_id, conversation),
@@ -298,23 +316,37 @@ class ChatService:
                 request=request,
                 actor_id=actor_id,
             )
+
+            assistant_message = self._conversations.add_message(
+                workspace_id=workspace_id,
+                conversation_id=conversation.id,
+                role="assistant",
+                content=response.content,
+                provider=response.provider,
+                model=response.model,
+                token_count=response.usage.total_tokens,
+                reply_to=user_message_id,
+            )
         except Exception:
             # Released rather than left claimed: an ordinary failure must leave
             # the turn retryable. The spend reservation is settled by
             # `AIService`'s own `finally`, so no charge leaks either.
-            self._turns.release(workspace_id, claim)
-            raise
+            #
+            # A release that itself fails is swallowed: the original failure is
+            # what the caller needs to hear, and a turn left claimed is the
+            # documented stuck state rather than a new one.
+            try:
+                self._turns.release(workspace_id, claim)
+            except Exception:  # pragma: no cover - defensive
+                logger.warning(
+                    log_context(
+                        event="chat_turn_release_failed",
+                        workspace_id=workspace_id,
+                        conversation_id=conversation_id,
+                    )
+                )
 
-        assistant_message = self._conversations.add_message(
-            workspace_id=workspace_id,
-            conversation_id=conversation.id,
-            role="assistant",
-            content=response.content,
-            provider=response.provider,
-            model=response.model,
-            token_count=response.usage.total_tokens,
-            reply_to=user_message_id,
-        )
+            raise
 
         # After the reply is stored, never before: a turn marked complete
         # without one could never be retried and would have no answer.
@@ -341,6 +373,7 @@ class ChatService:
     def _not_claimable(
         self,
         workspace_id: uuid.UUID,
+        conversation_id: uuid.UUID,
         user_message_id: uuid.UUID,
     ) -> Exception:
         """Choose the honest error for a turn that could not be claimed.
@@ -350,8 +383,14 @@ class ChatService:
         distinguishable. Anything else is a live or finished turn, and the
         caller is told so rather than being handed someone else's answer as
         though they had caused it.
+
+        **Scoped to the conversation**, so a question belonging to a different
+        one reads as absent rather than as taken. Answering 409 there would
+        confirm that an id the caller named exists somewhere in the workspace --
+        the same oracle `ConversationNotFoundError` exists to avoid, one level
+        down.
         """
-        status = self._turns.status_of(workspace_id, user_message_id)
+        status = self._turns.status_of(workspace_id, conversation_id, user_message_id)
 
         if status is None:
             return ConversationNotFoundError(

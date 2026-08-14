@@ -36,6 +36,7 @@ from app.services.ai_spend_service import AISpendService
 from app.services.chat_service import (
     _CONTEXT_MESSAGE_LIMIT,
     ChatService,
+    ConversationNotFoundError,
     TurnNotClaimableError,
     _title_from,
 )
@@ -188,9 +189,24 @@ class FakeTurnRepository:
         self.tokens: dict[uuid.UUID, uuid.UUID] = {}
         self.claims: list[uuid.UUID] = []
         self.releases: list[uuid.UUID] = []
+        #: Which conversation each question belongs to.
+        #:
+        #: Tracked because the real predicate now includes it. Without this the
+        #: fake would answer a cross-conversation claim happily and this suite
+        #: would stay green against the very defect the change fixes -- the
+        #: pattern that already let three defects through this step.
+        self.conversations: dict[uuid.UUID, uuid.UUID] = {}
 
-    def claim(self, workspace_id: uuid.UUID, user_message_id: uuid.UUID) -> object | None:
+    def claim(
+        self,
+        workspace_id: uuid.UUID,
+        conversation_id: uuid.UUID,
+        user_message_id: uuid.UUID,
+    ) -> object | None:
         if self.status.get(user_message_id) != "pending":
+            return None
+
+        if self.conversations.get(user_message_id) != conversation_id:
             return None
 
         token = uuid.uuid4()
@@ -219,7 +235,15 @@ class FakeTurnRepository:
 
         return True
 
-    def status_of(self, workspace_id: uuid.UUID, user_message_id: uuid.UUID) -> str | None:
+    def status_of(
+        self,
+        workspace_id: uuid.UUID,
+        conversation_id: uuid.UUID,
+        user_message_id: uuid.UUID,
+    ) -> str | None:
+        if self.conversations.get(user_message_id) != conversation_id:
+            return None
+
         return self.status.get(user_message_id)
 
 
@@ -283,6 +307,7 @@ def build(
 
         if message.role == "user":
             turns.status[message.id] = "pending"
+            turns.conversations[message.id] = message.conversation_id
 
         return message
 
@@ -528,6 +553,80 @@ def test_a_second_completion_of_one_turn_is_refused() -> None:
         )
 
     assert len([m for m in store.messages if m.role == "assistant"]) == 1
+
+
+def test_a_question_cannot_be_answered_through_another_conversation() -> None:
+    # **The defect review caught, at the service layer.**
+    #
+    # `conversation_id` and `user_message_id` were each validated against the
+    # workspace and neither against the other, so naming conversation A in the
+    # URL and a pending question from conversation B in the body passed both
+    # checks. The claim succeeded, the provider was called and charged against
+    # A's context, and only then did the database refuse the reply -- leaving
+    # B's question `in_progress`, unanswered, and paid for.
+    #
+    # The provider must never be reached. That is the whole assertion: no call,
+    # no charge, no reply, and B's question still exactly as it was.
+    provider = FakeProvider("openai")
+    service, store, _, workspace = build((provider,))
+    actor = uuid.uuid4()
+
+    a = service.start_turn(workspace, "asked in A", actor)
+    b = service.start_turn(workspace, "asked in B", actor)
+
+    assert a.conversation.id != b.conversation.id
+
+    calls_before = provider.calls
+    assistant_before = len([m for m in store.messages if m.role == "assistant"])
+
+    # Conversation A's endpoint, conversation B's question.
+    with pytest.raises(ConversationNotFoundError):
+        service.complete_turn(
+            workspace_id=workspace,
+            conversation_id=a.conversation.id,
+            user_message_id=b.user_message.id,
+            actor_id=actor,
+        )
+
+    # No provider call, so no charge could have been incurred.
+    assert provider.calls == calls_before
+    # No reply was stored anywhere.
+    assert len([m for m in store.messages if m.role == "assistant"]) == assistant_before
+    # B's question is untouched and still answerable through its own
+    # conversation -- refusing the request must not consume the turn.
+    turns = service._turns  # noqa: SLF001 - asserting the collaborator's state
+    assert turns.status[b.user_message.id] == "pending"
+    assert b.user_message.id not in turns.tokens
+
+
+def test_a_question_refused_this_way_is_still_answerable_properly() -> None:
+    # The refusal must not leave a scar. After the cross-conversation attempt,
+    # answering B through B's own endpoint has to work normally -- otherwise the
+    # fix would have turned a stuck turn into a permanently unanswerable one.
+    service, store, _, workspace = build()
+    actor = uuid.uuid4()
+
+    a = service.start_turn(workspace, "asked in A", actor)
+    b = service.start_turn(workspace, "asked in B", actor)
+
+    with pytest.raises(ConversationNotFoundError):
+        service.complete_turn(
+            workspace_id=workspace,
+            conversation_id=a.conversation.id,
+            user_message_id=b.user_message.id,
+            actor_id=actor,
+        )
+
+    turn = service.complete_turn(
+        workspace_id=workspace,
+        conversation_id=b.conversation.id,
+        user_message_id=b.user_message.id,
+        actor_id=actor,
+    )
+
+    turns = service._turns  # noqa: SLF001 - asserting the collaborator's state
+    assert turn.assistant_message.reply_to == b.user_message.id
+    assert turns.status[b.user_message.id] == "completed"
 
 
 def test_each_question_is_its_own_turn() -> None:

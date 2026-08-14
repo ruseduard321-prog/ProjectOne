@@ -91,6 +91,8 @@ Recorded during expansion, while the context was loaded.
 | One turn admits one reply, even after deletion | `test_one_turn_admits_one_reply_even_after_it_is_deleted` | **CI only** |
 | A reply must answer a user message in its own conversation | `test_a_reply_must_answer_a_user_message_in_its_own_conversation` | **CI only** |
 | Another tenant's turn cannot be claimed | `test_another_tenants_turn_cannot_be_claimed` | **CI only** |
+| **A question cannot be answered through another conversation** | `test_a_question_cannot_be_claimed_through_another_conversation`; service half in `test_a_question_cannot_be_answered_through_another_conversation` | **CI only** + Local |
+| A turn is invisible through the wrong conversation (404, not 409) | `test_a_turn_is_invisible_through_the_wrong_conversation` | **CI only** |
 | Spend attributed | `AIService` `workflow_type="chat"`, metered by `test_ai_spend_isolation.py` | **CI only** |
 | Loading / empty / error states | `loading.tsx`, `error.tsx`, `EmptyState` branches in `page.tsx` | Build + CI |
 
@@ -161,6 +163,21 @@ Recorded during expansion, while the context was loaded.
 >
 > **The pattern, for the fourth time in this step:** every test passed. `test_chat_turn_claims.py` proved the turn was claimable; `actions.test.ts` proved a failure reported honestly. Neither could see that the two halves never met, because no test rendered a `pending` question and asked what a user could do about it.
 
+> [!bug] The fourth finding: two ids that were never checked against each other
+> Review caught this one before a user could, and it is the most expensive defect in the step because it both stuck a turn **and** spent money.
+>
+> **The hole.** `complete_turn` validated `conversation_id` against the workspace, and `user_message_id` against the workspace — but never the two against each other. So a request naming conversation **A** in the URL and a pending question from conversation **B** in the body passed both checks. Same tenant, so RLS was satisfied and had nothing to say.
+>
+> **What followed.** The claim on B succeeded. The provider was called with **A's** context and charged. Then `app_messages_reply_eligible` refused the reply, because `reply_to` pointed into B — and that insert sat *outside* the `try` block that releases the claim. B's question was left `in_progress`, with no reply, no release, and a real charge against the workspace. Indistinguishable from a crash, and the one state STEP-23 deliberately will not recover automatically.
+>
+> **Reproduced against live PostgreSQL before fixing.** With the old predicate, `claim(workspace, conversation_a, question_b)` returned a claim; the reply insert then failed with `CheckViolation: a reply must stay in its own conversation`. Both halves observed directly, not inferred.
+>
+> **The fix is a predicate, not a check.** `conversation_id` is now part of the atomic claim `UPDATE`, alongside `workspace_id`, `role = 'user'`, `turn_status = 'pending'` and `deleted_at IS NULL`. A separate `SELECT` first would have narrowed the window without closing it — the row can change between a check and an update. Folded in, a turn is claimable only if it is, *at the instant of claiming*, a live question in that conversation awaiting an answer.
+>
+> **`status_of` was scoped the same way**, and there the consequence was disclosure rather than a stuck turn: it decides 404 vs 409, so an unscoped lookup would answer 409 for a question in another conversation — confirming an id exists that, as far as the named conversation is concerned, does not.
+>
+> **A second gap found while fixing the first.** Persisting the reply sat outside the release block, on the reasoning that a turn with an answer in hand was as good as done. It is not: a failure there left the turn claimed and unreleased with the charge already incurred. It now runs inside the block. Releasing is strictly safer, because the reply was *not* stored — a retry answers a question that still has no answer rather than duplicating one.
+
 ## The two-request contract
 
 A turn is two calls, and the split is load-bearing rather than stylistic.
@@ -195,6 +212,7 @@ This distinction is the fix for the third manual finding, and it is worth statin
 ### Guarantees, stated exactly
 
 - **Concurrency — at most one provider invocation per question.** Proven with four concurrent callers against real PostgreSQL.
+- **A turn belongs to exactly one conversation.** The claim predicate includes `conversation_id`, so a question can only be answered through the conversation holding it. Naming another reads as absent (404), never as taken (409).
 - **Ordinary failure — fully retryable.** The claim is released, the question stays stored, no charge is incurred (the reservation is settled by `AIService`'s existing `finally`).
 - **Crash after the provider accepted — not recoverable automatically, by design.** The turn stays visibly `in_progress` and answers 409. Returning it to `pending` on a timer would re-invoke a provider that has already charged for the request. **Exactly-once execution across a crash is unachievable without provider-side idempotency keys**, and this step does not pretend otherwise.
 
@@ -270,11 +288,12 @@ A user holds a conversation with an AI inside their workspace, the conversation 
 Per [[Execution Protocol#Step Completion]], this step stays **`In Progress`** until every gate is satisfied:
 
 - [x] Requirements implemented — all 8 tasks.
-- [x] Local validation passed — api 423 passed, web 163 passed, lint/format/type-check/build clean.
+- [x] Local validation passed — api 425 passed, web 163 passed, lint/format/type-check/build clean.
 - [x] Documentation updated in the same change.
 - [x] Message immutability enforced by `b4e8c02d71fa`, proven against the live development database.
 - [x] First-turn navigation and retry made coherent, with tests on both sides.
 - [x] A failed turn is visible and retryable *on screen*, answering the existing question rather than asking a new one.
+- [x] A turn can only be answered through the conversation that holds it — the claim predicate includes `conversation_id`.
 - [x] **Required CI green** on `8895962` — all three jobs, including the database-backed `api` suite this machine cannot run.
 - [x] **Manual checklist items 4, 5, 7a, 7b** — passed against a real database and a genuine forced provider outage. Items 6 and 8 are transient visual states that could not be observed; behaviour is shared with already-shipped screens.
 - [x] Test data removed; spend audit trail retained deliberately.
