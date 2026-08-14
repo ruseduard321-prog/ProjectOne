@@ -61,7 +61,7 @@ Status appears in two places — the step note and the row below — and they mu
 | STEP-21 | [[STEP-21 Projects UI]] | Done | full |
 | STEP-22 | [[STEP-22 Minimum Workflow Engine]] | Done | full |
 | STEP-23 | [[STEP-23 AI Chat End to End]] | Done | full |
-| STEP-24 | [[STEP-24 Dashboard]] | Not Started | outline |
+| STEP-24 | [[STEP-24 Dashboard]] | Not Started | full |
 | STEP-25 | [[STEP-25 Launch Readiness Criteria]] | Not Started | outline |
 | STEP-26 | [[STEP-26 First Public Release]] | Not Started | outline |
 
