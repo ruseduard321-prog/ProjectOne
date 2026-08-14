@@ -31,6 +31,51 @@ from app.core.api import current_request_id
 # -- including ones the test suite depends on.
 _HANDLER_NAME = "projectone.stdout"
 
+# A connection URI's inline password: `scheme://user:<secret>@host`.
+#
+# Named rather than inlined below so its negative-control test can remove
+# exactly this rule and prove the leak returns without it (FA-05). A redaction
+# test that still passes with the rule deleted is testing nothing.
+#
+# Only the password is replaced. Scheme, user and host survive, because an
+# operator reading a connection failure needs to know *which* connection failed
+# -- deleting the whole URI trades a leak for a mystery.
+#
+# `[^:@/\s]+` for the password: it cannot span a host separator, so the pattern
+# cannot run past the end of one URI and swallow the rest of the line. The
+# negative lookahead leaves an already-redacted URI alone, keeping redaction
+# idempotent.
+_URI_PASSWORD = re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://[^:@/\s]+:)(?!\[REDACTED\])[^:@/\s]+@")
+
+# Credential-shaped environment variables in `KEY=value` form, which is how
+# settings appear when a config object is logged or a startup failure dumps its
+# environment. `PROJECTONE_BYOK_ENCRYPTION_KEY` is the case the audit found
+# unmatched.
+#
+# Anchored on the *suffix* of the name rather than a list of known variables, so
+# a variable added next year is covered without anyone remembering to add it
+# here.
+#
+# `_URL`/`_DSN` values are deliberately *excluded* from this rule and left to
+# `_URI_PASSWORD`, which runs first. Both would redact the credential, but this
+# one would flatten the whole value to `[REDACTED]`, discarding the host and
+# user that make a connection failure diagnosable. The lookahead skips any value
+# already carrying a redaction marker -- which, after `_URI_PASSWORD` has run,
+# is exactly the URL and DSN cases.
+_KEY_SHAPED_ENV = re.compile(
+    r"(?i)\b([A-Z][A-Z0-9_]*_(?:KEY|SECRET|TOKEN|PASSWORD|PASS|CREDENTIALS?)\s*=\s*)"
+    r"(?!\[REDACTED\])\S+"
+)
+
+# `*_URL` / `*_DSN` in `KEY=value` form, kept separate from `_KEY_SHAPED_ENV`
+# because its lookahead is different: the value is skipped when it *contains* a
+# redaction marker anywhere, not only when it starts with one. After
+# `_URI_PASSWORD` has run, a connection URL reads
+# `postgresql://user:[REDACTED]@host/db` -- already safe, and worth keeping in
+# that form. This rule exists for the remaining case: a `*_URL` value that
+# carries a credential in some shape `_URI_PASSWORD` does not recognise.
+_KEY_SHAPED_URL = re.compile(r"(?i)\b([A-Z][A-Z0-9_]*_(?:URL|DSN)\s*=\s*)(?!\S*\[REDACTED\])\S+")
+
 #: Patterns whose *values* are replaced wherever they appear in a log message.
 #:
 #: Matched on the rendered message rather than on argument names, because the
@@ -41,7 +86,17 @@ _HANDLER_NAME = "projectone.stdout"
 #: Each pattern keeps the label and replaces what follows it, so a redacted line
 #: still says *that* a token was present. A line with the evidence silently
 #: deleted is harder to debug than one that says "there was a token here".
+#:
+#: **Order is load-bearing.** `_URI_PASSWORD` runs before `_KEY_SHAPED_URL` so
+#: that `DATABASE_URL=postgresql://user:secret@host/db` keeps its host and user
+#: rather than collapsing to `DATABASE_URL=[REDACTED]`. Each rule has a
+#: negative-control test that removes it and asserts the leak returns.
 _REDACTIONS: tuple[tuple[re.Pattern[str], str], ...] = (
+    # FA-05. A failed `psycopg.connect(...)` renders the source line holding the
+    # DSN into its traceback, so a routine connection error wrote a live
+    # database password into the log. First, so later rules see a URI whose
+    # password is already gone.
+    (_URI_PASSWORD, r"\1[REDACTED]@"),
     # `Authorization: Bearer <token>` and the bare `Bearer <token>` form, in
     # header dumps, f-strings and repr() output alike. Runs first so the scheme
     # survives redaction -- a line reading `Bearer [REDACTED]` still says what
@@ -71,6 +126,11 @@ _REDACTIONS: tuple[tuple[re.Pattern[str], str], ...] = (
         ),
         r"\1\2[REDACTED]",
     ),
+    # Credential-shaped environment variables. Last, so the rules above have
+    # already handled the informative cases -- a `DATABASE_URL` whose password
+    # this pattern would otherwise flatten along with its host.
+    (_KEY_SHAPED_ENV, r"\1[REDACTED]"),
+    (_KEY_SHAPED_URL, r"\1[REDACTED]"),
 )
 
 
