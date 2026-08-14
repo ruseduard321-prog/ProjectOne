@@ -2,23 +2,25 @@
 title: STEP-25 Foundation Audit & Internal Readiness
 category: Development/Build Step
 status: draft
-version: "3.0"
+version: "4.0"
 last_updated: 2026-08-15
 tags: [engineering, workflow, build-step, process, security, quality]
 step_id: STEP-25
-step_status: In Progress
+step_status: Done
 detail_level: full
 ---
 
 # STEP-25 — Foundation Audit & Internal Readiness
 
-**Status:** In Progress
+**Status:** Done
 **Detail level:** full — expanded on 2026-08-15 by owner authorization, in a documentation-only planning pass.
 
-> [!note] Execution authorized 2026-08-15
-> The plan below was written in a separate documentation-only pass while this step was still `Not Started`. The owner authorized execution on 2026-08-15, and the step moved to `In Progress` in both canonical locations at that point.
+> [!success] Complete — owner-approved 2026-08-15
+> The audit ran, its **17 findings were accepted**, and all severities were settled by the project owner on 2026-08-15: **1 Critical, 3 High, 9 Medium, 4 Low**. The record is [[Foundation Audit Findings]].
 >
-> Execution remains **findings-only** under D4/D7: no application code is fixed, no documentation repaired, no migration added, no remediation step created, and [[STEP-26 Product Design System and Screen Blueprints]] is not expanded. Findings are recorded in [[Foundation Audit Findings]].
+> **No remediation was performed during the audit** — findings-only throughout, under D4/D7. No application code, migration, CI configuration or database was changed, no link was repaired and no schema note was created.
+>
+> The approved remediation successor is **[[STEP-25a Foundation Remediation]]**, which remains `Not Started`. [[STEP-26 Product Design System and Screen Blueprints]] remains `Not Started` at `outline` and does not begin until STEP-25a closes the Critical finding.
 
 ## Goal
 
@@ -253,37 +255,53 @@ Check 12 is the one that defines this step: an audit that changed the system it 
 
 ## Manual Checklist
 
-Read-only walkthrough. Nothing is fixed, and no data is written beyond what a normal session creates.
+**Not applicable to this step, with the reason stated** ([[Branch and Pull Request Workflow#Manual Test Checklist]] permits this where a step has no user-visible behaviour).
 
-- [ ] Sign-in and sign-up render; validation errors are user-safe and expose no internal detail.
-- [ ] All 5 authenticated routes render: dashboard, projects, project detail, settings, chat.
-- [ ] Each route's loading, empty and error state is present and honest.
-- [ ] **Each error boundary's retry genuinely recovers** — the four route boundaries recover; the **root boundary is re-confirmed inert by observation** (D4) and recorded, not fixed.
-- [ ] The dashboard's stub sections still read as honest stubs, implying no information the product lacks.
-- [ ] Keyboard traversal reaches every interactive control with a visible focus state.
-- [ ] The single-workspace limitation is still disclosed in the interface.
-- [ ] `/dev/session` returns 404 in a production build, by both mechanisms STEP-16a required.
-- [ ] Sign-out clears the session, and an unauthenticated visit to an app route redirects.
+STEP-25 changed **no user-visible behaviour**: it added vault documentation and touched no application code, so there is nothing a browser walkthrough could regress. The checklist below was written when the step was planned, on the assumption that a live walkthrough would add evidence. It did not run, and is **not claimed as passing**.
+
+Two constraints made a live walkthrough the wrong instrument here. Execution rule 5 makes the shared Supabase database **read-only** and rule 12 requires asking before anything that would mutate real data — and a sign-up/sign-out walkthrough writes rows. The items below were therefore answered by **static and build evidence** where they could be, and left **unverified** where only a browser could answer them.
+
+| Item | Outcome | Evidence |
+|---|---|---|
+| Root boundary retry is inert | **Verified statically** | Read `app/error.tsx` — `onClick={reset}` vs. `useErrorRecovery(reset)` in all four route boundaries (FA-04) |
+| Route boundaries carry alert semantics; root does not | **Verified statically** | Grep across all five boundary files (FA-11) |
+| Loading states present on every route | **Verified statically** | All five `loading.tsx` files carry a status role |
+| `/dev/session` excluded from production | **Verified by build** | Absent from the `next build` route manifest |
+| Single-workspace limitation disclosed | **Verified statically** | Disclosure text read on dashboard, projects and settings |
+| Dashboard stubs read as honest stubs | **Verified statically** | `dashboard/page.tsx` `StubSections()` plus its existing test |
+| Sign-in / sign-up render; errors user-safe | **Not verified** | Requires a browser session against a live API |
+| Keyboard traversal and visible focus | **Not verified** | Requires a browser session; recorded as an accessibility input to STEP-26 |
+| Sign-out clears session; unauthenticated redirect | **Not verified** | Would write session rows to the shared database |
+
+The three unverified items are **behavioural checks on code STEP-25 did not change**. They are answered by [[STEP-25a Foundation Remediation]]'s own manual checklist, which does change that code and must exercise the boundary end to end.
+
 
 ## Definition of Done
 
-- [ ] Every scope area assessed and recorded with severity, per the objective model.
-- [ ] All findings in `Foundation Audit Findings.md`, each with all nine fields (D3).
-- [ ] The carried-forward STEP-24 findings are resolved into the record: the root retry defect recorded as **High** (D4), and the two owner-deferred visual gates confirmed as still-live gates on STEP-26/27.
-- [ ] The AI idempotency/reconciliation/lease/crash-window ADR is recorded as a **named prerequisite before the next AI feature**, and **was not drafted** (D5).
-- [ ] Negative-control evidence exists for every RLS and tenant-isolation claim.
-- [ ] Secret scanning completed across working tree and history, and all four leak surfaces verified.
-- [ ] Restore drill executed against a disposable database, **or** the gap recorded as High with an owner decision requested (D1).
-- [ ] Performance baselines recorded as indicative, repeated, with ranges (D2).
-- [ ] The full known-debt catalogue is complete: per-worker limiter, DOC-01, DOC-02, missing schema notes, root retry, AI crash window, deferred MFA/OAuth, single-workspace limitation, every shipped stub.
-- [ ] **No remediation was performed** — no link repaired, no schema note created, no code changed (D4, D7).
-- [ ] Documentation updated: this note, the findings record, [[Build Plan]] Current State.
-- [ ] [[STEP-26 Product Design System and Screen Blueprints]] expanded to full detail **at the end of the step**, from the final approved findings.
-- [ ] Full validation executed and results recorded honestly, including anything that could not be run.
-- [ ] Required CI green on the Pull Request; manual checklist complete.
-- [ ] Every review conversation resolved.
-- [ ] **Owner approval gate satisfied** — see below.
-- [ ] Pull Request open and **NOT merged**; the owner squash-merges.
+**All items satisfied. Marked `Done` on 2026-08-15**, after the checks — not before them.
+
+- [x] Every scope area assessed and recorded with severity, per the objective model. **11 scope areas; 17 findings; 16 areas recorded as verified-no-finding with the method that verified each.**
+- [x] All findings in [[Foundation Audit Findings]], each with all nine fields (D3).
+- [x] The carried-forward STEP-24 findings are resolved into the record: the root retry defect recorded as **High** (FA-04, D4), and the two owner-deferred visual gates confirmed as still-live gates on STEP-26/27 (FA-17).
+- [x] The AI idempotency/reconciliation/lease/crash-window ADR is recorded as a **named prerequisite before the next AI feature** (FA-13), and **was not drafted** (D5).
+- [x] Evidence exists for every RLS and tenant-isolation claim. **Isolation is proven in CI** — the API job's `PROJECTONE_REQUIRE_DATABASE_TESTS` flag makes `conftest.py` call `pytest.fail` rather than `pytest.skip`, so a green job is only reachable if the database-backed tests executed. Local negative controls could not run and that gap is recorded as FA-01 (Medium) rather than claimed as passing.
+- [x] Secret scanning completed across working tree **and git history**; all four leak surfaces checked separately. Three surfaces clean; the logs surface produced **FA-05 (Critical)**.
+- [x] Restore drill **not executed** — no disposable database was available, so per D1 the gap is recorded as **FA-03 (High)** with an owner decision requested. It was **not simulated**.
+- [x] Performance baselines recorded as indicative, repeated, with ranges (D2).
+- [x] The full known-debt catalogue is complete (FA-13, FA-16, FA-17): per-worker limiter, DOC-01, DOC-02, missing schema notes, root retry, AI crash window, deferred MFA/OAuth, single-workspace limitation, every shipped stub.
+- [x] **No remediation was performed** — no link repaired, no schema note created, no code, migration, CI configuration or database changed (D4, D7). Verified by `git status` and the diff.
+- [x] Documentation updated: this note, [[Foundation Audit Findings]], [[Build Plan]], [[Development MOC]].
+- [x] **Manual checklist: not applicable, with the reason stated** — this step changed no user-visible behaviour. See [[#Manual Checklist]] for what static and build evidence answered, and what is deliberately left to [[STEP-25a Foundation Remediation]].
+- [x] Full validation executed and results recorded honestly, **including the three verifications that could not be run** (FA-01 locally, FA-02, FA-03).
+- [x] Required CI green on the Pull Request — `api`, `web` and `governance docs (sync check)` all `success`.
+- [x] Every review conversation resolved.
+- [x] **Owner approval gate satisfied** — approved 2026-08-15. See below.
+- [x] Pull Request open and **NOT merged**; the owner squash-merges.
+
+**One planned item was superseded by owner decision** rather than completed:
+
+- [ ] ~~[[STEP-26 Product Design System and Screen Blueprints]] expanded to full detail at the end of the step.~~ **Superseded on 2026-08-15.** The owner inserted [[STEP-25a Foundation Remediation]] between this step and STEP-26, and directed that STEP-26 remain `Not Started` at `outline`. It is expanded by the step that immediately precedes it — now STEP-25a — once the Critical finding blocking design is closed. Expanding it here would have written a design plan against a foundation still carrying FA-05.
+
 
 ### Owner approval gate
 
@@ -292,6 +310,10 @@ Read-only walkthrough. Nothing is fixed, and no data is written beyond what a no
 Its own changes are documentation-only, which argues the other way. But §21's test is what a change *touches*, and this audit's findings are assessments of authentication, authorization, multi-tenancy/RLS, database schema, AI/agent architecture, security controls and public API contracts — the entire Critical list. More decisively, its **output governs STEP-26, STEP-27 and STEP-28**: a wrong or incomplete severity assignment here silently authorizes building on a foundation nobody actually verified. §21's own instruction settles the remaining doubt — when uncertain, default to Critical.
 
 The gate is substantive rather than ceremonial: **every Critical finding blocks STEP-26 by definition**, and every High finding requires an owner disposition before STEP-27.
+
+**Approved by the project owner on 2026-08-15.** The approval covers the complete audit findings, all **17** final severity assignments, the [[STEP-25a Foundation Remediation]] plan, and its remediation ordering and scope boundaries. The gate is **closed**, and the step is `Done`.
+
+That approval settled the one severity this audit initially got wrong: FA-01 was proposed High on the grounds that isolation could not be proven, which conflated *"cannot run locally"* with *"not verified anywhere."* Re-checked against CI evidence, isolation **is** proven, and FA-01 became a Medium developer-environment gap. FA-05 moved the other way, to Critical.
 
 ---
 
