@@ -2,7 +2,7 @@
 title: Build Plan
 category: Development
 status: stable
-version: "2.9"
+version: "3.0"
 last_updated: 2026-08-14
 tags: [engineering, documentation, workflow]
 aliases: ["Implementation Plan", "Build Roadmap", "Step Index"]
@@ -10,7 +10,9 @@ aliases: ["Implementation Plan", "Build Roadmap", "Step Index"]
 
 # ProjectOne Build Plan
 
-The ordered execution index taking ProjectOne from an empty repository to first public release. **29 sequential steps** (26 planned, plus three inserted by owner decision: STEP-11a, STEP-16a, STEP-12a), each sized for a single Claude Code session.
+The ordered execution index taking ProjectOne from an empty repository to a verified, production-quality product. **31 sequential steps** (28 numbered, plus three inserted by owner decision: STEP-11a, STEP-16a, STEP-12a), each sized for a single Claude Code session.
+
+**Public release is not a step in this plan.** It is unscheduled by owner decision on 2026-08-14, and a numbered release step will be created later — using the next available number — only once the owner decides the application is ready. The earlier `STEP-26 First Public Release` material is preserved, unnumbered and non-binding, as [[Public Release Draft - Unscheduled]].
 
 **Steps execute in table order, not in numeric order.** A step numbered `Na` is placed where it belongs in the *dependency* sequence, while its number records which step's contract it amends. STEP-12a amends STEP-12's middleware contract but runs after STEP-16a, because the regression it fixes was only introduced by STEP-16.
 
@@ -62,16 +64,21 @@ Status appears in two places — the step note and the row below — and they mu
 | STEP-22 | [[STEP-22 Minimum Workflow Engine]] | Done | full |
 | STEP-23 | [[STEP-23 AI Chat End to End]] | Done | full |
 | STEP-24 | [[STEP-24 Dashboard]] | In Progress | full |
-| STEP-25 | [[STEP-25 Launch Readiness Criteria]] | Not Started | outline |
-| STEP-26 | [[STEP-26 First Public Release]] | Not Started | outline |
+| STEP-25 | [[STEP-25 Foundation Audit and Internal Readiness]] | Not Started | outline |
+| STEP-26 | [[STEP-26 Product Design System and Screen Blueprints]] | Not Started | outline |
+| STEP-27 | [[STEP-27 Product-wide UI Rebuild]] | Not Started | outline |
+| STEP-28 | [[STEP-28 Full Product Verification Polish and Hardening]] | Not Started | outline |
 
 ## Scope Boundary
 
-These 26 steps deliver the **first public release** — the Foundation loop (sign up → workspace → project → AI chat → dashboard) hardened, billed for, and shipped. Everything the [[Roadmap]] places in Phase 2 (Video Generation, Analytics, advanced agents, publishing) and Phase 3 (teams, enterprise, marketplace) is **out of scope for this plan** and gets its own step sequence once STEP-26 is Done.
+These 28 steps deliver a **verified, production-quality product**: the Foundation loop (sign up → workspace → project → AI chat → dashboard) built, audited, redesigned, rebuilt and verified end to end. Everything the [[Roadmap]] places in Phase 2 (Video Generation, Analytics, advanced agents, publishing) and Phase 3 (teams, enterprise, marketplace) is **out of scope for this plan** and gets its own step sequence.
 
-A **UI Polish phase** is likewise out of scope for these steps and follows STEP-26, per [[Design Backlog and UI Vision]]. It is a stated intention, not a scheduled sequence — no steps exist for it yet.
+**They do not deliver a public release.** STEP-28 produces a verified build and an honest defect record; whether and when to publish is a separate owner decision, and the step that publishes does not yet exist. See [[Public Release Draft - Unscheduled]].
 
-One consequence is worth stating plainly rather than discovering at STEP-25: **[[Billing]] is not in these 26 steps.** A public release that charges money needs it; a free/invite-only public beta does not. STEP-25 resolves which of those this release is, and inserts billing steps if required — see that step's note.
+> [!note] Superseded: the former plan shape
+> Until 2026-08-14 this plan ended at a numbered `STEP-26 First Public Release`, and a **UI Polish phase** was to follow *after* that release, per [[Design Backlog and UI Vision]]'s Foundation Rule. Both were withdrawn by owner decision: design work now happens *before* release consideration (STEP-26–STEP-27), and release is unscheduled rather than the plan's endpoint. The earlier arrangement is recorded rather than erased, because a plan whose history is invisible invites the same question to be reopened repeatedly.
+
+One consequence is worth stating plainly: **[[Billing]] is not in these 28 steps.** A public release that charges money needs it; a free/invite-only beta does not. That question is now resolved when the release step is written, not by STEP-25 — see [[Public Release Draft - Unscheduled]].
 
 ## Source Documents
 
@@ -83,7 +90,7 @@ This plan is derived from, and must stay consistent with, the vault. If this pla
 - [[Backend Architecture]] · [[Database Architecture]] · [[API Architecture]] · [[Frontend Architecture]] · [[Infrastructure]] — tech architecture
 - [[Security Architecture]] · [[Authentication and Authorization]] · [[Privacy and Data Protection]] · [[Compliance and Governance]] — security & trust
 - [[Design System]] — the UI standard every screen follows
-- [[Design Backlog and UI Vision]] — long-term UI direction. **Reference only**, and unlike every other document listed here it is *not* a source this plan must stay consistent with: it binds nothing during Foundation.
+- [[Design Backlog and UI Vision]] — the earlier long-term UI direction, now **partly superseded**. Its dark-interface visual rules and its Foundation Rule were withdrawn by owner decision on 2026-08-14; the active visual direction is recorded in [[STEP-26 Product Design System and Screen Blueprints]] and lands in [[Design System]] there. The note is retained for history and for the parts still current.
 - Engineering Handbook Chapters 1–11 — binding build standards
 - [[CLAUDE|CLAUDE.md]] — operating rules governing every step
 
@@ -155,7 +162,7 @@ Two things [[API Architecture]] requires are explicitly **not** built yet and ar
 
 Three defects were found during validation: **a partial unique index does not prevent a duplicate live membership** (re-adding a removed member with a plain INSERT leaves one dead and one live row, passing the constraint while corrupting every count), **audit rows blocked test teardown** because `audit_log.workspace_id` is deliberately `RESTRICT`, and **a cluster-wide role grant left by the STEP-12 run** blocked the harness. All three are fixed; see [[STEP-13 Auth Users Workspaces Endpoints#Outcome]].
 
-Two gaps are recorded rather than forgotten: **audit retention is unbounded** (no purge schedule — needs a decision by [[STEP-25 Launch Readiness Criteria]]), and **authentication events are not audited** — sign-in, sign-out and failed attempts are arguably the most security-relevant events of all. **Idempotency keys** remain unbuilt, and `POST /workspaces` is now the first endpoint that could use them.
+Two gaps are recorded rather than forgotten: **audit retention is unbounded** (no purge schedule — needs a decision by [[STEP-25 Foundation Audit and Internal Readiness]]), and **authentication events are not audited** — sign-in, sign-out and failed attempts are arguably the most security-relevant events of all. **Idempotency keys** remain unbuilt, and `POST /workspaces` is now the first endpoint that could use them.
 
 **STEP-13 carries an owner approval gate** (Critical — public API contract, authorization, multi-tenancy, database schema). It is `Done` and committed, but STEP-14 does not begin until the owner confirms it — including confirming the CI run, which this environment cannot observe on a private repository.
 
@@ -336,7 +343,12 @@ The lesson worth carrying: **all three were invisible locally and only reachable
 
 **A long-term UI vision now exists, and it changes nothing in this plan** (2026-08-03). The project owner supplied [[Design Backlog and UI Vision]] — a premium-AI-OS design direction plus a Dashboard concept mockup. It is filed as **informational only** by explicit owner instruction: **not a step, not a roadmap change, not an architecture change, and overriding no engineering document.** No step was added, renumbered or rescheduled, and the [[Roadmap]] is untouched.
 
-Its operating effect on STEP-19 through STEP-26 is deliberately narrow: **reference only, and do not redesign a shipped page because of it.** Screens continue to be built against [[Design System]], which wins wherever the two differ. UI improvements noticed along the way are *collected* in that note's UI Polish Backlog rather than acted on. After [[STEP-26 First Public Release]] it becomes the primary reference for a dedicated **UI Polish phase** upgrading every screen in one pass — which is the point of deferring it: polishing screens while the surfaces beneath them are still being built means polishing twice, and consistency is only achievable across a complete set of screens.
+> [!note] Superseded on 2026-08-14
+> The paragraph above records the position as it stood on 2026-08-03 and is kept as history. Design work is no longer deferred and no longer informational: the owner replaced the visual direction (warm ivory canvas, matte-black navigation, vermilion accent, editorial typography — explicitly *not* the earlier dark/blue/KPI-card direction) and scheduled it as [[STEP-26 Product Design System and Screen Blueprints]] and [[STEP-27 Product-wide UI Rebuild]], **before** any release consideration rather than after.
+
+Its operating effect on STEP-19 through STEP-24 was deliberately narrow: **reference only, and do not redesign a shipped page because of it.** Screens were built against [[Design System]], which won wherever the two differed, and UI improvements noticed along the way were *collected* rather than acted on. The underlying reasoning still holds and is why the redesign is one pass rather than screen-by-screen: polishing screens while the surfaces beneath them are still being built means polishing twice, and consistency is only achievable across a complete set of screens.
+
+What changed on 2026-08-14 is *when* that pass happens and *what it looks like* — before release consideration rather than after it, as [[STEP-26 Product Design System and Screen Blueprints]] and [[STEP-27 Product-wide UI Rebuild]], against a new visual direction that replaces the dark/KPI-card one.
 
 **[[DOC-01 Align ADR Template with CLAUDE.md]] was raised** on 2026-08-03: [[ADR Template]]'s status vocabulary diverges from [[CLAUDE|CLAUDE.md]] §7, missing `Review` and — more consequentially — `Rejected`, the state that keeps a rejected decision on record. It is a documentation task rather than a Build Plan step, and lives in `09 Development/` accordingly.
 
@@ -347,6 +359,12 @@ The vault, Claude OS and AI operating capabilities are built and validated ([[En
 Every Project Bible note is still `status: draft` at v0.1 — the *specification* is transcribed, not accepted. Treat drafts as the best current source of truth and flag genuine ambiguity per [[CLAUDE|CLAUDE.md]] §33 rather than resolving it silently mid-step.
 
 [[ADR-001 Technology Stack]] is the first and only ADR, written by STEP-02 and `Accepted` by the project owner on 2026-07-31. Its owner approval gate is cleared, so the stack is settled and STEP-03 onward may proceed ([[CLAUDE|CLAUDE.md]] §7).
+
+**The remaining plan was restructured by owner decision on 2026-08-14.** STEP-24 was in progress; everything after it changed shape. `STEP-25 Launch Readiness Criteria` was reworked into [[STEP-25 Foundation Audit and Internal Readiness]] — an audit of what Foundation actually built, rather than a definition of release criteria. Three steps follow it: [[STEP-26 Product Design System and Screen Blueprints]], [[STEP-27 Product-wide UI Rebuild]] and [[STEP-28 Full Product Verification Polish and Hardening]].
+
+The substantive change is that **public release left the plan.** `STEP-26 First Public Release` is no longer a numbered step; its material is preserved unnumbered and non-binding as [[Public Release Draft - Unscheduled]], and a release step will be created later using the next available number, once the owner decides the product is ready. Three prior positions are superseded and recorded as such rather than deleted: that Foundation ended at STEP-26, that UI polish would follow the public release, and the dark/blue/KPI-card visual direction.
+
+Adding and removing steps is a plan change rather than an execution detail ([[Execution Protocol#Future Step Synchronization]]), so it was made by explicit owner instruction and not by a session restructuring the plan on its own initiative.
 
 ---
 

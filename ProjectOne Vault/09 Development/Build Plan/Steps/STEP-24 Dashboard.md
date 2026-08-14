@@ -157,7 +157,7 @@ Tests for the presentational component covering each rule that can silently regr
 
 ### 12. Documentation
 
-Update [[Dashboard]] to record what this step actually delivered and what remains stubbed, so the feature note does not describe behaviour the product does not have. Mark this step `Done` in both this note and the [[Build Plan]] index, and expand [[STEP-25 Launch Readiness Criteria]] to full detail, per [[Execution Protocol]].
+Update [[Dashboard]] to record what this step actually delivered and what remains stubbed, so the feature note does not describe behaviour the product does not have. Mark this step `Done` in both this note and the [[Build Plan]] index, and expand [[STEP-25 Foundation Audit and Internal Readiness]] to full detail, per [[Execution Protocol]].
 
 ## Validation
 
@@ -241,7 +241,7 @@ Both layers are kept deliberately: the selection tests state each rule precisely
 - [ ] [[Dashboard]] is updated to match what shipped.
 - [ ] Every required CI check on the Pull Request is green.
 - [ ] Every review conversation is resolved.
-- [ ] [[STEP-25 Launch Readiness Criteria]] is expanded to full detail.
+- [ ] [[STEP-25 Foundation Audit and Internal Readiness]] is expanded to full detail.
 - [ ] Status is `Done` in this note **and** in the [[Build Plan]] index, and the two agree.
 
 ### Completion state
@@ -255,5 +255,5 @@ This step stays `In Progress` until every box above is checked. `Done` is claime
 ## Navigation
 
 - **Previous:** [[STEP-23 AI Chat End to End]]
-- **Next:** [[STEP-25 Launch Readiness Criteria]]
+- **Next:** [[STEP-25 Foundation Audit and Internal Readiness]]
 - **Parent:** [[Build Plan]]

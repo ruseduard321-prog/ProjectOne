@@ -84,7 +84,7 @@ Otherwise anyone holding `DELETE_WORKSPACE` could destroy the evidence of what t
 
 ## Known Gaps
 
-- **Retention is unbounded.** The table only grows; no purge schedule exists yet. [[CLAUDE|CLAUDE.md]] §16 requires audit retention to be a *stated* schedule rather than "forever by default", so this needs a decision before launch ([[STEP-25 Launch Readiness Criteria]]).
+- **Retention is unbounded.** The table only grows; no purge schedule exists yet. [[CLAUDE|CLAUDE.md]] §16 requires audit retention to be a *stated* schedule rather than "forever by default", so this needs a decision before launch ([[STEP-25 Foundation Audit and Internal Readiness]]).
 - **Coverage is the STEP-13 mutations only.** Authentication events (sign-in, sign-out, failed attempts) are not recorded here. They are arguably the most security-relevant events of all, and adding them is a deliberate extension rather than an oversight to fix silently.
 - **Writes are best-effort.** `AuditService.record` never raises: an audit-write failure must not turn a successful removal into a 500 the caller retries, because the retry performs the action twice. Failures are logged at `exception` level. An action whose audit record must be atomic with it needs a different mechanism.
 
