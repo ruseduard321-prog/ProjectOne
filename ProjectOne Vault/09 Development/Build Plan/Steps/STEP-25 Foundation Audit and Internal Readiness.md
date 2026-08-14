@@ -297,26 +297,33 @@ The gate is substantive rather than ceremonial: **every Critical finding blocks 
 
 ## Outcome
 
-**Audit executed 2026-08-15.** Findings live in [[Foundation Audit Findings]]: **17 findings — 0 Critical, 5 High, 8 Medium, 4 Low** — plus 16 areas recorded as verified-no-finding with the method that verified each.
+**Audit executed 2026-08-15; findings reviewed and severities settled by the owner the same day.** The record is [[Foundation Audit Findings]]: **17 findings — 1 Critical, 3 High, 9 Medium, 4 Low** — plus 16 areas recorded as verified-no-finding with the method that verified each.
 
-**No Critical finding was identified**, so nothing structurally blocks [[STEP-26 Product Design System and Screen Blueprints]]. That statement is bounded: the RLS **negative controls** that would make the isolation claim conclusive could not be executed here.
+**One Critical finding blocks design.** **FA-05** — a reachable path writes a plaintext database password into a log, via the traceback's own source line, surviving the existing redaction. The owner raised it from the proposed High on 2026-08-15: the severity model's Critical test is *a secret is exposed in logs*, and reachability settles it regardless of whether it has yet occurred.
 
-**Three verifications are unproven, not passed.** The audit machine has no local PostgreSQL, no Docker and no `psql`/`pg_dump`, so under D1 and execution rules 6–7 they are recorded as unproven rather than approximated:
+**Tenant isolation is proven — verified, not inferred.** The audit initially recorded FA-01 as High on the grounds that isolation could not be proven locally. That conflated *"cannot run here"* with *"not verified anywhere"*, and the owner directed it be re-evaluated against CI evidence. It was:
 
-- **RLS negative controls** — 306 of 734 API tests skipped locally for a missing test database; the isolation proof exists only in CI.
-- **Migration downgrades** — all 18 have downgrade bodies and the history is linear, but no downgrade was executed.
-- **Backup and restore** — the drill could not run and was **not simulated**. D1 mandates an owner decision here.
+- Check runs on PR head `37b4d27`: **`api (lint, format, typecheck, test)` — success**; all three jobs green.
+- The API job runs a disposable `postgres:17` service container and sets **`PROJECTONE_REQUIRE_DATABASE_TESTS: '1'`**.
+- `tests/conftest.py` reads that flag and calls **`pytest.fail`**, not `pytest.skip`, when the test database is absent — *"refusing to skip them silently."*
+- A green API job is therefore **only reachable if the database-backed tests executed**. They did, with zero database skips.
 
-**Two defects were found that were not previously recorded**: a database-URL password reaching logs un-redacted (FA-05), and the root error boundary missing its alert role (FA-11) alongside the already-known inert retry (FA-04).
+FA-01 is now **Medium**, reframed as a local developer-environment gap: a machine without PostgreSQL runs a suite that omits 306 of 734 tests and still reports green.
 
-**Nothing was remediated.** No application code, migration, CI configuration or database was touched; no link was repaired; no schema note was created; no remediation step was created; and [[STEP-26 Product Design System and Screen Blueprints]] was **not** expanded — it is expanded only after the owner settles the findings.
+**Two verifications remain genuinely unproven**, with no proof anywhere including CI: **FA-02** (migration downgrades — CI applies migrations forward only and never exercises the reverse) and **FA-03** (backup/restore — the drill could not run and, per D1, was **not simulated**).
 
-**Severities are proposed, not settled**, and every disposition awaits the owner (execution rule 11).
+**Two defects were newly discovered**: FA-05 above, and **FA-11**, the root error boundary missing `role="alert"` — the same file as the already-known inert retry (FA-04), so the outage-recovery path is broken both functionally and for assistive technology.
+
+**Nothing was remediated.** No application code, migration, CI configuration or database was touched; no link repaired; no schema note created. The shared Supabase database was never connected to.
+
+**Remediation is scheduled, not performed.** The owner created [[STEP-25a Foundation Remediation]] on 2026-08-15 — inserted between this step and [[STEP-26 Product Design System and Screen Blueprints]] — carrying nine findings, **FA-05 first**, because an active secret-exposure defect outranks a missing capability. Eight lower-severity findings were deliberately deferred to [[STEP-28 Full Product Verification Polish and Hardening]] or a later remediation rather than widening STEP-25a.
+
+**[[STEP-26 Product Design System and Screen Blueprints]] was not expanded** — it is expanded once STEP-25a is `Done`, not from findings that were still under review.
 
 ---
 
 ## Navigation
 
 - **Previous:** [[STEP-24 Dashboard]]
-- **Next:** [[STEP-26 Product Design System and Screen Blueprints]]
+- **Next:** [[STEP-25a Foundation Remediation]]
 - **Parent:** [[Build Plan]]

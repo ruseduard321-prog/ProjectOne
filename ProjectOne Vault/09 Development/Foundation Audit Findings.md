@@ -12,10 +12,14 @@ aliases: ["Audit Findings", "STEP-25 Findings"]
 
 The findings record produced by [[STEP-25 Foundation Audit and Internal Readiness]], covering STEP-01 through STEP-24 plus the four inserted steps.
 
-**This is an audit record, not a remediation plan.** Nothing here was fixed. Every disposition is a *recommendation* awaiting the project owner's decision, and every severity is *proposed* rather than settled ([[STEP-25 Foundation Audit and Internal Readiness#Severity Model]]).
+**This is an audit record, not a remediation plan.** Nothing here was fixed by [[STEP-25 Foundation Audit and Internal Readiness]].
+
+**Severities were reviewed and settled by the project owner on 2026-08-15** ([[STEP-25 Foundation Audit and Internal Readiness#Severity Model]]). Remediation is scheduled as [[STEP-25a Foundation Remediation]], which runs between STEP-25 and [[STEP-26 Product Design System and Screen Blueprints]] — no fix in this record has been implemented yet.
 
 > [!warning] Audit environment limitation
-> The audit machine has **no local PostgreSQL, no Docker and no `psql`/`pg_dump`**. Under D1 and execution rules 6-7, every verification requiring a disposable database is recorded as **unproven** rather than approximated. This affects RLS negative controls, migration downgrade execution, and the restore drill.
+> The audit machine has **no local PostgreSQL, no Docker and no `psql`/`pg_dump`**. Under D1 and execution rules 6-7, every verification requiring a disposable database is recorded as **unproven** rather than approximated.
+>
+> **This is not the same as unverified.** CI runs a disposable PostgreSQL 17 service container, and the isolation suite is proven to execute there ([[#FA-01]]). Migration downgrades ([[#FA-02]]) and the restore drill ([[#FA-03]]) have no such proof anywhere and remain genuinely unproven.
 >
 > The shared Supabase development database was **never** connected to, read from, or written to during this audit.
 
@@ -23,20 +27,25 @@ The findings record produced by [[STEP-25 Foundation Audit and Internal Readines
 
 | Severity | Count | Identifiers |
 |---|---|---|
-| **Critical** | 0 | none |
-| **High** | 5 | FA-01, FA-02, FA-03, FA-04, FA-05 |
-| **Medium** | 8 | FA-06 to FA-13 |
+| **Critical** | 1 | FA-05 |
+| **High** | 3 | FA-02, FA-03, FA-04 |
+| **Medium** | 9 | FA-01, FA-06 to FA-13 |
 | **Low** | 4 | FA-14 to FA-17 |
 
-**No Critical finding was identified.** No reachable cross-tenant path, authentication bypass, secret exposure or unbounded-spend path was found. That statement is bounded by the environment limitation above: the RLS *negative controls* that would make the isolation claim conclusive could not be executed here.
+**One Critical finding.** FA-05 — a reachable path writes a plaintext database password into logs. Raised to Critical by the owner on 2026-08-15 under the model's secret-exposure test, and it **blocks progression to design** until remediated.
+
+**Tenant isolation is proven, in CI.** Verified rather than inferred on 2026-08-15 — see FA-01 below. No reachable cross-tenant path or authentication bypass was found, and no unbounded-spend path exists.
+
+> [!note] Owner review applied 2026-08-15
+> Severities below reflect the owner's review decisions. FA-05 was raised to Critical; FA-01 was reduced to Medium and reframed after CI evidence proved the isolation tests execute. FA-07 and FA-08 carry owner decisions. Remediation is scheduled as [[STEP-25a Foundation Remediation]], which runs **before** [[STEP-26 Product Design System and Screen Blueprints]].
 
 ### Classification of controls
 
 | Class | Areas |
 |---|---|
-| **Verified sound** | Static RLS coverage (14/14 tables enabled and forced), migration linearity, secret hygiene in source and history, error-envelope and 401/403 separation, AI execution ceilings, credential redaction for bearer tokens and API keys, production exclusion of the dev session page, full lint/type/test suites green |
-| **Confirmed defects** | Root error boundary retry (FA-04), database-URL password reaching logs (FA-05), root boundary missing alert role (FA-11), audit retention unbounded (FA-07), authentication events unaudited (FA-06) |
-| **Unproven** | RLS negative controls (FA-01), migration downgrades (FA-02), backup/restore (FA-03) |
+| **Verified sound** | **Tenant isolation, proven in CI** (FA-01 evidence), static RLS coverage (14/14 tables enabled and forced), migration linearity, secret hygiene in source and history, error-envelope and 401/403 separation, AI execution ceilings, credential redaction for bearer tokens and API keys, production exclusion of the dev session page, full lint/type/test suites green |
+| **Confirmed defects** | **Database-URL password reaching logs (FA-05 — Critical)**, root error boundary retry (FA-04), root boundary missing alert role (FA-11), audit retention unbounded (FA-07), authentication events unaudited (FA-06) |
+| **Unproven** | Migration downgrades (FA-02), backup/restore (FA-03). **FA-01 is no longer in this class** — isolation is proven in CI; only local reproduction is missing. |
 | **Accepted / deferred** | Per-worker rate limiter, MFA/OAuth, single-workspace limitation, AI crash window, dashboard stubs, idempotency keys, Project Bible draft status |
 
 ---
@@ -45,22 +54,29 @@ The findings record produced by [[STEP-25 Foundation Audit and Internal Readines
 
 ### FA-01
 
-- **Area:** Multi-tenancy and RLS
-- **Severity:** High *(proposed)*
-- **Affected location:** `apps/api/tests/` — 306 skipped tests, including `test_rls_isolation.py`, `test_chat_isolation.py`, `test_ai_spend_isolation.py`, `test_project_isolation.py`, `test_provider_credential_isolation.py`
-- **Evidence:** Full suite run on the audit machine: **428 passed, 306 skipped, 0 failed** (`pytest -q`). Every skip reports the identical cause — `PROJECTONE_TEST_DATABASE_URL is not set`. **41.7% of the API suite did not execute here.** Static analysis of all 18 migrations confirms RLS is enabled *and* forced on all 14 tables with 39 policies total, but presence is not denial: the negative controls that prove a policy actually refuses could not run.
-- **Consequence:** Tenant isolation is *evidenced* but not *proven* on this machine. The proof exists only in CI, whose PostgreSQL 17 service container sets the variable. A developer running the suite locally receives a green result that silently omits every isolation test — the exact false-pass shape [[STEP-09 Row Level Security Policies]] warned about.
-- **Recommended disposition:** Accept the CI run as the authoritative isolation proof, and treat a local green result as incomplete. Consider making a missing test database a hard failure locally, as it already is in CI.
-- **Owner decision:** _pending_
+- **Area:** Multi-tenancy and RLS — local developer-environment verification gap
+- **Severity:** Medium *(owner-assigned 2026-08-15, reduced from the proposed High)*
+- **Affected location:** `apps/api/tests/conftest.py`; developer environments without PostgreSQL
+- **Evidence — tenant isolation IS proven, in CI.** Verified on 2026-08-15 rather than inferred:
+  - Check runs on PR head `37b4d27`: **`api (lint, format, typecheck, test)` — `completed` / `success`** (run id `94922696090`). All three jobs green; `web` and `governance docs (sync check)` also `success`.
+  - The API job runs a **disposable `postgres:17` service container** (`.github/workflows/ci.yml`), pinned to the same major version as the development project, and sets `PROJECTONE_TEST_DATABASE_URL` against it.
+  - The job also sets **`PROJECTONE_REQUIRE_DATABASE_TESTS: '1'`**. In `tests/conftest.py`, the `migrated_database` fixture reads that flag and, when the database URL is absent, calls **`pytest.fail(...)`** — *"The RLS isolation tests must run here — refusing to skip them silently"* — instead of `pytest.skip`.
+  - Therefore **a green API job is only reachable if the database-backed tests actually executed**. A skipped isolation suite would have turned the job red. The job is green, so the RLS and tenant-isolation tests ran against real PostgreSQL, with **zero database skips**.
+  - A separate pre-flight step asserts the container is reachable and exits non-zero otherwise, so a broken container cannot masquerade as a healthy one.
+  - Job logs could not be downloaded (`403: Must have admin rights to Repository`), so the pass is established from the fail-closed mechanism plus the green conclusion rather than from a pytest summary line. That chain is deterministic, not probabilistic.
+- **Consequence:** Isolation is **verified**. What remains is narrower: **a developer machine without PostgreSQL runs a suite that silently omits 306 of 734 tests and still reports green.** Locally the flag is unset, so the same fixture takes the `pytest.skip` branch. The risk is a contributor believing a local green run covers isolation when it does not — a false-confidence gap, not an unproven control.
+- **Recommended disposition:** Close the local gap so the omission is visible: print a prominent summary banner when the isolation suite is skipped, and document the one-line invocation for running it against a disposable container. Scheduled in [[STEP-25a Foundation Remediation]].
+- **Owner decision:** **Reclassified Medium on 2026-08-15.** *"Do not conflate 'cannot run locally' with 'not verified anywhere.'"* Isolation is proven in CI; this is a developer-environment verification gap.
 - **Status:** Open
+
 
 ### FA-02
 
 - **Area:** Database integrity and migrations
-- **Severity:** High *(proposed)*
+- **Severity:** High *(owner-approved 2026-08-15)*
 - **Affected location:** `apps/api/migrations/versions/` (18 files)
 - **Evidence:** Static analysis confirms a **strictly linear** history (no branch points) and a non-empty `downgrade()` body in **all 18** migrations. No downgrade was *executed*, because doing so requires a database and none is safely available.
-- **Consequence:** Reversibility is asserted by inspection, not demonstrated. A downgrade that fails only at runtime — a dropped object another migration depends on, an ordering error — would be invisible to this audit.
+- **Consequence:** Reversibility is asserted by inspection, not demonstrated. A downgrade that fails only at runtime — a dropped object another migration depends on, an ordering error — would be invisible to this audit. **No complete downgrade verification exists anywhere**, including CI: the API job applies migrations forward to set the schema up and never exercises the reverse direction. Unlike FA-01, there is no other environment in which this is already proven, which is why it stays High.
 - **Recommended disposition:** Execute a full downgrade-to-base then upgrade-to-head cycle against the CI service container, and consider adding it as a CI step.
 - **Owner decision:** _pending_
 - **Status:** Open
@@ -68,7 +84,7 @@ The findings record produced by [[STEP-25 Foundation Audit and Internal Readines
 ### FA-03
 
 - **Area:** Backup and restore
-- **Severity:** High *(proposed)*
+- **Severity:** High *(owner-approved 2026-08-15)*
 - **Affected location:** [[Backup and Disaster Recovery]]; audit environment
 - **Evidence:** No `pg_dump`, no `psql`, no Docker, no local PostgreSQL (ports 5432 and 5433 both closed). The restore drill D1 requires **could not be performed**, and per D1's own instruction it was **not simulated**. Separately, [[Backup and Disaster Recovery]] states RPO and RTO *should be defined* and **defines no actual values**.
 - **Consequence:** ProjectOne has **no demonstrated ability to restore from backup**, and no numeric recovery objective to restore against. This is the single largest unproven guarantee in the Foundation.
@@ -79,7 +95,7 @@ The findings record produced by [[STEP-25 Foundation Audit and Internal Readines
 ### FA-04
 
 - **Area:** Incomplete product behaviour / reliability
-- **Severity:** High *(proposed)*
+- **Severity:** High *(owner-approved 2026-08-15)*
 - **Affected location:** `apps/web/src/app/error.tsx`
 - **Evidence:** Carried forward from [[STEP-24 Dashboard]] and re-confirmed by reading the file. The root boundary wires its button to `reset` directly. All four route boundaries instead call `useErrorRecovery(reset)` from `lib/error-recovery.ts`. Calling `reset()` alone clears client state and re-renders the **cached** payload, which still contains the failure.
 - **Consequence:** The root boundary's "Try again" control does not recover. It is the boundary [[STEP-16b Auth Refresh Outage Handling]] depends on for outage recovery — a route-level boundary cannot catch a failure in the layout that wraps it — so the product's stated recovery path for an API outage is inert. STEP-16b's manual checklist recorded "a working retry control" against this wiring.
@@ -89,19 +105,19 @@ The findings record produced by [[STEP-25 Foundation Audit and Internal Readines
 
 ### FA-05
 
-- **Area:** Security — log redaction
-- **Severity:** High *(proposed)*
+- **Area:** Security — log redaction / secret exposure
+- **Severity:** **Critical** *(owner-assigned 2026-08-15, raised from the proposed High)*
 - **Affected location:** `apps/api/app/core/logging.py`
 - **Evidence:** Executed probe against the real `redact()` and `RedactingFilter`. Bearer tokens, authorization headers, and password/api-key/secret/token key-value shapes all redact correctly. But a **PostgreSQL connection URI carrying an inline password does not** — the string returns unchanged. An end-to-end probe attaching the filter to a handler and calling `logger.exception()` on a failed `psycopg.connect(...)` produced a log record **containing the plaintext password**, because the traceback renders the source line holding the URI. The BYOK encryption key in KEY=value form is likewise unmatched.
-- **Consequence:** A database connection failure — precisely the scenario [[DOC-02 Validate the Request-Path Credential at Startup]] describes as reachable via a rotated or wrong credential — can write a live database password into application logs. Rated High rather than Critical because no evidence was found that this has occurred, the value is a database credential rather than a tenant secret, and reaching it requires a connection-time exception.
-- **Recommended disposition:** Add a URI-password pattern and a key-shaped pattern to the redaction set. Not performed here.
-- **Owner decision:** _pending_
+- **Consequence:** A database connection failure — precisely the scenario [[DOC-02 Validate the Request-Path Credential at Startup]] describes as reachable via a rotated or wrong credential — can write a live database password into application logs. **The owner raised this to Critical on 2026-08-15**: the severity model's Critical test is *a secret is exposed in ... logs*, and the path is reachable, which settles it regardless of whether it has yet occurred. A logged database password is a credential an operator, a log aggregator, or anyone with log access can read. **This finding blocks progression to design** and is remediated first in [[STEP-25a Foundation Remediation]].
+- **Recommended disposition:** Add a URI-password pattern and a key-shaped pattern to the redaction set, with a negative-control test proving the un-redacted form fails. **First item in [[STEP-25a Foundation Remediation]].**
+- **Owner decision:** **Critical, 2026-08-15.** *"A reachable path that writes a plaintext database password into logs is a secret-exposure defect and must block progression to design."*
 - **Status:** Open
 
 ### FA-06
 
 - **Area:** Security / observability
-- **Severity:** Medium *(proposed)*
+- **Severity:** Medium *(owner-approved 2026-08-15)*
 - **Affected location:** `apps/api/app/services/audit_service.py`
 - **Evidence:** No sign-in, sign-out or failed-authentication event appears in the audit service. Confirmed by search; the gap is also acknowledged in [[Build Plan]]'s Current State, which assigns it to this step.
 - **Consequence:** The most security-relevant events in the product leave no audit trail. A credential-stuffing attempt or a suspicious session would be unreconstructable after the fact.
@@ -112,29 +128,29 @@ The findings record produced by [[STEP-25 Foundation Audit and Internal Readines
 ### FA-07
 
 - **Area:** Security / data retention
-- **Severity:** Medium *(proposed)*
+- **Severity:** Medium *(owner-approved 2026-08-15)*
 - **Affected location:** `audit_log` table; `apps/api/app/services/audit_service.py`
 - **Evidence:** No retention, purge, prune or expiry mechanism exists for `audit_log`. [[CLAUDE|CLAUDE.md]] §16 requires audit logs to be retained on a **stated** schedule, disclosed as a bounded legal exception to deletion — not retained indefinitely by default.
 - **Consequence:** Audit retention is unbounded, so the documented exception to user erasure is unbounded too. A compliance gap against §16's own wording, and it grows without limit.
-- **Recommended disposition:** Owner sets a retention period; implement a scheduled purge. The period is a business and legal decision, not an engineering one.
-- **Owner decision:** _pending_
+- **Recommended disposition:** Implement a **90-day** retention policy with a scheduled purge, made configurable before public release, and test the deletion/retention behaviour rather than only implementing it. Scheduled in [[STEP-25a Foundation Remediation]].
+- **Owner decision:** **Set on 2026-08-15 — initial audit-event retention is 90 days, configurable before public release.** The remediation must define deletion/retention behaviour *and* test it.
 - **Status:** Open
 
 ### FA-08
 
 - **Area:** Tests and CI
-- **Severity:** Medium *(proposed)*
+- **Severity:** Medium *(owner-approved 2026-08-15)*
 - **Affected location:** `.github/workflows/ci.yml`; the `Protect main` ruleset
 - **Evidence:** The workflow's own comment states the governance-docs job is **not** among the ruleset's required checks, so it can be red while the merge button stays green. Three jobs exist: governance docs (sync check), web (lint, typecheck, test, build), and api (lint, format, typecheck, test).
 - **Consequence:** Drift between the canonical vault governance documents and the repository-root `CLAUDE.md` / `AGENTS.md` — the files the agent harnesses actually read — can reach `main` unblocked.
-- **Recommended disposition:** Owner adds the governance-docs check to the required checks. Only the owner can change the ruleset.
-- **Owner decision:** _pending_
+- **Recommended disposition:** Add `governance docs (sync check)` to the `Protect main` ruleset's required checks. This is an **owner-operated repository-setting action** that Claude cannot perform, and it must be **verified before [[STEP-25a Foundation Remediation]] can complete**.
+- **Owner decision:** **Approved on 2026-08-15 — the governance-docs job must become a required main-branch check.** Recorded as an owner-operated setting change, verified as part of STEP-25a's Definition of Done.
 - **Status:** Open
 
 ### FA-09
 
 - **Area:** Documentation
-- **Severity:** Medium *(proposed)*
+- **Severity:** Medium *(owner-approved 2026-08-15)*
 - **Affected location:** [[Build Plan]] Current State; [[STEP-09 Row Level Security Policies]]; [[STEP-10 Authentication Backend]]
 - **Evidence:** All three state or rely on the repository being **private**, and use that to explain why CI results cannot be observed from the build environment. The owner confirmed on 2026-08-15 that the repository is **public**.
 - **Consequence:** A stale premise that has repeatedly justified deferring CI confirmation to the owner. A future session reading it would reach the same wrong conclusion.
@@ -145,7 +161,7 @@ The findings record produced by [[STEP-25 Foundation Audit and Internal Readines
 ### FA-10
 
 - **Area:** Documentation
-- **Severity:** Medium *(proposed)*
+- **Severity:** Medium *(owner-approved 2026-08-15)*
 - **Affected location:** `ProjectOne Vault/05 Architecture/Schema/`
 - **Evidence:** 11 `Table - *` notes document **14** existing tables. Missing: **conversations**, **messages**, **workflow_step_runs**.
 - **Consequence:** Three tables — two of them holding user message content — have no canonical schema documentation, so [[Schema Overview]] understates the data model a future engineer must reason about.
@@ -156,7 +172,7 @@ The findings record produced by [[STEP-25 Foundation Audit and Internal Readines
 ### FA-11
 
 - **Area:** Accessibility
-- **Severity:** Medium *(proposed)*
+- **Severity:** Medium *(owner-approved 2026-08-15)*
 - **Affected location:** `apps/web/src/app/error.tsx`
 - **Evidence:** All four route error boundaries carry an alert role. The root boundary carries **no role attribute** at all. All five loading skeletons correctly carry a status role.
 - **Consequence:** When the root boundary renders — the outage path from [[STEP-16b Auth Refresh Outage Handling]] — a screen-reader user receives no announcement that an error occurred. Compounds FA-04 on the same file.
@@ -167,7 +183,7 @@ The findings record produced by [[STEP-25 Foundation Audit and Internal Readines
 ### FA-12
 
 - **Area:** AI spend / observability
-- **Severity:** Medium *(proposed)*
+- **Severity:** Medium *(owner-approved 2026-08-15)*
 - **Affected location:** `apps/api/app/services/ai_spend_service.py`
 - **Evidence:** Anomaly detection is genuinely implemented — a 7-day baseline, a 10x multiplier and a noise floor below which it does not fire. On trip it emits a **log line only**. No alerting channel, notification or dashboard consumes it.
 - **Consequence:** [[CLAUDE|CLAUDE.md]] §15a requires *automatic alerting* on sharp deviation. A log line nobody watches satisfies the detection half and not the alerting half — a runaway spend would be recorded and unnoticed.
@@ -178,7 +194,7 @@ The findings record produced by [[STEP-25 Foundation Audit and Internal Readines
 ### FA-13
 
 - **Area:** API contracts / reliability
-- **Severity:** Medium *(proposed)*
+- **Severity:** Medium *(owner-approved 2026-08-15)*
 - **Affected location:** `apps/api/app/routers/`; the AI turn path
 - **Evidence:** Two related gaps, both previously recorded and re-confirmed. **Idempotency keys are unbuilt** — `POST /workspaces` is the first endpoint that could use them. **The AI crash window** from [[STEP-23 AI Chat End to End]] leaves a turn stranded after a provider charge, visibly stuck rather than silently retried.
 - **Consequence:** A retried request can double-charge or double-create. [[Build Plan]] already records that closing the crash window properly constrains every future AI call.
@@ -189,7 +205,7 @@ The findings record produced by [[STEP-25 Foundation Audit and Internal Readines
 ### FA-14
 
 - **Area:** Architecture / technical debt
-- **Severity:** Low *(proposed)*
+- **Severity:** Low *(owner-approved 2026-08-15)*
 - **Affected location:** `packages/`, `infrastructure/`
 - **Evidence:** Both remain empty placeholders after 28 steps.
 - **Consequence:** The modular-services principle ([[CLAUDE|CLAUDE.md]] §7) is currently carried entirely by discipline inside two applications. No code is shared, so no coupling has formed — but nothing structurally enforces the boundary either.
@@ -200,18 +216,18 @@ The findings record produced by [[STEP-25 Foundation Audit and Internal Readines
 ### FA-15
 
 - **Area:** Documentation / vault integrity
-- **Severity:** Low *(proposed)*
+- **Severity:** Low *(owner-approved 2026-08-15)*
 - **Affected location:** Vault-wide
 - **Evidence:** Measurement reproduced with Obsidian path-resolution semantics: **26 unresolved occurrences across 11 targets**. Of these, **23 across 9 targets are remediable** — 21 are Engineering Handbook chapter shorthand (a link to `Security Standards` where the note is `Chapter 09 - Security Standards`), one is a stale step title (`STEP-11a Membership Lifecycle Repair`, now `STEP-11a Membership Removal Policy`), and one is a bare `Skills` folder reference. The remaining **3 are intentional prose examples** inside [[Skills/Documentation Keeper|Documentation Keeper]] which **must remain unchanged**.
 - **Consequence:** Navigation friction only. Confirms the D6 framing exactly.
-- **Recommended disposition:** Batch-fix the 23; never touch the 3. **Not repaired here** (D7).
-- **Owner decision:** _pending_
+- **Recommended disposition:** Batch-fix the 23; never touch the 3. **Not repaired here** (D7). Carried to [[STEP-28 Full Product Verification Polish and Hardening]] or a later owner-approved remediation — deliberately not folded into STEP-25a.
+- **Owner decision:** **Framing approved on 2026-08-15** — 26 detected / 23 remediable across 9 targets / 3 intentional prose examples that remain unchanged.
 - **Status:** Open
 
 ### FA-16
 
 - **Area:** Documentation
-- **Severity:** Low *(proposed)*
+- **Severity:** Low *(owner-approved 2026-08-15)*
 - **Affected location:** [[ADR Template]]; `apps/api/app/core/config.py`
 - **Evidence:** Two standing tasks re-confirmed open. [[DOC-01 Align ADR Template with CLAUDE.md]] — the template's status vocabulary lacks `Review` and `Rejected`. [[DOC-02 Validate the Request-Path Credential at Startup]] — `REQUEST_DATABASE_URL` is validated for presence and never for correctness.
 - **Consequence:** DOC-01 risks a rejected decision leaving no record. DOC-02 turns a bad credential into a first-request 500 rather than a startup failure — and, per FA-05, one that can log the password.
@@ -222,7 +238,7 @@ The findings record produced by [[STEP-25 Foundation Audit and Internal Readines
 ### FA-17
 
 - **Area:** Incomplete product behaviour
-- **Severity:** Low *(proposed)*
+- **Severity:** Low *(owner-approved 2026-08-15)*
 - **Affected location:** Product-wide
 - **Evidence:** Catalogue of every deliberately-shipped limitation, all disclosed rather than hidden: the dashboard's stub sections; the **in-process, per-worker rate limiter** (N workers permit N times the per-user allowance); **MFA and OAuth deferred** since STEP-10 and still unscheduled; the **single-workspace limitation**, disclosed in the interface on three screens; the **pessimistic AI pricing placeholder**; every Project Bible note still `status: draft` at v0.1; and **[[Billing]] absent** from the 28 steps.
 - **Consequence:** None individually. Recorded so the set is visible in one place rather than distributed across 28 step notes.

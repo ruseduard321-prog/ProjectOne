@@ -10,7 +10,7 @@ aliases: ["Implementation Plan", "Build Roadmap", "Step Index"]
 
 # ProjectOne Build Plan
 
-The ordered execution index taking ProjectOne from an empty repository to a verified, production-quality product. **32 sequential steps** (28 numbered, plus four inserted by owner decision: STEP-11a, STEP-16a, STEP-12a, STEP-16b), each sized for a single Claude Code session.
+The ordered execution index taking ProjectOne from an empty repository to a verified, production-quality product. **33 sequential steps** (28 numbered, plus five inserted by owner decision: STEP-11a, STEP-16a, STEP-12a, STEP-16b, STEP-25a), each sized for a single Claude Code session.
 
 **Public release is not a step in this plan.** It is unscheduled by owner decision on 2026-08-14, and a numbered release step will be created later — using the next available number — only once the owner decides the application is ready. The earlier `STEP-26 First Public Release` material is preserved, unnumbered and non-binding, as [[Public Release Draft - Unscheduled]].
 
@@ -66,6 +66,7 @@ Status appears in two places — the step note and the row below — and they mu
 | STEP-24 | [[STEP-24 Dashboard]] | Done | full |
 | STEP-16b | [[STEP-16b Auth Refresh Outage Handling]] | Done | full |
 | STEP-25 | [[STEP-25 Foundation Audit and Internal Readiness]] | In Progress | full |
+| STEP-25a | [[STEP-25a Foundation Remediation]] | Not Started | full |
 | STEP-26 | [[STEP-26 Product Design System and Screen Blueprints]] | Not Started | outline |
 | STEP-27 | [[STEP-27 Product-wide UI Rebuild]] | Not Started | outline |
 | STEP-28 | [[STEP-28 Full Product Verification Polish and Hardening]] | Not Started | outline |
