@@ -188,7 +188,7 @@ Recorded on 2026-08-14 against commit `a30f406`:
 | Renders against a running API | **Not yet proven.** Needs a seeded workspace; owner observation. |
 | Each empty state observed | **Not yet proven.** Unit-tested at the selection layer; visual confirmation is owner observation. |
 | Breaker warning observed | **Not yet proven.** Logic asserted in `dashboard.test.ts`; visual confirmation is owner observation. |
-| Error boundary observed | **Not yet proven.** Owner observation. |
+| Error boundary observed | **Proven** on 2026-08-14/15 against `06505c8`, by owner observation of an isolated fault. See below. |
 | CI green | See the step's Pull Request. |
 
 The lines marked not yet proven are the reason this step is not `Done`. They require a running API and a seeded workspace, which is what the manual checklist below exists to cover — asserting them from a passing unit suite would be exactly the assumption this section forbids.
@@ -222,33 +222,68 @@ Two test layers, mirroring the split above and for the same reason:
 
 The second reads source text rather than rendering, deliberately. These are Client Components in a node environment with no DOM, and a working retry and a broken one produce byte-identical markup — a rendering test would have passed against the defect, which is worse than no test.
 
+#### How the fix was proven
+
+Checklist item 15, observed by the owner against `06505c8` across 2026-08-14/15.
+
+**The fault was isolated to one of the page's three fetches.** Stopping the whole API does not test this boundary — it trips the shared auth gate in `(app)/layout.tsx` and lands on the root boundary instead, which is what [[STEP-16b Auth Refresh Outage Handling]] exists for. A `RuntimeError` was injected into the workflow-runs handler alone, so projects and budgets still returned 200 and the failure reached the dashboard's own boundary rather than the layout's.
+
+Two verification gates were added after an earlier attempt produced a false positive: the API process was confirmed by **PID and start time** to postdate each source edit (uvicorn runs without `--reload`, so an older process serves stale code while answering health checks normally), and the fault was confirmed live in the API log rather than inferred from the browser.
+
+**Failure state, observed:** the error boundary rendered with its own heading and message, a fresh digest reference, no leaked internals, the shell and sidebar intact, and the session still signed in on `/dashboard`.
+
+**Recovery, observed:** one click on "Try again", no manual refresh. The error screen was replaced by the dashboard, five active workflow rows returned, the budget glance rendered, and no re-authentication occurred.
+
+**Recent projects was below the viewport and is recorded as log-verified, not seen.** The API log shows the single click producing all three fetches at once — `/projects` 200 (1880.6 ms), `/ai/budgets` 200 (1877.7 ms), `/workflows/runs` 200 (2276.4 ms) — overlapping in time, which is the page's parallel `Promise.all` batch re-executing server-side. That the server ran again at all is the proof the retry works: the broken `reset()` produced **zero** requests from three clicks.
+
 **The root boundary (`app/error.tsx`) has the same wiring and was left unchanged.** It is [[STEP-03 Web App Skeleton]]'s, outside this step's surface, and [[STEP-16b Auth Refresh Outage Handling]] relies on it — so changing it here would edit another step's code inside a dashboard commit ([[CLAUDE|CLAUDE.md]] §29/§35). It is recorded as a finding for [[STEP-25 Foundation Audit and Internal Readiness]] rather than silently fixed or silently ignored.
 
 ## Manual Browser Test Checklist
 
-- [ ] `/dashboard` loads for an authenticated user with a workspace.
+- [x] `/dashboard` loads for an authenticated user with a workspace.
 - [ ] Recent projects list real projects, newest first, capped at 5, and each link opens the right project.
 - [ ] With more than 5 projects in the workspace, exactly 5 appear and the link to `/projects` reaches the full list.
-- [ ] Active workflows show only `awaiting_approval`, `running` and `pending` runs, with `awaiting_approval` first, then `running`, then `pending`.
+- [x] Active workflows show only `awaiting_approval`, `running` and `pending` runs, with `awaiting_approval` first, then `running`, then `pending`.
 - [ ] Within one status, the newest run appears first.
 - [ ] With more than 5 active runs, exactly 5 appear, and they are the highest-ranked 5 rather than an arbitrary 5.
-- [ ] Completed and failed runs do not appear in the active list.
+- [x] Completed and failed runs do not appear in the active list.
 - [ ] A running run shows its start time labelled as started; a pending run with no start time shows its creation time labelled as created or queued.
-- [ ] The AI budget glance shows spend against the workspace-wide ceiling, and its link reaches the Settings spend detail.
+- [x] The AI budget glance shows spend against the workspace-wide ceiling, and its link reaches the Settings spend detail.
 - [ ] With a workspace-wide budget **and** per-workflow budgets configured, the figure shown matches the workspace-wide budget alone and is not their sum.
 - [ ] With no workspace-wide budget configured, the honest "not configured" state renders and links to Settings.
 - [ ] With a budget's circuit breaker open, the warning is visible without scrolling or interaction, including when only a per-workflow budget has tripped.
-- [ ] The breaker warning does not display internal breaker reason text.
-- [ ] Notifications and AI recommendations read as clearly labelled "Not available yet", not as empty or broken sections.
-- [ ] Exactly three quick actions render — Projects, AI Chat, Settings — and each opens its surface. No dead or disabled controls, and no action without an existing destination.
-- [ ] No workflow entry links anywhere, since no workflow route exists.
+- [x] The breaker warning does not display internal breaker reason text.
+- [x] Notifications and AI recommendations read as clearly labelled "Not available yet", not as empty or broken sections.
+- [x] Exactly three quick actions render — Projects, AI Chat, Settings — and each opens its surface. No dead or disabled controls, and no action without an existing destination.
+- [x] No workflow entry links anywhere, since no workflow route exists.
 - [ ] A user with no workspace sees the no-workspace state, not an error.
 - [ ] A workspace with no projects and no runs shows per-section empty states, each distinguishable from the others.
 - [ ] The loading skeleton matches the real layout closely enough that content does not visibly jump when it resolves.
-- [ ] Forcing a data failure renders the route-scoped error boundary; the shell and navigation survive; no raw error message or stack trace is shown; retry works.
-- [ ] The whole page is keyboard navigable, with a visible focus indicator on every interactive element and a sensible tab order.
-- [ ] The single-workspace limitation is disclosed in the interface.
+- [x] Forcing a data failure renders the route-scoped error boundary; the shell and navigation survive; no raw error message or stack trace is shown; retry works.
+- [x] The whole page is keyboard navigable, with a visible focus indicator on every interactive element and a sensible tab order.
+- [x] The single-workspace limitation is disclosed in the interface.
 - [ ] **Timed 30-second check** — with seeded, realistic data (several projects, at least one run awaiting approval), a returning user opens `/dashboard`, states what needs attention, and reaches a working surface. **Timed with a stopwatch and the result recorded in this note.** Under 30 seconds passes; over 30 seconds fails and the layout is revised before this step is `Done`. This is the [[Dashboard]] success criterion, and the Scope section requires it be validated rather than assumed.
+
+### What each checklist result rests on
+
+Recorded 2026-08-14/15 against `06505c8`, in one seeded workspace (`1b1f1b47…`) signed in as `owner.test@projectone.dev`. **Ticked means owner-observed in the browser unless stated otherwise here.**
+
+The five active workflow rows all carried the same displayed workflow name, which is a property of the seed rather than of the ranking. So the ranking checks were satisfied at the level the fixture could exercise — only active statuses appeared, and no completed or failed run did — but **the rank order between differing statuses, the newest-first tiebreak within one status, and the cap applied after ranking were not visually distinguishable in this data.** Those rules are asserted in `lib/dashboard.test.ts` and remain unticked above rather than claimed from a fixture that cannot show them.
+
+Left unticked for the same reason — each needs a workspace state this one does not have, and none is claimed:
+
+- More than 5 projects, and more than 5 active runs.
+- A workspace with a per-workflow budget alongside the workspace-wide one.
+- A workspace with **no** budget configured — the "not configured" state. The seeded workspace has a budget, so the observation recorded instead was its absence: no setup prompt appeared, correctly.
+- A workspace with no projects and no runs — the per-section empty states.
+- A user with no workspace at all.
+- Each project link opening the right project.
+
+**The breaker warning was observed**, quoted verbatim by the owner and confirmed to expose no internal reason text. Only the workspace-wide case was reachable; the per-workflow-only trip was not.
+
+**Keyboard navigation was observed** — focus indicator visible, sensible order, nothing trapped. The owner noted the active-workflow rows are skipped in the tab order; that is correct, since Task 4 deliberately gives them no interactive controls and no destination exists to link to.
+
+**Two items are deferred by prior owner decision, not pending**: the loading-skeleton match and the timed 30-second criterion. Both are judgements about a visual design that [[STEP-26 Product Design System and Screen Blueprints]] replaces wholesale, so measuring them against the current layout would produce a result that expires at STEP-27. They are carried there rather than answered here.
 
 ## Definition of Done
 
