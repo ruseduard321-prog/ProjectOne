@@ -53,12 +53,20 @@ This direction **supersedes** the dark-interface visual rules previously recorde
 
 ### Reference image
 
-> [!warning] Reference image not present
-> The owner-approved concept reference is expected at
-> `ProjectOne Vault/12 Assets/Images/ProjectOne_Product_Design_Direction_v1.0.png`
-> and **is not currently in the vault**. It is deliberately not embedded here: a broken embed is worse than an honest gap.
->
-> When the file is added, embed it in this section following the convention used by [[Design Backlog and UI Vision]] (`![[filename.png]]`), and remove this callout. The textual direction above is authoritative on its own and does not depend on the image.
+The owner-approved concept reference, supplied on 2026-08-14:
+
+![[ProjectOne_Product_Design_Direction_v1.0.png]]
+
+It is a **concept, not a specification** — the same standing as the mockup in [[Design Backlog and UI Vision]]. The workspace name, projects, campaign copy, thumbnails, spend figures and activity entries are illustrative, and nothing in them constrains what any screen must contain.
+
+What it *is* authoritative about is the visual language: the ivory canvas against matte-black navigation, the vermilion accent used sparingly on the primary action, the editorial serif paired with a plain UI sans, and the film-production cues (clapperboard, contact-sheet strip, taped-paper brief, duration badges) that carry the product's identity.
+
+Two cautions for whoever draws the blueprints:
+
+- **It depicts navigation and surfaces that do not exist** — Studio, Automations, notifications, a "Build campaign" composer. Blueprints are drawn for the pages the product *has* at the time this step runs, per the deliverable above. Anything else is a [[Roadmap]] question, not a design one.
+- **Where the image and the written direction disagree, the written direction wins.** Text survives re-export and recolouring; a screenshot does not.
+
+The textual direction above stands on its own and does not depend on this image.
 
 ### ADR checkpoint
 

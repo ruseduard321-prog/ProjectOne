@@ -22,9 +22,10 @@ authority: informational (partly superseded 2026-08-14)
 > - **It is the authoritative long-term UI/UX vision.** Within that single scope — where the interface is eventually going — it is the reference to design against.
 
 > [!warning] Partly superseded on 2026-08-14 — read this first
-> By owner decision, two things in this note are **no longer current** and are kept only as history:
+> By owner decision, these parts of this note are **no longer current** and are kept only as history:
 >
-> - **Its [[#Visual Rules]] and the dark/premium-AI-OS direction.** The active visual direction is a warm ivory/cream canvas, matte-black navigation, burnt-orange/vermilion accent, editorial typography and cinematic production cues — explicitly *not* a dark interface, *not* blue/purple AI gradients, *not* glassmorphism-heavy, and *not* a generic KPI-card dashboard. It is recorded in [[STEP-26 Product Design System and Screen Blueprints]] and lands in [[Design System]] there.
+> - **Its [[#Visual Rules]] and the dark/premium-AI-OS direction.** The active visual direction is a warm ivory/cream canvas, matte-black navigation, burnt-orange/vermilion accent, editorial typography and cinematic production cues — explicitly *not* a dark interface, *not* blue/purple AI gradients, *not* glassmorphism-heavy, and *not* a generic KPI-card dashboard. It is recorded in [[STEP-26 Product Design System and Screen Blueprints]], with its own concept reference (`ProjectOne_Product_Design_Direction_v1.0.png`), and lands in [[Design System]] there.
+> - **Its [[#Concept Mockup]].** That mockup illustrates the superseded dark direction. It is left in place as history; the current reference is the one in [[STEP-26 Product Design System and Screen Blueprints]].
 > - **Its [[#Foundation Rule]] and [[#Implementation Policy During Foundation]].** Design work is no longer deferred until after a public release. It is scheduled *before* release consideration, as [[STEP-26 Product Design System and Screen Blueprints]] and [[STEP-27 Product-wide UI Rebuild]].
 >
 > What remains current: this note's **design philosophy** (premium software rather than generic admin panel), its **subordinate rank** to [[Design System]] and the engineering documents, and its **UI Polish Backlog** as a collection point.
@@ -77,6 +78,9 @@ Dark interface, rounded corners (12-16px), restrained color palette, premium typ
 Only presentation may change. Business logic, APIs, authentication, AI routing, database schema, billing and architecture must remain untouched. This document is a design backlog, not a roadmap step.
 
 ## Concept Mockup
+
+> [!warning] Superseded 2026-08-14 — retained as history
+> This mockup illustrates the **dark** direction withdrawn on 2026-08-14. The current concept reference is `ProjectOne_Product_Design_Direction_v1.0.png`, embedded in [[STEP-26 Product Design System and Screen Blueprints]]. Both images are kept: comparing them is the clearest record of what changed.
 
 A single concept mockup of the Dashboard accompanies this document, illustrating the vision above as one composed screen.
 

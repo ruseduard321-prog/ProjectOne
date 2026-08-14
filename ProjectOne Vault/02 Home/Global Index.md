@@ -128,7 +128,7 @@ Every note in the vault, grouped by folder. This is the exhaustive map — for c
 ## 12 Assets
 
 - [[12 Assets/PDF|PDF]] — 47 archived source PDFs
-- `12 Assets/Images/` — image assets. Currently the Dashboard concept mockup embedded in [[Design Backlog and UI Vision]]. The approved product design reference for [[STEP-26 Product Design System and Screen Blueprints]] belongs here as `ProjectOne_Product_Design_Direction_v1.0.png` and **is not yet present**.
+- `12 Assets/Images/` — image assets. Two concept references: `ProjectOne_Dashboard_Concept_Mockup_v1.0.png`, embedded in [[Design Backlog and UI Vision]] and **superseded**, and `ProjectOne_Product_Design_Direction_v1.0.png`, the **active** direction, embedded in [[STEP-26 Product Design System and Screen Blueprints]].
 
 ## 13 Templates
 
