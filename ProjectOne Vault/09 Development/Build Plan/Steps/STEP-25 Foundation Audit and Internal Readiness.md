@@ -6,19 +6,19 @@ version: "3.0"
 last_updated: 2026-08-15
 tags: [engineering, workflow, build-step, process, security, quality]
 step_id: STEP-25
-step_status: Not Started
+step_status: In Progress
 detail_level: full
 ---
 
 # STEP-25 — Foundation Audit & Internal Readiness
 
-**Status:** Not Started
+**Status:** In Progress
 **Detail level:** full — expanded on 2026-08-15 by owner authorization, in a documentation-only planning pass.
 
-> [!important] This step has not started
-> The expansion below is a **plan**, not work in progress. [[STEP-24 Dashboard]] deliberately left this step unexpanded at the owner's direction, and the expansion was performed as a separate, documentation-only commit that changed no application code, created no findings note, and executed no part of the audit.
+> [!note] Execution authorized 2026-08-15
+> The plan below was written in a separate documentation-only pass while this step was still `Not Started`. The owner authorized execution on 2026-08-15, and the step moved to `In Progress` in both canonical locations at that point.
 >
-> Status stays `Not Started` in both canonical locations until the owner separately authorizes execution. `detail_level` became `full` because the plan is written; `step_status` did not, because nothing has been done.
+> Execution remains **findings-only** under D4/D7: no application code is fixed, no documentation repaired, no migration added, no remediation step created, and [[STEP-26 Product Design System and Screen Blueprints]] is not expanded. Findings are recorded in [[Foundation Audit Findings]].
 
 ## Goal
 
@@ -292,6 +292,26 @@ Read-only walkthrough. Nothing is fixed, and no data is written beyond what a no
 Its own changes are documentation-only, which argues the other way. But §21's test is what a change *touches*, and this audit's findings are assessments of authentication, authorization, multi-tenancy/RLS, database schema, AI/agent architecture, security controls and public API contracts — the entire Critical list. More decisively, its **output governs STEP-26, STEP-27 and STEP-28**: a wrong or incomplete severity assignment here silently authorizes building on a foundation nobody actually verified. §21's own instruction settles the remaining doubt — when uncertain, default to Critical.
 
 The gate is substantive rather than ceremonial: **every Critical finding blocks STEP-26 by definition**, and every High finding requires an owner disposition before STEP-27.
+
+---
+
+## Outcome
+
+**Audit executed 2026-08-15.** Findings live in [[Foundation Audit Findings]]: **17 findings — 0 Critical, 5 High, 8 Medium, 4 Low** — plus 16 areas recorded as verified-no-finding with the method that verified each.
+
+**No Critical finding was identified**, so nothing structurally blocks [[STEP-26 Product Design System and Screen Blueprints]]. That statement is bounded: the RLS **negative controls** that would make the isolation claim conclusive could not be executed here.
+
+**Three verifications are unproven, not passed.** The audit machine has no local PostgreSQL, no Docker and no `psql`/`pg_dump`, so under D1 and execution rules 6–7 they are recorded as unproven rather than approximated:
+
+- **RLS negative controls** — 306 of 734 API tests skipped locally for a missing test database; the isolation proof exists only in CI.
+- **Migration downgrades** — all 18 have downgrade bodies and the history is linear, but no downgrade was executed.
+- **Backup and restore** — the drill could not run and was **not simulated**. D1 mandates an owner decision here.
+
+**Two defects were found that were not previously recorded**: a database-URL password reaching logs un-redacted (FA-05), and the root error boundary missing its alert role (FA-11) alongside the already-known inert retry (FA-04).
+
+**Nothing was remediated.** No application code, migration, CI configuration or database was touched; no link was repaired; no schema note was created; no remediation step was created; and [[STEP-26 Product Design System and Screen Blueprints]] was **not** expanded — it is expanded only after the owner settles the findings.
+
+**Severities are proposed, not settled**, and every disposition awaits the owner (execution rule 11).
 
 ---
 

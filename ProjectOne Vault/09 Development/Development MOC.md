@@ -34,6 +34,7 @@ Practices, standards and process documentation for day-to-day engineering work.
 
 - [[Build Plan]] — the step index taking ProjectOne from empty repository to first public release (26 planned, plus inserted steps)
 - [[Execution Protocol]] — the rules Claude follows on *"Implement the next step."*
+- [[Foundation Audit Findings]] — the prioritised record of what STEP-25 found across the Foundation build: what is sound, what is defective, and what could not be proven
 
 ## Documentation Tasks
 
