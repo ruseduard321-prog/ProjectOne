@@ -6,13 +6,13 @@ version: "1.0"
 last_updated: 2026-08-15
 tags: [engineering, workflow, build-step, security, database, quality]
 step_id: STEP-25a
-step_status: Not Started
+step_status: In Progress
 detail_level: full
 ---
 
 # STEP-25a — Foundation Remediation
 
-**Status:** Not Started
+**Status:** In Progress
 **Detail level:** full — inserted between [[STEP-25 Foundation Audit and Internal Readiness]] and [[STEP-26 Product Design System and Screen Blueprints]] by owner decision on 2026-08-15, closing the findings STEP-25 recorded.
 
 ## Why This Step Exists

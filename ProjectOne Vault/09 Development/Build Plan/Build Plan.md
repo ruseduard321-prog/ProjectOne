@@ -66,7 +66,7 @@ Status appears in two places — the step note and the row below — and they mu
 | STEP-24 | [[STEP-24 Dashboard]] | Done | full |
 | STEP-16b | [[STEP-16b Auth Refresh Outage Handling]] | Done | full |
 | STEP-25 | [[STEP-25 Foundation Audit and Internal Readiness]] | Done | full |
-| STEP-25a | [[STEP-25a Foundation Remediation]] | Not Started | full |
+| STEP-25a | [[STEP-25a Foundation Remediation]] | In Progress | full |
 | STEP-26 | [[STEP-26 Product Design System and Screen Blueprints]] | Not Started | outline |
 | STEP-27 | [[STEP-27 Product-wide UI Rebuild]] | Not Started | outline |
 | STEP-28 | [[STEP-28 Full Product Verification Polish and Hardening]] | Not Started | outline |
