@@ -2,7 +2,7 @@
 title: STEP-24 Dashboard
 category: Development/Build Step
 status: draft
-version: "2.0"
+version: "2.1"
 last_updated: 2026-08-14
 tags: [engineering, workflow, build-step, frontend]
 step_id: STEP-24
@@ -69,17 +69,42 @@ That component takes `readonly` props and performs no data fetching of its own. 
 
 ### 3. Recent projects section
 
-Render the most recent projects, newest first, each linking to its own project page, reusing the existing status presentation rather than inventing a second one. Empty state: a short line explaining that projects appear here once created, with the link to `/projects`.
+Render **at most 5** projects, **preserving the order the API already returns** (newest first). The client does not re-sort: the ordering is the server's, and a second sort in the client is a copy of a rule that will drift from it.
+
+Each project links to its own project page, reusing the existing status presentation rather than inventing a second one. The section includes a link to `/projects` for the full list — the cap is what makes this a summary, so the route to everything it omits has to be present.
+
+Empty state: a short line explaining that projects appear here once created, with the link to `/projects`.
 
 ### 4. Active workflows section
 
-Render runs whose status is `awaiting_approval`, `running` or `pending`, **ranked in that order**. `awaiting_approval` sorts first because it is the only one of the three that is blocked on the user — it is literally what "needs attention" means, and surfacing it is most of this page's purpose.
+Render runs whose status is `awaiting_approval`, `running` or `pending`, **ranked in that order**, and **within a single status, newest first**. Show **at most 5 after filtering** — the cap applies to the filtered, ranked list, so the five shown are the five most deserving of attention, not the first five that happened to come back.
 
-Each entry shows its workflow type, its status, and when it started. Completed and failed runs are not active and are not listed here. Empty state: a short line stating that no workflows are currently running.
+`awaiting_approval` sorts first because it is the only one of the three that is blocked on the user — it is literally what "needs attention" means, and surfacing it is most of this page's purpose.
+
+Each entry shows its workflow type, its status, and its timestamp per Task 4a. Completed and failed runs are not active and are not listed here.
+
+**No link to a workflow destination.** There is no workflow route in the web application today — `/chat`, `/projects`, `/projects/[projectId]`, `/settings` and `/dashboard` are the entire authenticated surface. This step does not invent one. If a workflow surface is added by a later step, adding the link here is that step's work, not a route created speculatively by this one.
+
+Empty state: a short line stating that no workflows are currently running.
+
+### 4a. Workflow timestamp
+
+`started_at` is nullable on the API's run response; `created_at` is not. A pending run has not started, so its `started_at` is absent by design.
+
+- When `started_at` is present, show it, labelled as **started**.
+- When it is absent, show `created_at`, labelled as **created** or **queued**.
+
+The label always matches the field being shown. Rendering a creation time under a "started" label states something untrue about a run that has not begun — and for a queue of pending work, "how long has this been waiting" is precisely the question the timestamp exists to answer.
 
 ### 5. AI budget glance
 
-A **minimal read-only** summary drawn from the budgets already returned by `listBudgets`: spend against the current period's USD ceiling, and a clearly visible warning when a budget's circuit breaker is open. It links to [[Settings]] for the detail.
+A **minimal read-only** summary drawn from the budgets already returned by `listBudgets`. It links to [[Settings]] for the detail.
+
+**Spend versus ceiling uses the workspace-wide budget — the one whose `workflow_type` is `null` — and only that one.** The returned list mixes the workspace-wide budget with per-workflow-type budgets that draw against the same spend. Summing them would count the same dollars more than once and report a number that is simply wrong, so this line reads exactly one budget rather than aggregating.
+
+**When no workspace-wide budget exists**, render an honest "No workspace-wide AI budget configured" state linking to Settings. It does not fall back to a per-workflow budget and present it as though it covered the workspace, and it does not render a zero that would read as "nothing spent."
+
+**The breaker warning is separate from that line.** Show a warning when **any** returned budget has `breaker_open` set — a tripped per-workflow breaker is refusing work right now whether or not a workspace-wide budget is configured. The warning says that AI work is being blocked and points to Settings; it does not surface `breaker_reason` or other internal breaker state on this page, because a home surface needs to convey that something is wrong and where to go, not the diagnostic detail.
 
 This is a glance, not a report. It does not duplicate the spend summary that `/settings` already renders, does not list spend records, and does not add a chart. An open circuit breaker means AI work is being refused right now — that is the single highest-value "needs attention" signal the platform currently has, which is why it belongs on the home surface while the rest of the spend detail does not.
 
@@ -87,7 +112,15 @@ Amounts render as the decimal strings the API returns.
 
 ### 6. Quick actions
 
-Links to the surfaces that exist in this build. An action whose destination does not exist is not rendered as a disabled or dead control — a control that cannot act is a dark pattern (CLAUDE.md §35), and the [[Dashboard]] specification's full action list describes the finished product, not this step.
+Exactly three, each to a route that exists today:
+
+- **Projects** → `/projects`
+- **AI Chat** → `/chat`
+- **Settings** → `/settings`
+
+No create, upload, approval or other action is added. The [[Dashboard]] specification's fuller action list (Create Project, Upload Files, Review Approvals, View Analytics) describes the finished product, not this step — those destinations do not exist in this build, and Analytics is Phase 2 and out of the Build Plan's scope entirely.
+
+An action whose destination does not exist is not rendered as a disabled or dead control — a control that cannot act is a dark pattern (CLAUDE.md §35).
 
 ### 7. Stub sections
 
@@ -107,7 +140,20 @@ The dashboard reports on one workspace. Say so in the interface, consistent with
 
 ### 11. Tests
 
-Unit tests for the new client function covering the success path and the error path, mirroring the existing API client tests. Tests for the presentational component covering the active-run filter and its ranking order, the breaker-open warning, and each empty state.
+Unit tests for the new client function covering the success path and the error path, mirroring the existing API client tests.
+
+Tests for the presentational component covering each rule that can silently regress:
+
+- Recent projects cap at 5, and the API's ordering is preserved rather than re-sorted.
+- Active workflows exclude completed and failed runs.
+- Status ranking is `awaiting_approval`, then `running`, then `pending`.
+- Within one status, newest first.
+- The cap of 5 applies after filtering and ranking, not before.
+- Timestamps: `started_at` renders labelled as started; a pending run with no `started_at` renders `created_at` labelled as created or queued.
+- The budget line reads the `workflow_type === null` budget and does not sum budgets — a fixture with a workspace-wide budget plus per-workflow budgets must not produce their total.
+- The no-workspace-wide-budget state renders when no such budget is present.
+- The breaker warning renders when any budget has `breaker_open` set, including when the tripped budget is a per-workflow one, and does not render `breaker_reason`.
+- Each empty state renders.
 
 ### 12. Documentation
 
@@ -123,6 +169,7 @@ Observed, not assumed. A type-check alone is not validation.
 - **The page renders against a running API** with a real workspace: projects, active workflows and the budget glance each show real data.
 - **Each empty state is observed**, not inferred — a workspace with no projects and no runs renders the empty sections correctly.
 - **The breaker warning is observed** in the state where a budget's circuit breaker is open.
+- **No route was added.** The application's route list is unchanged by this step: `/dashboard`, `/chat`, `/projects`, `/projects/[projectId]`, `/settings` and the auth routes, exactly as before. Every link this page renders points at one of them.
 - **The error boundary is observed** to render without exposing the raw error message or a stack trace.
 - **Every required CI check on the Pull Request is green.**
 
@@ -133,13 +180,21 @@ Recorded at completion: which command, which test, or which manual check establi
 ## Manual Browser Test Checklist
 
 - [ ] `/dashboard` loads for an authenticated user with a workspace.
-- [ ] Recent projects list real projects, newest first, and each link opens the right project.
-- [ ] Active workflows show only `awaiting_approval`, `running` and `pending` runs, with `awaiting_approval` first.
+- [ ] Recent projects list real projects, newest first, capped at 5, and each link opens the right project.
+- [ ] With more than 5 projects in the workspace, exactly 5 appear and the link to `/projects` reaches the full list.
+- [ ] Active workflows show only `awaiting_approval`, `running` and `pending` runs, with `awaiting_approval` first, then `running`, then `pending`.
+- [ ] Within one status, the newest run appears first.
+- [ ] With more than 5 active runs, exactly 5 appear, and they are the highest-ranked 5 rather than an arbitrary 5.
 - [ ] Completed and failed runs do not appear in the active list.
-- [ ] The AI budget glance shows spend against the ceiling, and its link reaches the Settings spend detail.
-- [ ] With a budget's circuit breaker open, the warning is visible without scrolling or interaction.
+- [ ] A running run shows its start time labelled as started; a pending run with no start time shows its creation time labelled as created or queued.
+- [ ] The AI budget glance shows spend against the workspace-wide ceiling, and its link reaches the Settings spend detail.
+- [ ] With a workspace-wide budget **and** per-workflow budgets configured, the figure shown matches the workspace-wide budget alone and is not their sum.
+- [ ] With no workspace-wide budget configured, the honest "not configured" state renders and links to Settings.
+- [ ] With a budget's circuit breaker open, the warning is visible without scrolling or interaction, including when only a per-workflow budget has tripped.
+- [ ] The breaker warning does not display internal breaker reason text.
 - [ ] Notifications and AI recommendations read as clearly labelled "Not available yet", not as empty or broken sections.
-- [ ] Every quick action leads to a working surface. No dead or disabled controls.
+- [ ] Exactly three quick actions render — Projects, AI Chat, Settings — and each opens its surface. No dead or disabled controls, and no action without an existing destination.
+- [ ] No workflow entry links anywhere, since no workflow route exists.
 - [ ] A user with no workspace sees the no-workspace state, not an error.
 - [ ] A workspace with no projects and no runs shows per-section empty states, each distinguishable from the others.
 - [ ] The loading skeleton matches the real layout closely enough that content does not visibly jump when it resolves.
@@ -151,6 +206,9 @@ Recorded at completion: which command, which test, or which manual check establi
 ## Definition of Done
 
 - [ ] The dashboard renders recent projects, active workflows and quick actions against real data.
+- [ ] Both lists are capped at 5, with the workflow cap applied after filtering and ranking.
+- [ ] No route was added, and no link points at a destination that does not exist.
+- [ ] The AI budget glance reads the workspace-wide budget only, never a sum, and renders the honest "not configured" state when there is none.
 - [ ] The AI budget glance is present, read-only, and links to Settings without duplicating its spend detail.
 - [ ] Notifications and AI recommendations are honest, labelled stubs.
 - [ ] Loading, error and empty states exist for the route and for every section.
