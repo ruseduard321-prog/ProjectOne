@@ -53,7 +53,6 @@ The findings record produced by [[STEP-25 Foundation Audit and Internal Readines
 ## Findings
 
 ### FA-01
-
 - **Area:** Multi-tenancy and RLS — local developer-environment verification gap
 - **Severity:** Medium *(owner-assigned 2026-08-15, reduced from the proposed High)*
 - **Affected location:** `apps/api/tests/conftest.py`; developer environments without PostgreSQL
@@ -71,40 +70,36 @@ The findings record produced by [[STEP-25 Foundation Audit and Internal Readines
 
 
 ### FA-02
-
 - **Area:** Database integrity and migrations
 - **Severity:** High *(owner-approved 2026-08-15)*
 - **Affected location:** `apps/api/migrations/versions/` (18 files)
 - **Evidence:** Static analysis confirms a **strictly linear** history (no branch points) and a non-empty `downgrade()` body in **all 18** migrations. No downgrade was *executed*, because doing so requires a database and none is safely available.
 - **Consequence:** Reversibility is asserted by inspection, not demonstrated. A downgrade that fails only at runtime — a dropped object another migration depends on, an ordering error — would be invisible to this audit. **No complete downgrade verification exists anywhere**, including CI: the API job applies migrations forward to set the schema up and never exercises the reverse direction. Unlike FA-01, there is no other environment in which this is already proven, which is why it stays High.
 - **Recommended disposition:** Execute a full downgrade-to-base then upgrade-to-head cycle against the CI service container, and consider adding it as a CI step.
-- **Owner decision:** _pending_
+- **Owner decision:** **Accepted 2026-08-15 — High retained.** No complete downgrade verification exists anywhere, including CI. Scheduled in [[STEP-25a Foundation Remediation]] (task 5).
 - **Status:** Open
 
 ### FA-03
-
 - **Area:** Backup and restore
 - **Severity:** High *(owner-approved 2026-08-15)*
 - **Affected location:** [[Backup and Disaster Recovery]]; audit environment
 - **Evidence:** No `pg_dump`, no `psql`, no Docker, no local PostgreSQL (ports 5432 and 5433 both closed). The restore drill D1 requires **could not be performed**, and per D1's own instruction it was **not simulated**. Separately, [[Backup and Disaster Recovery]] states RPO and RTO *should be defined* and **defines no actual values**.
 - **Consequence:** ProjectOne has **no demonstrated ability to restore from backup**, and no numeric recovery objective to restore against. This is the single largest unproven guarantee in the Foundation.
 - **Recommended disposition:** Owner decision required — D1 mandates a stop here. Likely its own numbered step: provision a disposable PostgreSQL, execute a schema-plus-data restore drill, and give [[Backup and Disaster Recovery]] real RPO/RTO numbers.
-- **Owner decision:** _pending_
+- **Owner decision:** **Accepted 2026-08-15 — High retained.** Remediation must establish an **executed** backup/restore drill on a disposable PostgreSQL environment, never shared Supabase data. Scheduled in [[STEP-25a Foundation Remediation]] (task 2).
 - **Status:** Open
 
 ### FA-04
-
 - **Area:** Incomplete product behaviour / reliability
 - **Severity:** High *(owner-approved 2026-08-15)*
 - **Affected location:** `apps/web/src/app/error.tsx`
 - **Evidence:** Carried forward from [[STEP-24 Dashboard]] and re-confirmed by reading the file. The root boundary wires its button to `reset` directly. All four route boundaries instead call `useErrorRecovery(reset)` from `lib/error-recovery.ts`. Calling `reset()` alone clears client state and re-renders the **cached** payload, which still contains the failure.
 - **Consequence:** The root boundary's "Try again" control does not recover. It is the boundary [[STEP-16b Auth Refresh Outage Handling]] depends on for outage recovery — a route-level boundary cannot catch a failure in the layout that wraps it — so the product's stated recovery path for an API outage is inert. STEP-16b's manual checklist recorded "a working retry control" against this wiring.
 - **Recommended disposition:** One-line fix using the existing `useErrorRecovery`. **Not performed here** (D4). Owner decides whether it becomes a remediation step before [[STEP-26 Product Design System and Screen Blueprints]].
-- **Owner decision:** _pending_
+- **Owner decision:** **Accepted 2026-08-15 — High retained.** Kept separate from FA-11: same file, but a functional defect rather than an accessibility one. Scheduled in [[STEP-25a Foundation Remediation]] (task 3).
 - **Status:** Open
 
 ### FA-05
-
 - **Area:** Security — log redaction / secret exposure
 - **Severity:** **Critical** *(owner-assigned 2026-08-15, raised from the proposed High)*
 - **Affected location:** `apps/api/app/core/logging.py`
@@ -115,18 +110,16 @@ The findings record produced by [[STEP-25 Foundation Audit and Internal Readines
 - **Status:** Open
 
 ### FA-06
-
 - **Area:** Security / observability
 - **Severity:** Medium *(owner-approved 2026-08-15)*
 - **Affected location:** `apps/api/app/services/audit_service.py`
 - **Evidence:** No sign-in, sign-out or failed-authentication event appears in the audit service. Confirmed by search; the gap is also acknowledged in [[Build Plan]]'s Current State, which assigns it to this step.
 - **Consequence:** The most security-relevant events in the product leave no audit trail. A credential-stuffing attempt or a suspicious session would be unreconstructable after the fact.
 - **Recommended disposition:** Own numbered step, or fold into whichever step next touches authentication.
-- **Owner decision:** _pending_
+- **Owner decision:** **Accepted 2026-08-15 — Medium.** Scheduled in [[STEP-25a Foundation Remediation]] (task 7), with the constraint that a failed attempt must not become an account-existence oracle.
 - **Status:** Open
 
 ### FA-07
-
 - **Area:** Security / data retention
 - **Severity:** Medium *(owner-approved 2026-08-15)*
 - **Affected location:** `audit_log` table; `apps/api/app/services/audit_service.py`
@@ -137,7 +130,6 @@ The findings record produced by [[STEP-25 Foundation Audit and Internal Readines
 - **Status:** Open
 
 ### FA-08
-
 - **Area:** Tests and CI
 - **Severity:** Medium *(owner-approved 2026-08-15)*
 - **Affected location:** `.github/workflows/ci.yml`; the `Protect main` ruleset
@@ -148,73 +140,66 @@ The findings record produced by [[STEP-25 Foundation Audit and Internal Readines
 - **Status:** Open
 
 ### FA-09
-
 - **Area:** Documentation
 - **Severity:** Medium *(owner-approved 2026-08-15)*
 - **Affected location:** [[Build Plan]] Current State; [[STEP-09 Row Level Security Policies]]; [[STEP-10 Authentication Backend]]
 - **Evidence:** All three state or rely on the repository being **private**, and use that to explain why CI results cannot be observed from the build environment. The owner confirmed on 2026-08-15 that the repository is **public**.
 - **Consequence:** A stale premise that has repeatedly justified deferring CI confirmation to the owner. A future session reading it would reach the same wrong conclusion.
 - **Recommended disposition:** Correct the three notes. **Not repaired here** (D7 — recorded only).
-- **Owner decision:** _pending_
+- **Owner decision:** **Accepted 2026-08-15 — Medium.** Deferred out of STEP-25a to [[STEP-28 Full Product Verification Polish and Hardening]] or a later owner-approved remediation.
 - **Status:** Open
 
 ### FA-10
-
 - **Area:** Documentation
 - **Severity:** Medium *(owner-approved 2026-08-15)*
 - **Affected location:** `ProjectOne Vault/05 Architecture/Schema/`
 - **Evidence:** 11 `Table - *` notes document **14** existing tables. Missing: **conversations**, **messages**, **workflow_step_runs**.
 - **Consequence:** Three tables — two of them holding user message content — have no canonical schema documentation, so [[Schema Overview]] understates the data model a future engineer must reason about.
 - **Recommended disposition:** Create the three notes. **Not created here** (D7).
-- **Owner decision:** _pending_
+- **Owner decision:** **Accepted 2026-08-15 — Medium.** Deferred out of STEP-25a to [[STEP-28 Full Product Verification Polish and Hardening]] or a later owner-approved remediation.
 - **Status:** Open
 
 ### FA-11
-
 - **Area:** Accessibility
 - **Severity:** Medium *(owner-approved 2026-08-15)*
 - **Affected location:** `apps/web/src/app/error.tsx`
 - **Evidence:** All four route error boundaries carry an alert role. The root boundary carries **no role attribute** at all. All five loading skeletons correctly carry a status role.
 - **Consequence:** When the root boundary renders — the outage path from [[STEP-16b Auth Refresh Outage Handling]] — a screen-reader user receives no announcement that an error occurred. Compounds FA-04 on the same file.
 - **Recommended disposition:** Add the alert role alongside the FA-04 fix. Feeds [[STEP-26 Product Design System and Screen Blueprints]]'s accessibility rules.
-- **Owner decision:** _pending_
+- **Owner decision:** **Accepted 2026-08-15 — Medium retained.** Kept separate from FA-04: same file, but an accessibility finding with its own proof. Scheduled in [[STEP-25a Foundation Remediation]] (task 4).
 - **Status:** Open
 
 ### FA-12
-
 - **Area:** AI spend / observability
 - **Severity:** Medium *(owner-approved 2026-08-15)*
 - **Affected location:** `apps/api/app/services/ai_spend_service.py`
 - **Evidence:** Anomaly detection is genuinely implemented — a 7-day baseline, a 10x multiplier and a noise floor below which it does not fire. On trip it emits a **log line only**. No alerting channel, notification or dashboard consumes it.
 - **Consequence:** [[CLAUDE|CLAUDE.md]] §15a requires *automatic alerting* on sharp deviation. A log line nobody watches satisfies the detection half and not the alerting half — a runaway spend would be recorded and unnoticed.
 - **Recommended disposition:** Route to a real alerting channel when observability infrastructure lands.
-- **Owner decision:** _pending_
+- **Owner decision:** **Accepted 2026-08-15 — Medium.** Deferred out of STEP-25a; routed to observability work when an alerting channel exists.
 - **Status:** Open
 
 ### FA-13
-
 - **Area:** API contracts / reliability
 - **Severity:** Medium *(owner-approved 2026-08-15)*
 - **Affected location:** `apps/api/app/routers/`; the AI turn path
 - **Evidence:** Two related gaps, both previously recorded and re-confirmed. **Idempotency keys are unbuilt** — `POST /workspaces` is the first endpoint that could use them. **The AI crash window** from [[STEP-23 AI Chat End to End]] leaves a turn stranded after a provider charge, visibly stuck rather than silently retried.
 - **Consequence:** A retried request can double-charge or double-create. [[Build Plan]] already records that closing the crash window properly constrains every future AI call.
 - **Recommended disposition:** The ADR covering provider-side idempotency, stale-claim reconciliation, lease policy and crash-window handling is a **named prerequisite before the next AI feature**. **Not drafted here** (D5). Not blocking STEP-26/27, which are design and UI work.
-- **Owner decision:** _pending_
+- **Owner decision:** **Accepted 2026-08-15 — Medium.** Deferred out of STEP-25a. The ADR remains a **named prerequisite before the next AI feature**, which STEP-26 and STEP-27 are not, so it gates neither.
 - **Status:** Open
 
 ### FA-14
-
 - **Area:** Architecture / technical debt
 - **Severity:** Low *(owner-approved 2026-08-15)*
 - **Affected location:** `packages/`, `infrastructure/`
 - **Evidence:** Both remain empty placeholders after 28 steps.
 - **Consequence:** The modular-services principle ([[CLAUDE|CLAUDE.md]] §7) is currently carried entirely by discipline inside two applications. No code is shared, so no coupling has formed — but nothing structurally enforces the boundary either.
 - **Recommended disposition:** Accept for now. Revisit when a second consumer of shared logic appears.
-- **Owner decision:** _pending_
+- **Owner decision:** **Accepted 2026-08-15 — Low.** Accepted as a documented trade-off; revisit when a second consumer of shared logic appears.
 - **Status:** Open
 
 ### FA-15
-
 - **Area:** Documentation / vault integrity
 - **Severity:** Low *(owner-approved 2026-08-15)*
 - **Affected location:** Vault-wide
@@ -225,25 +210,23 @@ The findings record produced by [[STEP-25 Foundation Audit and Internal Readines
 - **Status:** Open
 
 ### FA-16
-
 - **Area:** Documentation
 - **Severity:** Low *(owner-approved 2026-08-15)*
 - **Affected location:** [[ADR Template]]; `apps/api/app/core/config.py`
 - **Evidence:** Two standing tasks re-confirmed open. [[DOC-01 Align ADR Template with CLAUDE.md]] — the template's status vocabulary lacks `Review` and `Rejected`. [[DOC-02 Validate the Request-Path Credential at Startup]] — `REQUEST_DATABASE_URL` is validated for presence and never for correctness.
 - **Consequence:** DOC-01 risks a rejected decision leaving no record. DOC-02 turns a bad credential into a first-request 500 rather than a startup failure — and, per FA-05, one that can log the password.
 - **Recommended disposition:** DOC-02 gains urgency from FA-05; consider handling them together.
-- **Owner decision:** _pending_
+- **Owner decision:** **Accepted 2026-08-15 — Low.** Deferred out of STEP-25a. DOC-02 is explicitly excluded from STEP-25a's scope despite sharing a cause with FA-05, on scope-discipline grounds.
 - **Status:** Open
 
 ### FA-17
-
 - **Area:** Incomplete product behaviour
 - **Severity:** Low *(owner-approved 2026-08-15)*
 - **Affected location:** Product-wide
 - **Evidence:** Catalogue of every deliberately-shipped limitation, all disclosed rather than hidden: the dashboard's stub sections; the **in-process, per-worker rate limiter** (N workers permit N times the per-user allowance); **MFA and OAuth deferred** since STEP-10 and still unscheduled; the **single-workspace limitation**, disclosed in the interface on three screens; the **pessimistic AI pricing placeholder**; every Project Bible note still `status: draft` at v0.1; and **[[Billing]] absent** from the 28 steps.
 - **Consequence:** None individually. Recorded so the set is visible in one place rather than distributed across 28 step notes.
 - **Recommended disposition:** Accept. Each is a known, documented trade-off.
-- **Owner decision:** _pending_
+- **Owner decision:** **Accepted 2026-08-15 — Low.** Every item accepted as a known, documented trade-off.
 - **Status:** Open
 
 ---
@@ -284,19 +267,27 @@ Per **D2**: existing tools only, single-user, local, repeated. **These are indic
 
 No HTTP journey timings were taken: that would require running the application against the shared database, which execution rule 5 makes read-only and rule 12 requires asking about first.
 
-## Proposed remediation order
+## Approved remediation order
 
-Ordering only — **nothing here is scheduled, and no step was created** (execution rule 4).
+**Settled by the owner on 2026-08-15: FA-05 is first.** An active secret-exposure defect outranks a missing capability — a password reaching logs is happening now, whereas absent restore proof is a risk that has not yet materialised.
 
-1. **FA-03** — backup/restore is the largest unproven guarantee, and D1 already mandates an owner stop.
-2. **FA-05** — a credential can reach logs; cheap to fix and pairs naturally with DOC-02 (FA-16).
-3. **FA-04 + FA-11** — one file, two defects, one small change; the inert retry is the recovery path STEP-16b depends on.
-4. **FA-01 + FA-02** — prove isolation and reversibility against the CI container.
-5. **FA-06 + FA-07** — authentication auditing and a retention period; both need an owner policy decision.
-6. **FA-08** — one ruleset change, owner-only.
-7. **FA-09 + FA-10 + FA-15** — documentation batch.
-8. **FA-13** — the AI ADR, before the next AI feature rather than before STEP-26.
-9. **FA-12, FA-14, FA-16, FA-17** — as infrastructure and priorities allow.
+The binding sequence is [[STEP-25a Foundation Remediation]]'s scope table; this is its summary.
+
+**Scheduled in [[STEP-25a Foundation Remediation]], before design begins:**
+
+1. **FA-05** *(Critical)* — stop the credential reaching logs. First, and blocking.
+2. **FA-03** *(High)* — executed restore drill on a disposable PostgreSQL, never shared Supabase data.
+3. **FA-04** *(High)* — the inert root retry, the recovery path STEP-16b depends on.
+4. **FA-11** *(Medium)* — the root boundary's alert semantics; same file as FA-04, separate finding.
+5. **FA-02** *(High)* — a complete downgrade/upgrade cycle against the disposable container.
+6. **FA-01** *(Medium)* — make the local skip visible; isolation itself is already proven in CI.
+7. **FA-06** *(Medium)* — authentication-event audit coverage.
+8. **FA-07** *(Medium)* — 90-day retention with tested deletion behaviour.
+9. **FA-08** *(Medium)* — the required-check ruleset change, owner-operated and verified.
+
+**Deferred to [[STEP-28 Full Product Verification Polish and Hardening]] or a later owner-approved remediation** — neither blocking nor small enough to be clearly bounded: FA-09, FA-10, FA-12, FA-13, FA-14, FA-15, FA-16, FA-17.
+
+FA-13's ADR remains a **named prerequisite before the next AI feature**, which STEP-26 and STEP-27 are not.
 
 ---
 
