@@ -3,7 +3,7 @@ title: Authentication Implementation
 category: Architecture
 status: stable
 version: "1.0"
-last_updated: 2026-08-01
+last_updated: 2026-08-14
 tags: [backend, security, authentication, multi-tenancy, standards]
 aliases: ["Auth Implementation", "Authentication Backend"]
 ---
@@ -101,6 +101,21 @@ No endpoint accepts a user id in its body. Identity always comes from the verifi
 `app/core/security.py` defines `AuthError` and its subclasses. Every subclass carries a `public_message` safe to return, separate from the detail that goes to logs, and nothing inspects message strings to decide a status code.
 
 Translation is owned by the handlers in `app/core/errors.py`, registered once for the application ([[API Conventions]]). The identical-401-body property this note depends on is unchanged and still guarded by `test_rejections_do_not_reveal_why` — moving the mapping did not move the rule.
+
+## An Outage Is Not a Rejection
+
+Added by [[STEP-16b Auth Refresh Outage Handling]] on 2026-08-14, after an outage during token refresh signed a user out and deleted a credential the provider had never rejected.
+
+The web client separates two failures that look alike at a `catch` and mean opposite things:
+
+| Error | Meaning | Session handling |
+|---|---|---|
+| `ApiError` | A request completed and was **judged** — it carries a status and a correlation id. | A rejected refresh token is spent: clear the session and redirect. |
+| `ApiUnreachableError` | **No request completed.** No status, no correlation id, no judgement. | The credential is untouched. The error propagates to an error boundary. |
+
+**The rule: only a judged rejection may clear a session.** An unreachable API says nothing about whether a token is valid, so treating it as a rejection destroys a working credential and tells the user their session ended when the service was merely down — both [[CLAUDE|CLAUDE.md]] §24 failures.
+
+Where the failure surfaces matters too. The gate runs in `(app)/layout.tsx`, so a thrown error is caught by the **root `app/error.tsx`**, not by any route-level boundary — a route boundary is nested inside the layout that failed and can never catch it. The root boundary shows a friendly message, a retry, and a `digest` correlation id, and never renders the error message itself.
 
 ## What This Step Did Not Build
 
