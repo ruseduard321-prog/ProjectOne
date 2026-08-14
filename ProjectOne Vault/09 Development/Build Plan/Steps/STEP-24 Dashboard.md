@@ -177,6 +177,22 @@ Observed, not assumed. A type-check alone is not validation.
 
 Recorded at completion: which command, which test, or which manual check established each line above. A validation claim with no stated evidence is an assumption.
 
+Recorded on 2026-08-14 against commit `a30f406`:
+
+| Line | Evidence |
+|---|---|
+| Type-check and lint pass | `npm run typecheck` clean; `npm run lint` clean at `--max-warnings=0` |
+| Unit tests pass | `npm run test` — 192 passed across 17 files, including the 29 new cases in `lib/dashboard.test.ts` and `lib/workflows-api.test.ts` |
+| Full suite does not regress STEP-22/23 | Same run: every pre-existing file still passes |
+| No route was added | `npm run build` route list is `/`, `/_not-found`, `/chat`, `/dashboard`, `/health`, `/projects`, `/projects/[projectId]`, `/session/expired`, `/settings`, `/sign-in`, `/sign-up` — identical to before this step |
+| Renders against a running API | **Not yet proven.** Needs a seeded workspace; owner observation. |
+| Each empty state observed | **Not yet proven.** Unit-tested at the selection layer; visual confirmation is owner observation. |
+| Breaker warning observed | **Not yet proven.** Logic asserted in `dashboard.test.ts`; visual confirmation is owner observation. |
+| Error boundary observed | **Not yet proven.** Owner observation. |
+| CI green | See the step's Pull Request. |
+
+The lines marked not yet proven are the reason this step is not `Done`. They require a running API and a seeded workspace, which is what the manual checklist below exists to cover — asserting them from a passing unit suite would be exactly the assumption this section forbids.
+
 ## Manual Browser Test Checklist
 
 - [ ] `/dashboard` loads for an authenticated user with a workspace.
