@@ -176,6 +176,8 @@ TEST_BYOK_KEY = "dGVzdC1ieW9rLWtleS0zMi1ieXRlcy1sb25nLXh4eHg="  # noqa: S105 - f
 #   assets            -> projects
 #   workflow_runs     -> projects
 #   workflow_step_runs -> workflow_runs
+#   conversations     -> projects
+#   messages          -> conversations
 #
 # `assets` before `projects` happened to be satisfied by alphabetical order,
 # which STEP-20 recorded as luck rather than design. STEP-22 is where that luck
@@ -197,6 +199,9 @@ _WORKSPACE_DEPENDANTS = (
     # alphabetical order deliberately -- see the ordering note above.
     "workflow_step_runs",
     "workflow_runs",
+    # `messages` before `conversations` before `projects`, for the same reason.
+    "messages",
+    "conversations",
     "projects",
     "provider_credentials",
     "workspace_members",

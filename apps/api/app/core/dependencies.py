@@ -31,6 +31,8 @@ from app.core.permissions import WorkspacePermission, WorkspaceRole
 from app.core.security import InvalidTokenError
 from app.repositories.ai_spend import AISpendRepository
 from app.repositories.audit import AuditRepository
+from app.repositories.chat_turns import ChatTurnRepository
+from app.repositories.conversations import ConversationRepository
 from app.repositories.database import DatabaseRepository
 from app.repositories.memberships import MembershipRepository
 from app.repositories.projects import ProjectRepository
@@ -44,6 +46,7 @@ from app.services.ai_spend_service import AISpendService
 from app.services.audit_service import AuditService
 from app.services.auth_service import AuthService
 from app.services.authorization_service import AuthorizationService
+from app.services.chat_service import ChatService
 from app.services.data_ownership_service import REGISTERED_STORES, DataOwnershipService
 from app.services.health_service import HealthService
 from app.services.membership_service import MembershipService
@@ -528,3 +531,44 @@ def get_ai_service(
 
 
 AIServiceDep = Annotated[AIService, Depends(get_ai_service)]
+
+
+def get_conversation_repository(connection: TenantConnectionDep) -> ConversationRepository:
+    """Construct the conversation repository over the request's tenant connection."""
+    return ConversationRepository(connection)
+
+
+ConversationRepositoryDep = Annotated[ConversationRepository, Depends(get_conversation_repository)]
+
+
+def get_chat_turn_repository(settings: SettingsDep) -> ChatTurnRepository:
+    """Construct the turn-claim repository.
+
+    Takes `Settings` rather than the request's tenant connection, deliberately.
+    A claim must survive the failure of the call it guards, and the tenant
+    connection's transaction is rolled back by exactly that failure -- so a
+    claim written there would not be a claim at all. See the module docstring.
+    """
+    return ChatTurnRepository(settings)
+
+
+ChatTurnRepositoryDep = Annotated[ChatTurnRepository, Depends(get_chat_turn_repository)]
+
+
+def get_chat_service(
+    conversations: ConversationRepositoryDep,
+    projects: ProjectRepositoryDep,
+    ai: AIServiceDep,
+    turns: ChatTurnRepositoryDep,
+) -> ChatService:
+    """Construct the chat service.
+
+    Takes `AIService`, never `AIRouter`. That is the same containment
+    `get_ai_service` documents: the router is reachable only through the service
+    that applies the CLAUDE.md §15a controls, so chat cannot become a second path
+    to a provider that spends without a ceiling.
+    """
+    return ChatService(conversations, projects, ai, turns)
+
+
+ChatServiceDep = Annotated[ChatService, Depends(get_chat_service)]

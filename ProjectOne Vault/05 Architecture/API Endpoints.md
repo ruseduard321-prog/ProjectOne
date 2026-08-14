@@ -244,6 +244,16 @@ Recorded so the next reader does not assume otherwise:
 - **Workspace deletion itself.** `DELETE /workspaces/{id}/data` erases contents; the workspace row remains. Deleting the workspace itself needs the last-owner and orphaning questions answered deliberately.
 - **Invitation of non-users.** See above.
 - **Idempotency keys.** `POST /workspaces` was the first endpoint creating a resource from a client-supplied request; `POST /projects` and `POST /assets` are now the second and third. [[API Architecture]] calls for idempotency where appropriate; a retried creation currently makes a second project. The consequence is bounded — a duplicate a user can delete, not a duplicate charge — but it should be **one decision taken once** across the API rather than invented per route.
+
+  **[[STEP-23 AI Chat End to End]] settled it for one route, because there the consequence is not bounded.** A retried chat completion would be a duplicate *charge*, so `POST /chat/conversations/{id}/completion` is idempotent per turn: the client names the `user_message_id` it is answering, and the server claims that turn with a conditional `UPDATE ... WHERE turn_status = 'pending'` before contacting a provider. Concurrent callers observe the claim and are refused with 409.
+
+  Two properties of that design generalise, and the pending API-wide decision should account for them:
+
+  1. **The key is the resource being acted on, not a client-generated nonce.** The user message already exists and already has an id, so no extra header or token was needed.
+  2. **A unique constraint is not an idempotency mechanism when the side effect is external.** It was tried first and rejected: a unique index on the reply refuses the duplicate *row* only after both callers have already invoked and been billed by the provider.
+  3. **An idempotency key the client cannot see is not usable.** `turn_status` is carried on every `MessageResponse` for exactly this reason. It existed in the database from the first migration but was not exposed, so a client had no way to tell an answered question from one whose provider call had failed — and therefore no way to name a turn worth retrying. Manual testing found three unanswered questions accumulated in a single conversation, each retryable by contract and unreachable in practice. **A retryable operation must expose both its state and its key**, or the only reachable action is to start a new one.
+
+  What remains genuinely open is the crash window — a process dying after a provider accepted a request cannot be made exactly-once without provider-side idempotency keys. STEP-23 leaves such a turn visibly stuck rather than retrying it; closing it properly is a dedicated ADR-backed step covering every AI feature.
 - **Pagination.** `GET /projects` is the first genuinely unbounded collection: a workspace's project count is bounded only by human effort today, but [[Workflow Engine]] will let a workspace create projects programmatically. The repository's stable `created_at DESC, id DESC` ordering is what makes adding keyset pagination later a change to one query rather than a redesign. **This is where the pagination convention should now be settled.**
 
 ---

@@ -588,6 +588,123 @@ class WorkflowStepRunStore:
             return cursor.rowcount
 
 
+class ConversationStore:
+    """A workspace's conversations: exportable and erasable.
+
+    Registered by [[STEP-23 AI Chat End to End]] in the same change that creates
+    the table, following [[STEP-20 Projects Schema and Lifecycle]]'s precedent
+    rather than the earlier pattern of registering late and discovering the gap
+    a step later.
+
+    **This is the most literally user-owned data in the system.** A project is
+    something the user made; a conversation is what they *said*. CLAUDE.md §16's
+    "users retain ownership of their data" has no clearer case, and an erasure
+    that left conversations behind would leave a transcript of the user's own
+    words in a workspace they asked to be cleared.
+    """
+
+    name = "conversations"
+
+    def export(
+        self, connection: psycopg.Connection, workspace_id: uuid.UUID
+    ) -> list[ExportedRecord]:
+        """Return every live conversation in a workspace."""
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT id, title, project_id, created_at "
+                "FROM public.conversations "
+                "WHERE workspace_id = %s AND deleted_at IS NULL ORDER BY created_at",
+                (workspace_id,),
+            )
+
+            return [
+                {
+                    "id": str(row[0]),
+                    "title": row[1],
+                    "project_id": None if row[2] is None else str(row[2]),
+                    "created_at": row[3].isoformat(),
+                }
+                for row in cursor
+            ]
+
+    def erase(self, connection: psycopg.Connection, workspace_id: uuid.UUID) -> int:
+        """Soft-delete every conversation in a workspace.
+
+        An `UPDATE`, never a `DELETE`: the table has no DELETE policy and
+        `authenticated` holds no DELETE grant. This works because
+        `conversations_select_same_workspace` does not filter `deleted_at IS
+        NULL` -- the rule four previous steps have now dealt with.
+        """
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE public.conversations SET deleted_at = now() "
+                "WHERE workspace_id = %s AND deleted_at IS NULL",
+                (workspace_id,),
+            )
+
+            return cursor.rowcount
+
+
+class MessageStore:
+    """A workspace's chat messages: exportable and erasable.
+
+    Separate from `ConversationStore` for the reason `AssetStore` is separate
+    from `ProjectStore`: the per-store counts are what make an erasure auditable,
+    and one reporting `"conversations": 2` while silently clearing two hundred
+    messages tells the reader less than two honest numbers.
+
+    **The export carries the message content**, deliberately. A conversation
+    export listing only titles and timestamps would satisfy the letter of a data
+    export while withholding the part the user actually wrote -- and the content
+    is the whole of what makes this their data.
+
+    `messages` has no UPDATE *policy* but does hold the UPDATE *grant*, and this
+    store is why: erasure runs over the tenant connection, so without the grant
+    this method would affect zero rows silently. See the migration's grants note.
+    """
+
+    name = "messages"
+
+    def export(
+        self, connection: psycopg.Connection, workspace_id: uuid.UUID
+    ) -> list[ExportedRecord]:
+        """Return every live message in a workspace, in conversation order."""
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT id, conversation_id, role, content, provider, model, "
+                "token_count, created_at "
+                "FROM public.messages "
+                "WHERE workspace_id = %s AND deleted_at IS NULL "
+                "ORDER BY conversation_id, created_at",
+                (workspace_id,),
+            )
+
+            return [
+                {
+                    "id": str(row[0]),
+                    "conversation_id": str(row[1]),
+                    "role": row[2],
+                    "content": row[3],
+                    "provider": row[4],
+                    "model": row[5],
+                    "token_count": row[6],
+                    "created_at": row[7].isoformat(),
+                }
+                for row in cursor
+            ]
+
+    def erase(self, connection: psycopg.Connection, workspace_id: uuid.UUID) -> int:
+        """Soft-delete every message in a workspace."""
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE public.messages SET deleted_at = now() "
+                "WHERE workspace_id = %s AND deleted_at IS NULL",
+                (workspace_id,),
+            )
+
+            return cursor.rowcount
+
+
 class DataOwnershipService:
     """Exports and erases everything a workspace owns."""
 
@@ -672,4 +789,6 @@ REGISTERED_STORES: tuple[ExportableStore, ...] = (
     AssetStore(),
     WorkflowRunStore(),
     WorkflowStepRunStore(),
+    ConversationStore(),
+    MessageStore(),
 )

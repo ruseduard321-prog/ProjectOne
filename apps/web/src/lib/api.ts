@@ -603,3 +603,192 @@ export function listSpendRecords(
     accessToken,
   });
 }
+
+/**
+ * Who authored a stored message.
+ *
+ * Two values, mirroring `MessageRole` in `app/schemas/chat.py` and the database's
+ * `ck_messages_role_valid`. `system` is absent here for the same reason it is
+ * absent there: a system instruction is assembled at call time and never stored,
+ * so it can never arrive in a response.
+ */
+export type ApiMessageRole = "user" | "assistant";
+
+/** One stored message in a conversation. */
+export interface ApiChatMessage {
+  readonly id: string;
+  readonly conversation_id: string;
+  readonly role: ApiMessageRole;
+  readonly content: string;
+  /**
+   * Which provider and model produced this, when one did.
+   *
+   * Null on a user message, which no provider produced. Carried so a reply
+   * served after a fallback can be attributed to the provider that actually
+   * answered rather than the one the workspace configured (CLAUDE.md §15).
+   */
+  readonly provider: string | null;
+  readonly model: string | null;
+  readonly token_count: number;
+  readonly created_at: string;
+  /**
+   * Where this question is in being answered, or null on a reply.
+   *
+   * **This is what makes an unanswered question visible.** The field existed in
+   * the database from the start but stopped at the API, so a turn whose
+   * provider call failed rendered identically to an answered one — manual
+   * testing found three such questions stranded in a transcript with no way to
+   * reach them.
+   *
+   * `pending` is the retryable state: no provider holds the turn, and
+   * `retryTurnAction` can answer this exact question. `in_progress` means a
+   * call is in flight *or* a process died holding the claim; the two are
+   * indistinguishable without a lease, which STEP-23 deliberately excludes.
+   */
+  readonly turn_status: ApiTurnStatus | null;
+}
+
+/** Where a question is in being answered. Mirrors `ck_messages_turn_status_valid`. */
+export type ApiTurnStatus = "pending" | "in_progress" | "completed";
+
+/** One conversation, without its messages. */
+export interface ApiConversation {
+  readonly id: string;
+  readonly workspace_id: string;
+  readonly title: string;
+  readonly project_id: string | null;
+  readonly created_by: string;
+  readonly created_at: string;
+  readonly updated_at: string;
+  readonly version: number;
+}
+
+/** One conversation together with its full transcript. */
+export interface ApiConversationDetail {
+  readonly conversation: ApiConversation;
+  readonly messages: readonly ApiChatMessage[];
+}
+
+/** The outcome of one completed exchange. */
+export interface ApiTurn {
+  readonly conversation: ApiConversation;
+  readonly user_message: ApiChatMessage;
+  readonly assistant_message: ApiChatMessage;
+}
+
+/**
+ * A stored question awaiting its answer.
+ *
+ * No `assistant_message`, and that absence is the contract: this is what exists
+ * after the question is saved and before any provider has been asked. The
+ * `user_message.id` is the turn key the completion call names.
+ */
+export interface ApiPendingTurn {
+  readonly conversation: ApiConversation;
+  readonly user_message: ApiChatMessage;
+}
+
+export function listConversations(
+  accessToken: string,
+  workspaceId: string,
+): Promise<ApiConversation[]> {
+  return apiRequest<ApiConversation[]>({
+    path: `/workspaces/${workspaceId}/chat/conversations`,
+    method: "GET",
+    accessToken,
+  });
+}
+
+export function readConversation(
+  accessToken: string,
+  workspaceId: string,
+  conversationId: string,
+): Promise<ApiConversationDetail> {
+  return apiRequest<ApiConversationDetail>({
+    path: `/workspaces/${workspaceId}/chat/conversations/${conversationId}`,
+    method: "GET",
+    accessToken,
+  });
+}
+
+/**
+ * Send one message and receive the reply.
+ *
+ * Omitting `conversationId` starts a new conversation, which is why the returned
+ * turn carries the conversation: it is the only place a caller learns the id of
+ * one that was just created.
+ *
+ * This is the only call here that reaches a provider, so it is the only one that
+ * can fail with a governance refusal (402/503) or a provider error (502/503).
+ * Those are rendered as messages, never as a fabricated reply.
+ */
+/**
+ * Store a question without answering it.
+ *
+ * The first of two calls. It makes no provider request, so what it stores
+ * survives whatever happens to the completion that follows — which is the whole
+ * reason a turn is split in two. See {@link completeChatTurn}.
+ */
+export function startChatTurn(
+  accessToken: string,
+  workspaceId: string,
+  content: string,
+  conversationId?: string,
+  projectId?: string,
+): Promise<ApiPendingTurn> {
+  return apiRequest<ApiPendingTurn>({
+    path: `/workspaces/${workspaceId}/chat/conversations`,
+    method: "POST",
+    // Optional ids are omitted rather than sent as null: the request model
+    // forbids extra fields, and an explicit null would say the same thing less
+    // clearly.
+    //
+    // `conversationId` may name a conversation that does not exist yet — the
+    // API creates one with that id. That is what lets a caller know the id
+    // before the call, so a failed first turn is still reachable and a retry
+    // continues it rather than starting a second. See `sendMessageAction`.
+    body: {
+      content,
+      ...(conversationId === undefined ? {} : { conversation_id: conversationId }),
+      ...(projectId === undefined ? {} : { project_id: projectId }),
+    },
+    accessToken,
+  });
+}
+
+/**
+ * Answer a stored question.
+ *
+ * The second of two calls, and the only one that reaches a provider. The server
+ * claims the turn before calling out, so two concurrent completions of the same
+ * question produce one invocation and one charge — not one stored reply after
+ * two bills.
+ *
+ * A failure here leaves the question stored and the turn retryable: call again
+ * with the same `userMessageId`.
+ */
+export function completeChatTurn(
+  accessToken: string,
+  workspaceId: string,
+  conversationId: string,
+  userMessageId: string,
+): Promise<ApiTurn> {
+  return apiRequest<ApiTurn>({
+    path: `/workspaces/${workspaceId}/chat/conversations/${conversationId}/completion`,
+    method: "POST",
+    body: { user_message_id: userMessageId },
+    accessToken,
+  });
+}
+
+export function deleteConversation(
+  accessToken: string,
+  workspaceId: string,
+  conversationId: string,
+): Promise<void> {
+  return apiRequest<void>({
+    path: `/workspaces/${workspaceId}/chat/conversations/${conversationId}`,
+    method: "DELETE",
+    accessToken,
+  });
+}

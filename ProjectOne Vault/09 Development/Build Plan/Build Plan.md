@@ -2,8 +2,8 @@
 title: Build Plan
 category: Development
 status: stable
-version: "2.8"
-last_updated: 2026-08-08
+version: "2.9"
+last_updated: 2026-08-14
 tags: [engineering, documentation, workflow]
 aliases: ["Implementation Plan", "Build Roadmap", "Step Index"]
 ---
@@ -60,7 +60,7 @@ Status appears in two places — the step note and the row below — and they mu
 | STEP-20 | [[STEP-20 Projects Schema and Lifecycle]] | Done | full |
 | STEP-21 | [[STEP-21 Projects UI]] | Done | full |
 | STEP-22 | [[STEP-22 Minimum Workflow Engine]] | Done | full |
-| STEP-23 | [[STEP-23 AI Chat End to End]] | Not Started | full |
+| STEP-23 | [[STEP-23 AI Chat End to End]] | Done | full |
 | STEP-24 | [[STEP-24 Dashboard]] | Not Started | outline |
 | STEP-25 | [[STEP-25 Launch Readiness Criteria]] | Not Started | outline |
 | STEP-26 | [[STEP-26 First Public Release]] | Not Started | outline |
@@ -324,7 +324,15 @@ The lesson worth carrying: **all three were invisible locally and only reachable
 
 **Five limitations are stated rather than discovered:** execution is synchronous on the request thread (bounded by the 300s wall-clock ceiling — but the persistence model is already the one a queue would need, so moving it later changes one call site); no branching, scheduling or parallelism; no UI, so runs are reachable over HTTP only; one workflow and one agent, since the interface is the deliverable; and a resumed run re-executes an interrupted step, making step execution at-least-once — safe for every current step, but a future step with an external side effect needs its own idempotency.
 
-**STEP-22 carries an owner approval gate** (Critical — AI/agent architecture, database schema, multi-tenancy, public API contract). It is `Done` and committed, but STEP-23 does not begin until the owner confirms it, including confirming the CI run.
+**STEP-22 carried an owner approval gate** (Critical — AI/agent architecture, database schema, multi-tenancy, public API contract). The owner **approved it on 2026-08-11**, including its validated implementation and green CI, and authorized STEP-23 to proceed. The gate is closed.
+
+**STEP-23 carried its own owner approval gate**, for the same categories plus a public API contract. The owner **approved it on 2026-08-14**, and the gate is closed. Required CI is green on `6f30b62` (all three jobs, including the database-backed suite), and the manual browser checklist is complete against the shared development database — including items 7a and 7b, re-run against a genuine forced provider outage. Test data has been removed; the AI spend audit trail was kept deliberately.
+
+**The Pull Request remains open**: the owner merges, not Claude. `Done` records that the work is finished and approved, not that it has reached `main`.
+
+**Five defects were found after the first green pipeline** — three by manual browser testing, two by review — and every one lived in a failure path no test was asserting against: a soft delete that could rewrite message content; a provider failure that rolled back the question with it; a failed turn that was retryable in the database and invisible on screen; a question answerable through the wrong conversation, charged and then stranded; and a release block widened so far it would have paid twice for one answer. The pattern is recorded in the step note because it outlives the step: **green CI proves the assertions that were written, and says nothing about the ones that were not.**
+
+**A follow-up ADR is required before the next AI feature** covering provider-side idempotency, stale-claim reconciliation, lease policy and crash-window handling. STEP-23 leaves a turn stranded after a provider charge visibly stuck rather than silently retried; closing that window properly constrains every future AI call, so it is an ADR before it is a step.
 
 **A long-term UI vision now exists, and it changes nothing in this plan** (2026-08-03). The project owner supplied [[Design Backlog and UI Vision]] — a premium-AI-OS design direction plus a Dashboard concept mockup. It is filed as **informational only** by explicit owner instruction: **not a step, not a roadmap change, not an architecture change, and overriding no engineering document.** No step was added, renumbered or rescheduled, and the [[Roadmap]] is untouched.
 
