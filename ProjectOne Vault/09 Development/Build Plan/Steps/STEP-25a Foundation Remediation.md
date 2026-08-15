@@ -175,9 +175,9 @@ Observed, not assumed. Every check names its instrument, and every fix to a cont
 | 2 | Removing the new redaction pattern makes that test **fail** | Negative control | **PASS** — 10 failures without it |
 | 3 | A key-shaped credential (`*_KEY`, `*_SECRET`, `*_TOKEN`, `*_PASSWORD`) is redacted | Executed probe | **PASS** — executed probe |
 | 4 | Already-redacted lines are not degraded by the new patterns | Executed probe on the existing bearer-token cases | **PASS** — bearer cases unchanged |
-| 5 | Restore drill completes: schema **and** per-workspace data match the source | Executed on a **disposable** database | **PASS in CI** — no local PostgreSQL |
+| 5 | Restore drill completes: schema **and** per-workspace data match the source | Executed on a **disposable** database | **FAIL** — drill executed in CI and failed |
 | 6 | The restore target was a separate empty database, and no shared Supabase data was touched | Command record | **PASS** — separate empty DB; guard refuses Supabase |
-| 7 | `downgrade base` then `upgrade head` both succeed; the resulting schema matches | Executed on a **disposable** database | **PASS in CI** — no local PostgreSQL |
+| 7 | `downgrade base` then `upgrade head` both succeed; the resulting schema matches | Executed on a **disposable** database | **FAIL** — downgrade path is broken |
 | 8 | The root boundary's retry triggers a refresh, not a bare `reset()` | Unit test + observed against a real API outage | **PASS** — observed 1 → 2 server requests |
 | 9 | The root boundary carries `role="alert"` and announces | Test + assistive-technology check | **PASS** — observed `alert` node |
 | 10 | A locally-skipped isolation suite produces a **visible** banner naming the omitted count | Executed offline run | **PASS** — observed, names 306 |
@@ -204,10 +204,10 @@ Observed, not assumed. Every check names its instrument, and every fix to a cont
 
 ## Definition of Done
 
-- [ ] **Eight of nine closed**, each proven by execution. **FA-06 is blocked** on the owner's schema decision — see [[#FA-06 owner decision required]]. Not closed, and not silently dropped.
+- [ ] **Six of nine closed.** FA-05, FA-04, FA-11, FA-01, FA-07 and FA-08 are proven by execution. **FA-02 and FA-03 are confirmed defects** their new drills exposed — the detection shipped, the fixes did not. **FA-06 is blocked** on the owner's schema decision. Nothing was closed that was not proven.
 - [x] **FA-05 verified by negative control.** 16 tests failed before the fix, including the end-to-end probe showing the plaintext password in the emitted record. Each of the three rules was then deleted from `_REDACTIONS`, turning the suite red (10, 5 and 2 failures).
-- [x] **FA-03 restore drill executed** on a disposable database (CI's `postgres:17` container — this environment has no PostgreSQL), verifying schema *and* per-workspace data across two workspaces, restored into a separate empty database. [[Backup and Disaster Recovery]] updated to record the proven capability and to mark RPO/RTO as **provisional, owner decision required** — per the owner's instruction not to invent a production SLA.
-- [x] **FA-02 cycle executed** on a disposable database (CI), comparing the twice-migrated schema against the once-migrated one. Wired into the `api` job so it re-proves on every pull request.
+- [ ] **FA-03 drill built and executed — and it FAILED.** The drill exists, runs in CI on every pull request, and restores into a separate empty database verifying schema and per-tenant data. Its first execution failed, so **restore capability is not proven** and the finding stays `Open`. [[Backup and Disaster Recovery]] records the drill and marks RPO/RTO as **provisional, owner decision required**, per the instruction not to invent a production SLA.
+- [ ] **FA-02 cycle executed — and it FAILED.** The downgrade path is genuinely broken, which is this finding confirmed rather than a regression: static inspection showed all 18 downgrade bodies non-empty and the history linear, and the first actual execution broke. **The detection now exists and runs on every pull request; the defect is not yet fixed.**
 - [x] **The shared Supabase development database was never a target.** Never connected to, read from or written to. Both drills refuse `supabase.co`, RDS and Azure hosts before opening a connection — verified by running them against such URLs.
 - [x] **FA-08 verified.** Ruleset `20714051` (`Protect main`, active, updated 2026-08-11) lists the check among its required status checks. The owner had already made the change, so no owner action is outstanding; the stale workflow comment is corrected and a rename guard added.
 - [x] [[Foundation Audit Findings]] updated: eight closures carry their evidence; FA-06 records why it is blocked; the eight deferred findings remain `Open`.

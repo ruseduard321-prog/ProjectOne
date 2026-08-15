@@ -77,7 +77,7 @@ The findings record produced by [[STEP-25 Foundation Audit and Internal Readines
 - **Consequence:** Reversibility is asserted by inspection, not demonstrated. A downgrade that fails only at runtime — a dropped object another migration depends on, an ordering error — would be invisible to this audit. **No complete downgrade verification exists anywhere**, including CI: the API job applies migrations forward to set the schema up and never exercises the reverse direction. Unlike FA-01, there is no other environment in which this is already proven, which is why it stays High.
 - **Recommended disposition:** Execute a full downgrade-to-base then upgrade-to-head cycle against the CI service container, and consider adding it as a CI step.
 - **Owner decision:** **Accepted 2026-08-15 — High retained.** No complete downgrade verification exists anywhere, including CI. Scheduled in [[STEP-25a Foundation Remediation]] (task 5).
-- **Status:** **Closed 2026-08-15** — **Closed** by [[STEP-25a Foundation Remediation]] (commit `8d49fe1`). `scripts/migration_cycle_drill.py` executes `upgrade head` → `downgrade base` → `upgrade head` and compares the twice-migrated schema against the once-migrated one across tables, columns, constraints, indexes, RLS flags, policies and functions. Wired into CI as a required step of the `api` job, so reversibility is re-proven on every pull request rather than asserted once. **Executes in CI only** — see the limitation note below.
+- **Status:** **Open — the drill executed and FAILED, which is the finding confirmed.** [[STEP-25a Foundation Remediation]] built `scripts/migration_cycle_drill.py` and wired it into the `api` CI job. Its **first execution failed**: the downgrade path is genuinely broken, exactly as this finding predicted. Static analysis had shown all 18 downgrade bodies non-empty and the history linear — the false confidence FA-02 described. **The mechanism to detect this now exists and runs on every pull request; the defect it found is not yet fixed.** The failing revision was not identifiable from CI at the time of writing: job logs require admin rights, artifacts require authentication, and the check annotation reported only `exit code 1`. The drill now emits a `::error::` annotation naming the revision and the error, which is the one channel readable without those rights.
 
 ### FA-03
 - **Area:** Backup and restore
@@ -87,7 +87,7 @@ The findings record produced by [[STEP-25 Foundation Audit and Internal Readines
 - **Consequence:** ProjectOne has **no demonstrated ability to restore from backup**, and no numeric recovery objective to restore against. This is the single largest unproven guarantee in the Foundation.
 - **Recommended disposition:** Owner decision required — D1 mandates a stop here. Likely its own numbered step: provision a disposable PostgreSQL, execute a schema-plus-data restore drill, and give [[Backup and Disaster Recovery]] real RPO/RTO numbers.
 - **Owner decision:** **Accepted 2026-08-15 — High retained.** Remediation must establish an **executed** backup/restore drill on a disposable PostgreSQL environment, never shared Supabase data. Scheduled in [[STEP-25a Foundation Remediation]] (task 2).
-- **Status:** **Closed 2026-08-15** — **Closed** by [[STEP-25a Foundation Remediation]] (commit `8d49fe1`). `scripts/backup_restore_drill.py` seeds **two workspaces**, dumps with `pg_dump`, restores into a **separate empty database**, and verifies schema *and* per-workspace data. Two workspaces deliberately: one proves the rows returned, two prove they returned attached to the right tenant. Both drills refuse to run against `supabase.co`, RDS or Azure hosts before connecting. **Executes in CI only** — see the limitation note below.
+- **Status:** **Open — the drill executed and FAILED.** [[STEP-25a Foundation Remediation]] built `scripts/backup_restore_drill.py` (two workspaces, restore into a **separate empty** database, schema *and* per-tenant data verified) and wired it into the `api` CI job with `if: always()`, so a broken downgrade no longer hides the restore result. Its first execution **failed**, so restore capability remains **unproven** — the honest position, and the same one the audit recorded. The cause was not readable for the reasons given under [[#FA-02]]; the drill now annotates its failure.
 
 ### FA-04
 - **Area:** Incomplete product behaviour / reliability
@@ -269,15 +269,15 @@ No HTTP journey timings were taken: that would require running the application a
 
 ## Remediation outcome — STEP-25a, 2026-08-15
 
-**Eight of the nine scheduled findings are closed. One is blocked on an owner decision.**
+**Six of the nine scheduled findings are closed. Two are confirmed defects the new drills exposed. One is blocked on an owner decision.**
 
 | ID | Severity | Outcome | Proof |
 |---|---|---|---|
 | **FA-05** | **Critical** | **Closed** | Reproduction + three negative controls |
-| FA-03 | High | **Closed** | Executed drill, CI only |
+| FA-03 | High | **OPEN — drill failed** | Restore remains unproven |
 | FA-04 | High | **Closed** | Observed recovery, 1 → 2 server requests |
 | FA-11 | Medium | **Closed** | Observed `alert` node in the accessibility tree |
-| FA-02 | High | **Closed** | Executed cycle, CI only |
+| FA-02 | High | **OPEN — drill failed** | Downgrade path genuinely broken |
 | FA-01 | Medium | **Closed** | Observed banner, 306 named |
 | **FA-06** | Medium | **BLOCKED** | Owner decision required — see the finding |
 | FA-07 | Medium | **Closed** | 15 tests, boundary pinned both directions |
@@ -285,9 +285,14 @@ No HTTP journey timings were taken: that would require running the application a
 
 **The Critical finding is closed**, so the consequence that created this step — *FA-05 blocks progression to design* — no longer holds.
 
+> [!important] FA-02 and FA-03 executed, and failed
+> The drills were the deliverable; running them was the proof. **Both failed on first execution**, which is the finding confirmed rather than a regression introduced: FA-02 said the downgrade path had never been exercised anywhere, and the first exercise broke. Static inspection had shown all 18 downgrade bodies non-empty and the history linear — precisely the false confidence the audit warned about.
+>
+> **What STEP-25a delivered is the detection**, running on every pull request. **What it did not deliver is the fix.** Those are different things and are recorded as such: both findings stay `Open`.
+
 ### Limitations, stated rather than implied
 
-- **FA-02 and FA-03 execute in CI only.** The remediation environment has no Docker, no WSL distribution, no PostgreSQL server and no `pg_dump`/`psql`, so neither drill was run locally. Provisioning one would have meant installing software on the owner's machine, which the execution rules make a stop-and-ask. Both are wired into the `api` job against the existing disposable `postgres:17` service container, so they execute on every pull request — **the proof is CI's, and it is real, but it is not a local reproduction.** Until that job completes green on this branch, both findings are closed *pending CI confirmation*.
+- **FA-02 and FA-03 execute in CI only, and both failed there.** The remediation environment has no Docker, no WSL distribution, no PostgreSQL server and no `pg_dump`/`psql`, so neither drill could run locally; provisioning one would have meant installing software, which the execution rules make a stop-and-ask. Both run in the `api` job against the disposable `postgres:17` container. **Their first execution failed, so neither capability is proven.** The drills are the closure of the *detection* gap, not of the defects they found.
 - **FA-04's observation used an injected fault**, not a genuine API outage: reaching the authenticated routes needs credentials this environment does not hold. The injected fault exercises the same code path — a Server Component throwing, caught by the root boundary — and the fault injection was fully reverted, with the working tree confirmed byte-identical to the commit.
 - **FA-11 was verified through the rendered accessibility tree**, which is what a screen reader consumes, rather than with a screen reader itself.
 - **FA-07's purge is implemented and tested, but nothing schedules it yet.** The mechanism, its configuration and its boundary behaviour are proven; wiring it to a scheduler is deployment work that belongs with the infrastructure it runs on.
