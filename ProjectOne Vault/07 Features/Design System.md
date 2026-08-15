@@ -2,7 +2,7 @@
 title: Design System
 category: Design
 status: stable
-version: "2.0"
+version: "2.1"
 last_updated: 2026-08-15
 tags: [design, documentation, feature]
 aliases: ["Design System & Visual Language", "Visual Language"]
@@ -17,8 +17,8 @@ This document defines the visual identity and user experience principles of Proj
 
 ## 0. Visual Language
 
-> [!important] Owner-approved **direction**; exact values pending approval (2026-08-15)
-> The direction below was approved on 2026-08-14. The token values expressing it (§4–6) are proposed by [[STEP-26 Product Design System Foundation]] and are **not yet approved** — see [[ADR-003 Product Visual Language and Token Semantics]] (`Review`).
+> [!important] Owner-approved direction and owner-approved values
+> The direction below was approved on 2026-08-14; the token values expressing it (§4–6) were approved on **2026-08-15** through [[ADR-003 Product Visual Language and Token Semantics]] (`Accepted`), written by [[STEP-26 Product Design System Foundation]]. **Both are binding.**
 >
 > Concept reference: `ProjectOne_Product_Design_Direction_v1.0.png` in `12 Assets/Images`. **It is direction, not a screen specification.** It illustrates surfaces that do not exist today; the rules below are what is binding, not the pixels in that image.
 
@@ -142,7 +142,7 @@ Chosen for legibility at small sizes and a neutral, professional tone that carri
 
 The fallback stack is not decoration: it is what renders during load and on failure, and a stack ending in bare `sans-serif` produces a visibly different page. `--font-mono` exists for one reason — ids, tokens and code fragments, where proportional digits actively mislead.
 
-### 5.1a Display face (v2 — pending approval)
+### 5.1a Display face (v2)
 
 **Instrument Serif**, one weight (400), self-hosted via `next/font` on the same terms as Inter.
 
@@ -186,12 +186,12 @@ A **1.25 (major third)** ratio, rounded to sensible pixel values:
 
 Maintain a restrained palette with one primary accent color and limited semantic colors for success, warning and error states. Avoid excessive gradients and saturated colors.
 
-### 6.1 Primitives (v2 — pending approval)
+### 6.1 Primitives (v2)
 
 Raw values. **No component may reference these.**
 
-> [!important] These values are **pending owner approval** (2026-08-15)
-> They express the owner-approved visual direction — warm ivory canvas, matte-black navigation, vermilion accent — as concrete numbers for the first time. The *direction* is approved; **these exact values are not**, and they are proposed by [[STEP-26 Product Design System Foundation]] through [[ADR-003 Product Visual Language and Token Semantics]], which is in `Review`.
+> [!important] These values were **approved by the owner on 2026-08-15**
+> They express the owner-approved visual direction — warm ivory canvas, matte-black navigation, vermilion accent — as concrete numbers, and were accepted through [[ADR-003 Product Visual Language and Token Semantics]]. Changing them is a specification change governed by §6.5, and changing the *semantics* around them requires a superseding ADR.
 >
 > The v1 slate/indigo values this replaces are recorded in [[STEP-14 Design System Tokens]] and in git history.
 
@@ -215,7 +215,7 @@ The palette is warm throughout. **No value in it is neutral grey**, and that is 
 
 **The semantic hues are muted toward the warm palette** rather than taken from the pure spectrum, and all three now clear the **4.5 text bar** in light mode. The v1 values cleared only 3:1 (success `3.15`, warning `3.04`) and were therefore usable for icons and fills but **never for running text** — a limitation §6.3 recorded and this palette removes.
 
-### 6.2 Semantic tokens (v2 — pending approval)
+### 6.2 Semantic tokens (v2)
 
 **This is the only layer components may reference.**
 
@@ -261,12 +261,16 @@ The interface that sits *on* the ivory.
 
 #### Two accent roles, and this is the one most likely to be got wrong
 
-`--color-accent` and `--color-accent-fill` are the same value in light mode and **diverge in dark mode**. They are separate tokens because they answer different questions with different bars:
+`--color-accent` and `--color-accent-fill` are **two separate semantic roles**, which **currently resolve to the same value in light mode (`#C84016`) and diverge in dark mode** (`#F0663A` as a foreground, `#E2511F` as a fill).
+
+**Separate because the roles are genuinely different, not because the values must always be.** They answer different questions and carry different accessibility bars:
 
 - **`--color-accent`** is the accent *as a foreground* — link text, an active label, an icon, a border. Bar: **4.5:1** against every surface it appears on.
 - **`--color-accent-fill`** is the accent *as a background* — a primary button, a filled badge, a progress bar. Bar: **3:1** against the surface behind it, and 4.5:1 for `--color-accent-contrast` on top of it.
 
 The approved vermilion is a fill colour: as text it is 3.82 on ivory. Collapsing the two would mean either failing AA or darkening the brand until it is no longer the approved accent.
+
+**The matching light-mode value is a fact about today's palette, not a property of the design.** Naming both roles is what lets either be retuned — for a theme, for a contrast correction, for a rebrand — without dragging the other with it. Dark mode already exercises that independence. A token that exists only while two numbers differ would have to be reintroduced the moment they do, which is why `--color-border` / `--color-border-strong` and `--color-skeleton` are separate roles on the same reasoning.
 
 > [!warning] The quiet failure mode
 > Reaching for `bg-accent` where `bg-accent-fill` belongs produces a *slightly dark fill* — it looks fine, so nothing catches it in review. It is recorded here, and in [[ADR-003 Product Visual Language and Token Semantics]], as the known sharp edge of this system rather than glossed over.
@@ -526,7 +530,7 @@ ProjectOne should develop a recognizable visual identity. A screenshot should be
 
 The active visual direction (warm ivory canvas, matte-black navigation, vermilion accent, editorial typography, cinematic production cues) is stated as binding rules in **§0** and expressed as token values in §4–6, written by [[STEP-26 Product Design System Foundation]] from the owner-approved concept reference `ProjectOne_Product_Design_Direction_v1.0.png`.
 
-**The direction is no longer only an adjective — but the exact values are pending approval.** [[ADR-003 Product Visual Language and Token Semantics]] is in `Review`, and [[CLAUDE|CLAUDE.md]] §7 permits implementation only from `Accepted`. Until the owner accepts it, no screen is rebuilt against these values; [[STEP-80 Product-wide UI Rebuild]] is where adoption happens.
+**The direction is no longer an adjective, and the values are settled.** [[ADR-003 Product Visual Language and Token Semantics]] was `Accepted` on 2026-08-15, so these tokens are what every later surface is built against ([[CLAUDE|CLAUDE.md]] §7). **No screen has adopted them yet** — [[STEP-80 Product-wide UI Rebuild]] is where that happens, and until then the runtime token layer exists while the screens still render against the roles they already used.
 
 ## Conclusion
 

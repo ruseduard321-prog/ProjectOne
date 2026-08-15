@@ -1,8 +1,8 @@
 ---
 title: "ADR-003: Product Visual Language and Token Semantics"
 category: ADR
-status: review
-version: "1.0"
+status: accepted
+version: "1.1"
 last_updated: 2026-08-15
 tags: [adr, decision, design, frontend, accessibility]
 adr_number: "0003"
@@ -12,9 +12,24 @@ adr_number: "0003"
 
 ## Status
 
-**Review** — proposed by [[STEP-26 Product Design System Foundation]] on 2026-08-15, awaiting the project owner's decision.
+**Accepted** — approved by the project owner on 2026-08-15.
 
-**Not binding, and nothing may be built against it yet.** [[CLAUDE|CLAUDE.md]] §7 permits implementation only once an ADR reaches `Accepted`, and the approver is the project owner — Claude drafts and recommends, and does not self-approve its own architectural proposals. Until that happens, [[Design System]]'s existing slate/indigo tokens remain the only ones a component may be built against.
+This decision is now binding, and later steps may build against it ([[CLAUDE|CLAUDE.md]] §7). Changing the visual language or the token semantics below requires a new ADR that supersedes this one — this note is not amended in place.
+
+### What the owner approved
+
+Proposed by [[STEP-26 Product Design System Foundation]] on 2026-08-15 and accepted the same day. Six decisions, each approved as implemented:
+
+| # | Decision | Outcome |
+|---|---|---|
+| 1 | This ADR — the visual language and token semantics | **Accepted** |
+| 2 | The exact palette values (§6.1) | **Approved as implemented** |
+| 3 | `--color-accent` and `--color-accent-fill` as separate semantic roles | **Approved** |
+| 4 | Instrument Serif as display-only typography, `--text-2xl` and above | **Approved** |
+| 5 | The dedicated `nav-*` semantic token family | **Approved** |
+| 6 | Cinematic cues remain structural only — no paper textures, tape or torn edges | **Approved** |
+
+The owner made one scope clarification at the same gate, recorded in [[STEP-26 Product Design System Foundation#Scope]]: STEP-26 may change the **common runtime design-system infrastructure** (the token layer in `globals.css`, the global font wiring in `layout.tsx`, and the tooling enforcing them) but may not restyle any component, rebuild any screen, change any screen layout, or do any [[STEP-80 Product-wide UI Rebuild]] work. That clarification governs the *step*, not this decision, and is recorded there rather than duplicated here.
 
 ## Context
 
@@ -69,7 +84,20 @@ This is the substantive half of the decision and the reason an ADR is required.
 | `--color-text-on-nav` / `--color-text-on-nav-muted` | `ivory-100` / `ink-400` | `ivory-200` / `ink-400` | Navigation foregrounds. They sit on a dark plane in **both** themes, so they cannot share the canvas text tokens. |
 | `--color-accent-on-nav` | `verm-400` `#F0663A` | `verm-400` `#F0663A` | The accent **on** the navigation plane. Identical in both themes, because the plane it sits on is dark in both. |
 
-`--color-accent` and `--color-accent-fill` are deliberately **different values in light mode** (`#C84016` vs the same primitive) and deliberately **diverge in dark mode**. That split is the honest expression of the owner's vermilion: bright enough to fill, dark enough to read.
+`--color-accent` and `--color-accent-fill` are **two separate semantic roles**. What they currently resolve to:
+
+| Role | Light | Dark |
+|---|---|---|
+| `--color-accent` — the accent as a **foreground** (text, icon, border) | `verm-600` `#C84016` | `verm-400` `#F0663A` |
+| `--color-accent-fill` — the accent as a **background** carrying text on top | `verm-600` `#C84016` | `verm-500` `#E2511F` |
+
+**In light mode they currently resolve to the same value, `#C84016`. In dark mode they diverge.**
+
+**They are separate roles for semantic correctness, not because they must always differ.** A component saying `bg-accent-fill` states what it is doing — filling a surface — and that intent is what lets the two evolve independently: each carries its own accessibility bar (4.5:1 as a foreground, 3:1 as a fill with 4.5:1 for its `*-contrast`), and either can be retuned for a theme without dragging the other with it. Dark mode already exercises exactly that.
+
+**Collapsing them because they happen to match in one theme would be the mistake.** The identical light-mode value is a fact about today's palette, not a property of the design: a token named for its role survives a revalue, while a token that exists only when two numbers differ has to be reintroduced the moment they do. That is the same reasoning that made `--color-border` and `--color-border-strong` separate tokens, and `--color-skeleton` its own role.
+
+The split is also what makes the owner's vermilion implementable at all: the approved hue is a fill colour, measuring 3.82 as text on ivory.
 
 `--color-border-strong` is repointed to a new `ink-450` primitive, distinct from the `ink-400` that navigation's muted text needs. One value could not satisfy both bars.
 
@@ -130,7 +158,7 @@ The direction's "editorial" quality comes from the display face, the type scale 
 
 **Follow-up this creates:**
 
-- **No component changes in STEP-26.** The step implements the token layer and the documentation only; [[STEP-80 Product-wide UI Rebuild]] is where screens adopt it.
+- **No component or screen changes in STEP-26.** The step implements the token layer, the font wiring and the documentation only; [[STEP-80 Product-wide UI Rebuild]] is where screens adopt it.
 - **The `nav-*` family has no consumer until STEP-80.** `SidebarNav` currently paints itself with canvas tokens and will keep rendering correctly until then — the new tokens are defined and verified but unused, which is deliberate: STEP-26's scope forbids restyling any screen.
 - The swap test in [[STEP-14 Design System Tokens]] remains the standing proof of §3a and is re-run against these values.
 

@@ -10,7 +10,7 @@ aliases: ["Implementation Plan", "Build Roadmap", "Step Index"]
 
 # ProjectOne Build Plan
 
-The ordered execution index taking ProjectOne from an empty repository to a verified product in the hands of real users. **97 sequential steps** — 33 delivered (28 numbered plus five inserted by owner decision: STEP-11a, STEP-16a, STEP-12a, STEP-16b, STEP-25a), and **64 future steps, STEP-26 through STEP-89**, each sized for a single Claude Code session.
+The ordered execution index taking ProjectOne from an empty repository to a verified product in the hands of real users. **97 sequential steps** — 34 delivered (29 numbered plus five inserted by owner decision: STEP-11a, STEP-16a, STEP-12a, STEP-16b, STEP-25a), and **63 future steps, STEP-27 through STEP-89**, each sized for a single Claude Code session.
 
 **The future half of this plan was rebuilt on 2026-08-15**, by owner decision, against the [[Product Coverage Audit]]. That audit measured the complete intended product against what `main` actually implements and found 24 capabilities Missing, 14 Foundation/Partial and — the finding that forced the rebuild — several P0 prerequisites with **no executable step anywhere**: file storage, async execution, the AI capability model beyond chat completion, and the Memory System. A three-step tail could not carry them.
 
@@ -71,9 +71,9 @@ Status appears in two places — the step note and the row below — and they mu
 | STEP-25 | [[STEP-25 Foundation Audit and Internal Readiness]] | Done | full |
 | STEP-25a | [[STEP-25a Foundation Remediation]] | Done | full |
 | | **Design Foundation** | | |
-| STEP-26 | [[STEP-26 Product Design System Foundation]] | In Progress | full |
+| STEP-26 | [[STEP-26 Product Design System Foundation]] | Done | full |
 | | **Platform Substrate** | | |
-| STEP-27 | [[STEP-27 Storage Provider Abstraction]] | Not Started | outline |
+| STEP-27 | [[STEP-27 Storage Provider Abstraction]] | Not Started | full |
 | STEP-28 | [[STEP-28 Asset Upload and Download]] | Not Started | outline |
 | STEP-29 | [[STEP-29 Asset Management UI]] | Not Started | outline |
 | STEP-30 | [[STEP-30 Async Job Infrastructure]] | Not Started | outline |
@@ -638,15 +638,15 @@ The fix re-throws `ApiUnreachableError` and leaves every other error on the exis
 
 **Nothing was implemented.** The rebuild is planning documentation: no application code, no migration, no CI change, and the shared Supabase database was never connected to.
 
-**The product has a visual language, pending the owner's approval of its exact values** ([[STEP-26 Product Design System Foundation]], `In Progress`). The owner-approved direction — warm ivory canvas, matte-black navigation, vermilion accent, editorial typography — is now written as binding rules ([[Design System]] §0) and as token values replacing the v1 slate/indigo palette, alongside navigation conventions, shared component contracts, accessibility rules, responsive breakpoints and the four async states.
+**The product has a visual language, and the owner approved it** ([[STEP-26 Product Design System Foundation]], `Done`). The owner-approved direction — warm ivory canvas, matte-black navigation, vermilion accent, editorial typography — is now written as binding rules ([[Design System]] §0) and as token values replacing the v1 slate/indigo palette, alongside navigation conventions, shared component contracts, accessibility rules, responsive breakpoints and the four async states.
 
 **Contrast stopped being a review step and became a build step.** `scripts/check-contrast.py` verifies **90 pairings** — every foreground against every surface it can appear on, in both themes — and runs in the `web` CI job. It found **four genuine WCAG failures** during the work that inspection had missed, each corrected before anything was committed. Two negative controls confirm it fails when it should. [[Design System#6.3]] records why this is enforced rather than requested: the same rule was twice left to memory, and twice a failure shipped.
 
-**The ADR checkpoint triggered**, and [[ADR-003 Product Visual Language and Token Semantics]] is in `Review`. Not because the values changed — §6.5 documents a revalue as routine — but because the semantic layer gained **five new roles** that the measured failures forced, and adding a role changes the contract every component is built against.
+**The ADR checkpoint triggered**, and [[ADR-003 Product Visual Language and Token Semantics]] was **`Accepted` on 2026-08-15**. Not because the values changed — §6.5 documents a revalue as routine — but because the semantic layer gained **five new roles** that the measured failures forced, and adding a role changes the contract every component is built against. Six decisions were approved: the ADR itself, the exact palette, the `accent`/`accent-fill` role split, Instrument Serif as display-only type, the `nav-*` family, and cinematic cues remaining structural.
 
 **No screen was restyled.** `globals.css` and `layout.tsx` are the only application files touched; the `nav-*` token family is defined and verified but has no consumer until [[STEP-80 Product-wide UI Rebuild]]. The spacing, radius and elevation scales from [[STEP-14 Design System Tokens]] were deliberately left unchanged — the new direction does not contradict them, and changing them would have been change for its own sake.
 
-**STEP-26 is not `Done`.** It awaits the owner's acceptance of ADR-003 and of the exact values, listed in [[STEP-26 Product Design System Foundation#Owner decisions required]].
+**The owner clarified STEP-26's scope at the approval gate**, and it is recorded in the step rather than quietly applied. The step's original wording forbade *any* application code change, which would have prevented the token layer from existing at all — leaving an approved design language no surface could consume. The clarification permits exactly three things: the token definitions in `globals.css`, the global font wiring in `layout.tsx`, and the tooling enforcing them. Restyling a component, rebuilding a screen, changing a layout and any [[STEP-80 Product-wide UI Rebuild]] work remain out of scope. The superseded wording is preserved in the step note beside its correction.
 
 ---
 

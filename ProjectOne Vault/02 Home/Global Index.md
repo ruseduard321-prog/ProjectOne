@@ -104,7 +104,7 @@ Every note in the vault, grouped by folder. This is the exhaustive map — for c
 
 - [[ADR-001 Technology Stack]] — `Accepted`
 - [[ADR-002 Trusted Proxy and Client Address Resolution]] — `Accepted`
-- [[ADR-003 Product Visual Language and Token Semantics]] — `Review`
+- [[ADR-003 Product Visual Language and Token Semantics]] — `Accepted`
 
 ## 09 Development
 
