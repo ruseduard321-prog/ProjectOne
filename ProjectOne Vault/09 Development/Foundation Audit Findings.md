@@ -287,7 +287,7 @@ No HTTP journey timings were taken: that would require running the application a
 
 ## Remediation outcome — STEP-25a, 2026-08-15
 
-**All nine scheduled findings are closed and proven by execution.**
+**All nine scheduled findings are closed and proven by execution, and the work is merged.** [[STEP-25a Foundation Remediation]] is `Done` — squash-merged to `main` as `54ad963` on 2026-08-15 ([PR #7](https://github.com/ruseduard321-prog/ProjectOne/pull/7), final branch head `458476c`). The eight deferred findings below remain `Open`.
 
 | ID | Severity | Outcome | Proof |
 |---|---|---|---|
