@@ -82,9 +82,20 @@ Registered in `REGISTERED_STORES` as `AuditLogStore`, and it is **the one store 
 
 Otherwise anyone holding `DELETE_WORKSPACE` could destroy the evidence of what they did on the way out — the single outcome an audit log exists to prevent.
 
-## Known Gaps
+## Retention
 
-- **Retention is unbounded.** The table only grows; no purge schedule exists yet. [[CLAUDE|CLAUDE.md]] §16 requires audit retention to be a *stated* schedule rather than "forever by default", so this needs a decision before launch ([[STEP-25 Foundation Audit and Internal Readiness]]).
+**90 days, then permanent deletion.** Set by the project owner on 2026-08-15 and implemented in [[STEP-25a Foundation Remediation]] (FA-07), closing the unbounded-retention gap [[STEP-25 Foundation Audit and Internal Readiness]] recorded.
+
+- **Configurable, not hard-coded** — `PROJECTONE_AUDIT_RETENTION_DAYS`, so the window can move before public release without a code change ([[CLAUDE|CLAUDE.md]] §28a).
+- **Zero means retain indefinitely**, for a deployment under a legal obligation to keep everything. The code refuses to derive a cutoff from it rather than relying on arithmetic: the dangerous misreading of `0` is "keep nothing", and the two differ by the entire audit log.
+- **A negative window is rejected at startup** (`ge=0`). It would place the cutoff in the future and expire every existing row — a configuration typo that must fail loudly rather than silently destroy the trail.
+- **The purge is a filtered `DELETE`, never `TRUNCATE`**, which would bypass row-level filtering entirely. `AuditRepository.purge_statement()` is exposed as a string precisely so a test can assert the `WHERE` clause exists; once an unfiltered delete has run, the evidence it was wrong is the thing it destroyed.
+- **It runs over the privileged connection**, like every other write here — the table has no DELETE policy and `authenticated` holds no DELETE grant, so this is the audited service path [[CLAUDE|CLAUDE.md]] §16 requires, not a bypass.
+- **The disclosure is derived from the configured value**, so the sentence users are shown cannot drift from the behaviour.
+
+This is the **bounded** legal exception to erasure that §16 requires, rather than the unbounded one it was.
+
+## Known Gaps
 - **Coverage is the STEP-13 mutations only.** Authentication events (sign-in, sign-out, failed attempts) are not recorded here. They are arguably the most security-relevant events of all, and adding them is a deliberate extension rather than an oversight to fix silently.
 - **Writes are best-effort.** `AuditService.record` never raises: an audit-write failure must not turn a successful removal into a 500 the caller retries, because the retry performs the action twice. Failures are logged at `exception` level. An action whose audit record must be atomic with it needs a different mechanism.
 
