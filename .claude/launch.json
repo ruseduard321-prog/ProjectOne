@@ -7,6 +7,12 @@
       "runtimeArgs": ["run", "dev"],
       "port": 3000,
       "cwd": "apps/web"
+    },
+    {
+      "name": "api",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["scripts/run-api-dev.mjs"],
+      "port": 8000
     }
   ]
 }
