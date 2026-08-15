@@ -1,18 +1,18 @@
 ---
 title: STEP-25a Foundation Remediation
 category: Development/Build Step
-status: draft
-version: "1.0"
+status: stable
+version: "1.1"
 last_updated: 2026-08-15
 tags: [engineering, workflow, build-step, security, database, quality]
 step_id: STEP-25a
-step_status: In Progress
+step_status: Done
 detail_level: full
 ---
 
 # STEP-25a — Foundation Remediation
 
-**Status:** In Progress
+**Status:** Done — squash-merged to `main` as `54ad963` on 2026-08-15
 **Detail level:** full — inserted between [[STEP-25 Foundation Audit and Internal Readiness]] and [[STEP-26 Product Design System and Screen Blueprints]] by owner decision on 2026-08-15, closing the findings STEP-25 recorded.
 
 ## Why This Step Exists
@@ -210,7 +210,7 @@ Observed, not assumed. Every check names its instrument, and every fix to a cont
 | 17 | Full API and web suites pass, with **no new skips** | `pytest` and `vitest` | **PASS** — API 479, web 261; no new skips |
 | 18 | Lint, format and type-check clean in both apps | Ruff, mypy strict, ESLint, `tsc` | **PASS** — all clean |
 | 19 | Governance documents in sync | `./scripts/sync-governance-docs.sh --check` | **PASS** — in sync |
-| 20 | **Required CI green, with the database-backed suite executing** | Check runs on the PR head; `PROJECTONE_REQUIRE_DATABASE_TESTS` keeps a skip red | **PASS** — all three checks green on `194ca13` |
+| 20 | **Required CI green, with the database-backed suite executing** | Check runs on the PR head; `PROJECTONE_REQUIRE_DATABASE_TESTS` keeps a skip red | **PASS** — all three checks green on the final head `458476c`, and again on the merge commit `54ad963` |
 | 21 | `governance docs (sync check)` is **verified** as a required check | Ruleset or PR observation (task 9) | **PASS** — ruleset `20714051` read via API |
 
 ## Manual Checklist
@@ -232,19 +232,58 @@ Observed, not assumed. Every check names its instrument, and every fix to a cont
 - [x] **FA-08 verified.** Ruleset `20714051` (`Protect main`, active, updated 2026-08-11) lists the check among its required status checks. The owner had already made the change, so no owner action is outstanding; the stale workflow comment is corrected and a rename guard added.
 - [x] [[Foundation Audit Findings]] updated: all nine closures carry their evidence; the eight deferred findings remain `Open`.
 - [x] Documentation updated: [[Backup and Disaster Recovery]], [[Table - audit_log]] and [[Build Plan]] Current State. **[[Compliance and Governance]] deliberately not edited** — its audit statement is a principle that stays true, and the concrete retention window belongs with the table that implements it rather than duplicated (§19: link, do not duplicate).
-- [x] API **492 passed**, 320 skipped (the pre-existing FA-01 gap, now visible; the 14 added skips are FA-06's database-backed tests, which run in CI); web **261 passed**. Ruff, ruff format, mypy strict, ESLint zero-warning, `tsc --noEmit` and the production build all clean.
-- [x] **Required CI green on `9fa41bc`**: `api`, `web` and `governance docs (sync check)` all `success`. This run is also FA-02's, FA-03's and FA-06's proof — both drills execute as steps of the `api` job and both passed, and the `Test` step runs with `PROJECTONE_REQUIRE_DATABASE_TESTS` set, which turns a skipped database test into a failure. FA-06's 14 database-backed assertions therefore genuinely executed.
+- [x] API **493 passed**, 320 skipped (the pre-existing FA-01 gap, now visible; the 14 added skips are FA-06's database-backed tests, which run in CI); web **261 passed**. Ruff, ruff format, mypy strict, ESLint zero-warning, `tsc --noEmit` and the production build all clean.
+- [x] **Required CI green on the final branch head `458476c` and again on the merge commit `54ad963`**: `api`, `web` and `governance docs (sync check)` all `success`. This run is also FA-02's, FA-03's and FA-06's proof — both drills execute as steps of the `api` job and both passed, and the `Test` step runs with `PROJECTONE_REQUIRE_DATABASE_TESTS` set, which turns a skipped database test into a failure. FA-06's 14 database-backed assertions therefore genuinely executed.
 - [x] **Complete.** Every manual-checklist item is confirmed.
-- [ ] Every review conversation resolved.
-- [ ] **Pending owner review.** No decisions are outstanding — FA-06's shape was decided (option B) and built. What remains is the owner's review and merge.
-- [ ] Pull Request open and **NOT merged**; the owner squash-merges.
-- [ ] **[[STEP-26 Product Design System and Screen Blueprints]] is not expanded by this step.** It is expanded by whichever step immediately precedes it once this one is `Done`.
+- [x] Every review conversation resolved.
+- [x] **Owner review complete.** No decisions were left outstanding: FA-06's shape was decided (option B) and built inside the step rather than carried forward.
+- [x] **Squash-merged by the owner** as `54ad963`, and the branch deleted — one step, one branch, one commit on `main`.
+- [x] **[[STEP-26 Product Design System and Screen Blueprints]] was not expanded by this step**, and remains `Not Started | outline`. Expanding it is the next step's work, not this one's.
 
 ### Owner approval gate
 
 **This step is Critical** ([[CLAUDE|CLAUDE.md]] §21). It touches security controls (FA-05, FA-06), the database schema (FA-07), infrastructure and CI configuration (FA-02, FA-08), and backup/recovery (FA-03) — four categories on the Critical list, any one of which would qualify alone.
 
 It also carries the consequence that created it: **FA-05 is Critical and blocks progression to design**, so [[STEP-26 Product Design System and Screen Blueprints]] does not begin until this step is `Done` and approved.
+
+## Merged outcome — 2026-08-15
+
+**Squash-merged to `main` as `54ad963`**, branch `step-25a-foundation-remediation` deleted. Seventeen branch commits became one commit on `main`, per [[Branch and Pull Request Workflow]].
+
+| | |
+|---|---|
+| Pull request | [#7](https://github.com/ruseduard321-prog/ProjectOne/pull/7) |
+| Final branch head | `458476c` |
+| Merge commit on `main` | `54ad963` |
+| Findings closed | **9 of 9** — FA-01, FA-02, FA-03, FA-04, FA-05, FA-06, FA-07, FA-08, FA-11 |
+| Deferred, still `Open` | FA-09, FA-10, FA-12 – FA-17 (eight, to [[STEP-28 Full Product Verification Polish and Hardening]] or a later remediation) |
+
+### Validation on `main` after the merge
+
+Re-run against the merged tree rather than carried over from the branch, because the squash is a different commit and a claim about the branch is not a claim about `main`:
+
+| Check | Result |
+|---|---|
+| API suite | **493 passed**, 320 skipped |
+| Web suite | **261 passed** (22 files) |
+| Ruff lint / format | clean |
+| mypy (strict) | clean, 75 source files |
+| `tsc --noEmit` | clean |
+| Governance sync | **in sync** — `CLAUDE.md` and `AGENTS.md` both match their vault originals |
+| Alembic | single linear head `b2e94c17a5d3`, 19 revisions |
+| Required CI on `54ad963` | `api`, `web`, `governance docs (sync check)` all **success** |
+
+### One regression was found by reviewing the step's own diff
+
+`sign_out` had been narrowed from `AccessTokenDep` to `CurrentUserDep` while adding its FA-06 audit record. The two differ exactly where it matters: the former requires a bearer token to be *present*, the latter requires it to *verify*. Supabase's `/logout` revokes the whole session including the refresh token, so a caller with an expired access token could sign out before the change and received a 401 after it — leaving their refresh token alive until it expired on its own.
+
+Caught in review, not by CI: **there was no sign-out test at all**, so the suite passed with the defect present. Fixed on the branch before merge (`458476c`), with the endpoint behaviour proven either side of the fix and a regression test pinning it. Recorded here because "the tests were green" was not what protected this, and the next reader should know that.
+
+### What this step does not claim
+
+- The database-backed proofs (FA-02, FA-03, and FA-06's schema, RLS, immutability, retention and concurrency assertions) execute **in CI only** — no local PostgreSQL was available. They run on every pull request against a disposable `postgres:17` container.
+- **RPO and RTO remain unset and are the owner's to define** — see [[Backup and Disaster Recovery]]. Restore *capability* is proven; the objectives are business commitments, not drill measurements.
+- The FA-06 and FA-07 retention purges are implemented and tested but **not yet scheduled**.
 
 ---
 
