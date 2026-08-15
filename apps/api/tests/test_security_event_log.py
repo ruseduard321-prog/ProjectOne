@@ -842,3 +842,83 @@ def test_the_anonymity_rule_is_load_bearing() -> None:
     )
 
     assert identified.user_id is not None
+
+
+# ------------------------------------------------- the sign-out contract --
+
+
+def test_sign_out_still_revokes_when_the_token_cannot_be_verified() -> None:
+    """**Recording must not narrow who can sign out.**
+
+    `sign_out` posts the caller's token to Supabase's `/logout`, which revokes
+    the whole session **including its refresh token**. The endpoint therefore
+    takes `AccessTokenDep` — which requires a bearer token to be *present*, not
+    to verify — and that is deliberate: signing out with an already-expired
+    access token is an ordinary client situation, and it must still kill the
+    refresh token upstream.
+
+    Adding `CurrentUserDep` to this route to obtain a user id for the audit
+    record would reject exactly that caller with a 401, leaving their refresh
+    token alive until it expired on its own — a security regression in the one
+    scenario sign-out exists for, introduced in the name of observability.
+
+    So the event is recorded **without** a user id rather than the route
+    demanding one. This test pins that trade the right way round.
+    """
+    import logging
+
+    from fastapi.testclient import TestClient
+
+    from app.core.dependencies import (
+        get_auth_service,
+        get_security_event_service,
+        get_settings,
+        get_token_service,
+    )
+    from app.core.security import InvalidTokenError
+    from app.main import create_app
+    from tests.test_auth_endpoints import USER, VALID_TOKEN, StubTokenService, make_settings
+
+    logging.disable(logging.CRITICAL)
+
+    revoked: list[str] = []
+
+    class _StubAuth:
+        def sign_out(self, token: str) -> None:
+            revoked.append(token)
+
+        def authenticate(self, token: str) -> object:
+            if token != VALID_TOKEN:
+                raise InvalidTokenError("rejected")
+            return USER
+
+    recorder = _RecordingEvents()
+    app = create_app()
+    app.dependency_overrides[get_settings] = make_settings
+    app.dependency_overrides[get_token_service] = lambda: StubTokenService(VALID_TOKEN, USER)
+    app.dependency_overrides[get_auth_service] = lambda: _StubAuth()
+    app.dependency_overrides[get_security_event_service] = lambda: recorder
+
+    try:
+        with TestClient(app, raise_server_exceptions=False) as client:
+            expired = client.post(
+                "/api/v1/auth/sign-out",
+                headers={"Authorization": "Bearer expired-but-present"},
+            )
+            missing = client.post("/api/v1/auth/sign-out")
+    finally:
+        app.dependency_overrides.clear()
+        logging.disable(logging.NOTSET)
+
+    # The whole point: an unverifiable *but present* token still revokes.
+    assert expired.status_code == 200, (
+        "a caller with an expired access token must still be able to sign out — "
+        "otherwise their refresh token survives until it expires on its own"
+    )
+    assert revoked == ["expired-but-present"]
+
+    # A missing token is still rejected: there is nothing to revoke.
+    assert missing.status_code == 401
+
+    # The event is recorded, and carries no user id, because none was verified.
+    assert [(call[0], call[2]) for call in recorder.calls] == [("auth.sign_out", None)]

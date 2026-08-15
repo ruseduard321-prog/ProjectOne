@@ -182,7 +182,6 @@ def sign_in(
 @router.post("/sign-out", response_model=MessageResponse, summary="Sign out")
 def sign_out(
     access_token: AccessTokenDep,
-    user: CurrentUserDep,
     auth_service: AuthServiceDep,
     events: SecurityEventServiceDep,
 ) -> MessageResponse:
@@ -192,15 +191,24 @@ def sign_out(
     client-side discard would leave the token valid until it expired, which is
     not what signing out means.
 
-    The identity comes from `CurrentUserDep` — the *verified* token — so the
-    recorded user id is one the platform established rather than one the caller
-    asserted. Revocation is the event an investigation most often needs a
-    timestamp for, which is why it is recorded even though it always succeeds
-    from the caller's point of view.
+    **`AccessTokenDep`, not `CurrentUserDep`, and that distinction is
+    load-bearing.** This route requires a token to be *present*, not to verify.
+    Signing out with an already-expired access token is an ordinary client
+    situation, and Supabase's `/logout` revokes the whole session — the refresh
+    token included — so that caller must still get through. Demanding a
+    verified identity here to obtain a `user_id` for the audit record would
+    reject them with a 401 and leave their refresh token alive until it expired
+    on its own: a security regression in the one scenario sign-out exists for,
+    traded for a nicer log line.
+
+    So the event is recorded **without** a user id. An unverified token cannot
+    tell us whose session this is, and recording an id we did not verify would
+    be worse than recording none — the correlation id ties the event to the
+    request either way.
     """
     auth_service.sign_out(access_token)
 
-    _record_success(events, SecurityEventType.SIGN_OUT, user_id=user.id)
+    _record_success(events, SecurityEventType.SIGN_OUT)
 
     return MessageResponse(message="Signed out")
 
