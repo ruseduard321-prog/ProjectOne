@@ -66,6 +66,16 @@ This is enforced by an executable architectural test, not by convention alone �
 
 The corollary is that there is no API by which a caller *could* pass a raw key, because an interface that accepts one cannot be made safe by documentation.
 
+### 4a. What is persisted is a locator, not a key
+
+Recorded at owner review on 2026-08-15, as a clarification of §4 rather than a new decision.
+
+The rule "callers never construct object keys" is only half a rule if the *persisted* value is a key. A file is stored in one request and served in another, so something is written to `assets.storage_path` — and had that been the constructed `ws/<uuid>/<name>`, the code reading it back would have had to parse it into a logical name, because no method accepts a key. Caller-side raw-path handling would return through the schema, and the column would record S3 addressing semantics that outlive the provider.
+
+**`put` therefore returns `StoredObject.locator`, which is the logical name**, and that is what is persisted. With the `workspace_id` already on the row it is exactly what `get`, `signed_url` and `delete` accept, so retrieval is a lookup rather than a parse. The constructed key never leaves the storage layer.
+
+A locator is not a capability: two workspaces legitimately persist the same string, and isolation comes from the workspace id supplied with it.
+
 ### 5. Workspace isolation is the path layer's responsibility
 
 Because R2 has no RLS equivalent, the key convention **is** the tenant boundary. A defect in it is a cross-tenant data leak with no second line of defence.

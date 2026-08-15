@@ -49,37 +49,84 @@ def _python_files_above_the_adapter_boundary() -> list[Path]:
     ]
 
 
-def _module_level_imported_roots(path: Path) -> set[str]:
-    """Return the top-level module names imported at *module scope* by one file.
+#: The **composition root**: the single module permitted to import a vendor SDK
+#: outside the adapter package, because something has to construct the client.
+#:
+#: Narrow on purpose. It is one file, named explicitly rather than matched by a
+#: pattern, and it is the only exemption -- adding a second one is a decision
+#: someone has to make deliberately by editing this constant, which is exactly
+#: the friction an architectural boundary should have.
+_COMPOSITION_ROOT = _APP_ROOT / "app" / "storage" / "factory.py"
 
-    Module scope specifically. `app/storage/factory.py` constructs the boto3
-    client inside a function, which is the documented shape: the SDK is not a
-    module-level dependency of anything, so importing any module above the
-    boundary never pulls a vendor SDK into the process.
 
-    Walking only the module body — rather than `ast.walk`, which would descend
-    into function bodies — is what encodes that distinction. A module-level
-    `import boto3` anywhere above the adapter package is the regression this
-    catches; a deferred one inside the single factory function is the design.
+def _vendor_references_at_any_depth(path: Path) -> set[str]:
+    """Return vendor module names imported anywhere in one file, at any depth.
+
+    **Any depth is the point.** An earlier version of this guard walked only
+    `tree.body`, which meant a module-scope `import boto3` failed the build
+    while the same import placed inside a function body passed it:
+
+        def check_exists(...):
+            import boto3          # invisible to a module-scope-only scan
+            ...
+
+    That is not a hypothetical shape -- deferring an import inside a function is
+    a normal Python idiom for avoiding a startup cost, so the loophole would
+    have been opened by someone following good practice for an unrelated reason,
+    not by someone circumventing the rule. A guard that only catches the obvious
+    spelling of a violation provides confidence rather than protection.
+
+    `ast.walk` visits every node, so a vendor import is caught wherever it is
+    written: module scope, function body, method, nested function, `try` block
+    or `if TYPE_CHECKING`. `importlib.import_module("boto3")` and similar
+    dynamic forms are caught by `_dynamic_vendor_references` below.
     """
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     roots: set[str] = set()
 
-    for node in tree.body:
+    for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             roots.update(alias.name.split(".")[0] for alias in node.names)
         elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
             roots.add(node.module.split(".")[0])
-        elif isinstance(node, ast.If):
-            # `if TYPE_CHECKING:` blocks are module scope in every sense that
-            # matters here -- a vendor type annotation would still be a leak.
-            for inner in ast.walk(node):
-                if isinstance(inner, ast.Import):
-                    roots.update(alias.name.split(".")[0] for alias in inner.names)
-                elif isinstance(inner, ast.ImportFrom) and inner.module and inner.level == 0:
-                    roots.add(inner.module.split(".")[0])
 
-    return roots
+    return roots & _VENDOR_MODULES
+
+
+def _dynamic_vendor_references(path: Path) -> set[str]:
+    """Return vendor names reached through a dynamic import in one file.
+
+    `import boto3` is not the only spelling. `importlib.import_module("boto3")`
+    and `__import__("boto3")` both produce the module without an `ast.Import`
+    node anywhere, so a guard checking only import statements would wave them
+    through -- and a reviewer scanning for the word "import" would too.
+
+    Only string-literal arguments are detected. A fully computed module name is
+    beyond static analysis, and pretending otherwise would give this guard a
+    reassuring but false completeness; what it does catch is every form anyone
+    would plausibly write on purpose.
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    found: set[str] = set()
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+
+        func = node.func
+        is_dynamic_import = (isinstance(func, ast.Name) and func.id == "__import__") or (
+            isinstance(func, ast.Attribute) and func.attr == "import_module"
+        )
+        if not is_dynamic_import:
+            continue
+
+        for argument in node.args:
+            if isinstance(argument, ast.Constant) and isinstance(argument.value, str):
+                root = argument.value.split(".")[0]
+                if root in _VENDOR_MODULES:
+                    found.add(root)
+
+    return found
 
 
 def _code_without_docstrings(module: object) -> str:
@@ -114,41 +161,90 @@ def _code_without_docstrings(module: object) -> str:
 
 
 class TestNoVendorSdkAboveTheBoundary:
-    """The import-level half of the guarantee."""
+    """The import-level half of the guarantee, at any nesting depth."""
 
-    def test_no_module_outside_the_adapter_package_imports_a_vendor_sdk(self) -> None:
+    def test_no_module_above_the_boundary_references_a_vendor_sdk(self) -> None:
         """The property this whole step exists to make durable.
 
-        `app/storage/factory.py` is the interesting case: it *constructs* the
-        boto3 client, but imports it inside the function body rather than at
-        module scope, so the vendor name never appears as a module-level
-        dependency. This test enforces that shape.
+        Checked at **any depth**, so a vendor import hidden inside a function
+        body fails exactly like one at module scope. Only the composition root
+        is exempt, and only because something must construct the client.
         """
         offenders: list[str] = []
 
         for path in _python_files_above_the_adapter_boundary():
-            leaked = _module_level_imported_roots(path) & _VENDOR_MODULES
+            if path == _COMPOSITION_ROOT:
+                continue
+            leaked = _vendor_references_at_any_depth(path) | _dynamic_vendor_references(path)
             if leaked:
                 offenders.append(f"{path.relative_to(_APP_ROOT)}: {sorted(leaked)}")
 
         assert not offenders, (
-            "A storage vendor SDK is imported above the adapter boundary, which "
-            "breaks provider independence (ADR-004 §3):\n" + "\n".join(offenders)
+            "A storage vendor SDK is referenced above the adapter boundary, which "
+            "breaks provider independence (ADR-004 §3). Vendor SDKs belong in "
+            "app/storage/providers/, and only app/storage/factory.py may "
+            "construct the client:\n" + "\n".join(offenders)
         )
 
-    def test_the_adapter_package_is_the_only_place_boto3_may_appear(self) -> None:
-        """Confirms the test above is not vacuous.
+    def test_the_composition_root_exemption_stays_narrow(self) -> None:
+        """The exemption must cover one file and one SDK, not a category.
 
-        If no file anywhere imported boto3, the assertion would pass while
-        proving nothing. This pins the SDK to exactly where it belongs.
+        An exemption nobody re-examines becomes a hole. Pinning both the file
+        and what it is allowed to reach means widening it requires editing this
+        test, which puts the decision in front of a reviewer.
         """
-        adapter_sources = list(_ADAPTER_PACKAGE.rglob("*.py"))
-        assert adapter_sources, "the adapter package should contain the vendor code"
+        assert _COMPOSITION_ROOT.exists()
+        assert _COMPOSITION_ROOT == _APP_ROOT / "app" / "storage" / "factory.py"
 
-        # boto3 is constructed in the factory (deferred import), and the adapter
-        # itself is written against the client object rather than the SDK -- so
-        # the vendor name legitimately appears in neither as a module import.
-        # What must hold is that it appears nowhere *else*.
+        # The one exempt file may reach boto3 -- and nothing else on the list.
+        referenced = _vendor_references_at_any_depth(_COMPOSITION_ROOT)
+        assert referenced == {"boto3"}, (
+            f"the composition root references {sorted(referenced)}; it is exempt "
+            "only for constructing the boto3 client"
+        )
+
+    def test_the_guard_is_not_vacuous(self) -> None:
+        """Confirms the scan actually finds vendor imports when they exist.
+
+        If `_vendor_references_at_any_depth` were broken -- a bad parse, an
+        empty file list -- every assertion above would pass while checking
+        nothing. This proves the detector detects.
+
+        Both negative controls are exercised as *source text*, so the check runs
+        against the same code path the real scan uses without writing a
+        violation into the repository.
+        """
+        module_level = "import boto3\n\n\ndef f() -> None:\n    pass\n"
+        function_local = "def f() -> None:\n    import boto3\n\n    return boto3\n"
+        dynamic = "import importlib\n\n\ndef f():\n    return importlib.import_module('boto3')\n"
+
+        scratch = _APP_ROOT / "_boundary_negative_control.py"
+        for label, source in (
+            ("module-level", module_level),
+            ("function-local", function_local),
+        ):
+            scratch.write_text(source, encoding="utf-8")
+            try:
+                assert _vendor_references_at_any_depth(scratch) == {"boto3"}, (
+                    f"the guard failed to detect a {label} vendor import"
+                )
+            finally:
+                scratch.unlink()
+
+        scratch.write_text(dynamic, encoding="utf-8")
+        try:
+            assert _dynamic_vendor_references(scratch) == {"boto3"}, (
+                "the guard failed to detect a dynamic vendor import"
+            )
+        finally:
+            scratch.unlink()
+
+    def test_the_adapter_package_actually_contains_the_vendor_code(self) -> None:
+        """The SDK must live somewhere, and that somewhere is the adapter side."""
+        assert list(_ADAPTER_PACKAGE.rglob("*.py")), (
+            "the adapter package should contain the vendor code"
+        )
+
         factory_source = Path(inspect.getfile(factory)).read_text(encoding="utf-8")
         assert "import boto3" in factory_source, (
             "the factory is expected to construct the boto3 client; if this moved, "

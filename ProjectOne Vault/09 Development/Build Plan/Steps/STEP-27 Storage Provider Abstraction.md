@@ -133,13 +133,50 @@ The prefix is **delimiter-terminated** (`ws/<uuid>/`), which is what makes conta
 
 **No shared infrastructure was touched.** No Cloudflare account, bucket, credential or API call, and no access to the shared Supabase project. Every proof runs in-process against a stand-in S3 client, which is what makes them runnable in CI.
 
-## Status: In Progress — awaiting the owner's review gate
+## Status: In Progress — one required proof outstanding
 
-Implementation, documentation and validation are complete, and **every required CI check is green** on [PR #13](https://github.com/ruseduard321-prog/ProjectOne/pull/13) (`api`, `web`, `governance docs`; `Supabase Preview` skipped).
+Owner review of [PR #13](https://github.com/ruseduard321-prog/ProjectOne/pull/13) on 2026-08-15 **approved the architecture** — R2 behind `StorageProvider`, tenant-safe construction from workspace UUID plus logical name, the dedicated adapter, the scoped mypy override, and storage being optional while no caller exists — and required four corrections. Three are complete; the fourth is a proof that cannot be performed without owner-provided credentials.
 
-The step is **not** `Done`, because it carries an owner approval gate: it is Critical under [[CLAUDE|CLAUDE.md]] §21 (infrastructure configuration and a new tenant boundary), and [[Execution Protocol#Step Completion]] requires that gate to be *satisfied* rather than merely pending. Silence is never approval.
+### Outstanding: the real R2 signed-URL expiry proof
 
-**Marked `Done` when:** the owner reviews and approves PR #13. Claude does not merge it.
+**The unit test is not the proof, and is no longer described as one.** `FakeS3Client` both manufactures the pseudo-presigned URL *and* implements the verifier that decides it expired, so a pass demonstrates the double agreeing with itself — not that R2 refuses an expired URL. It is retained, honestly labelled, as a deterministic CI test of the adapter's own contribution (that `expires_in` is forwarded, that out-of-range values are refused, that a URL addresses only the owning workspace's key).
+
+The required proof, still to be performed:
+
+1. a private disposable test object in a real R2 bucket;
+2. a real boto3 S3-compatible client against R2;
+3. a presigned GET URL at the minimum supported lifetime;
+4. an actual HTTP GET **before** expiry, returning the object;
+5. a wait past expiry;
+6. an actual HTTP GET **against the same URL**, refused by R2;
+7. deletion of the disposable object.
+
+**Blocked on:** owner-provided R2 credentials and a bucket, plus explicit approval to create a disposable object. No Cloudflare resource has been accessed or created. This proof is deliberately **not** wired into CI — live vendor credentials must not become a routine CI dependency.
+
+### Complete: persisted locator contract
+
+`StoredObject.key` returned the constructed `ws/<uuid>/<name>` key for persistence. That was a leak through the database: the code reading it back would have had to *parse* the key to recover a logical name, since no method accepts a key — reintroducing caller-side raw-path handling, and pinning S3 key semantics into `assets.storage_path`.
+
+`StoredObject.locator` now carries the **logical name**. Combined with `workspace_id`, already on the asset row, it is exactly what `get`/`signed_url`/`delete` accept:
+
+```
+stored = provider.put(workspace_id, logical_name, data, content_type)
+asset.storage_path = stored.locator                                   # persist
+provider.signed_url(asset.workspace_id, asset.storage_path, ttl)      # retrieve
+```
+
+No parsing, no reconstruction, **no migration** — the value fits the existing `text`/`char_length <= 1024` column.
+
+### Complete: boundary guard closed at any depth
+
+The guard walked only module scope, so a function-local `import boto3` in any service would have passed. It now walks every node, catches `importlib.import_module("boto3")` and `__import__`, and exempts exactly one file — `app/storage/factory.py`, the composition root — pinned by path and by permitted SDK. Verified non-vacuously against **both** a module-level and a function-local violation.
+
+### Complete: all-or-none configuration
+
+Zero R2 values is valid; four is valid; **one, two or three now fails at startup** naming the missing variables. Two defects were found and fixed while proving this:
+
+- **A secret leak.** Pydantic's default error rendering echoes the whole input mapping in an `input_value=...` clause — every credential the process started with, in plaintext, on its way to a log. `SecretStr` does not help, because the echo happens on raw input before field assignment. Fixed with `errors(include_input=False)` and hand-formatting. **This affected every existing secret** (`DATABASE_URL`, `SUPABASE_SECRET_KEY`, `byok_encryption_key`), not only the new ones.
+- **A crash in the error handler.** `get_settings()` indexed `item['loc'][0]` unconditionally; model-level validators report an empty `loc`, so the formatter raised `IndexError` while explaining a misconfiguration. This step's cross-field check is the first model-level validator in the file, which made the latent bug reachable.
 
 ## Audit Gaps Closed
 

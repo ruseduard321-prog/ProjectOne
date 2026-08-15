@@ -15,7 +15,8 @@ from enum import StrEnum
 from functools import lru_cache
 from ipaddress import IPv4Network, IPv6Network
 
-from pydantic import Field, SecretStr, ValidationError
+from pydantic import Field, SecretStr, ValidationError, model_validator
+from pydantic_core import ErrorDetails
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.core.client_address import parse_trusted_proxies
@@ -218,14 +219,58 @@ class Settings(BaseSettings):
             return None
         return f"https://{self.r2_account_id}.r2.cloudflarestorage.com"
 
+    @model_validator(mode="after")
+    def _reject_partial_storage_configuration(self) -> "Settings":
+        """Refuse a storage configuration that is present but incomplete.
+
+        **All four, or none.** Zero is valid — STEP-27 ships the abstraction
+        before any caller exists, so a deployment that never touches storage
+        must still start. Four is valid. One, two or three is a mistake, and
+        this is where it is caught.
+
+        Without this check, a partial configuration is silently identical to no
+        configuration: `storage_is_configured` reads False, the API starts, and
+        the omission surfaces much later as "storage is not configured" on the
+        first upload — pointing at the whole subsystem rather than at the one
+        variable that was actually missing. An operator who set three of four
+        values is told they set none, which is the least useful true statement
+        available.
+
+        Fails at startup rather than at first use because this is a deployment
+        fault, and a deployment fault found while someone is watching the deploy
+        is enormously cheaper than one found by a user (CLAUDE.md §24).
+
+        Returns:
+            The validated settings.
+
+        Raises:
+            ValueError: naming the **missing variables only**. Never the values:
+                two of the four are credentials, and an error message is exactly
+                the kind of place a secret leaks into a log (CLAUDE.md §16, §25).
+        """
+        present = {
+            "PROJECTONE_R2_ACCOUNT_ID": self.r2_account_id is not None,
+            "PROJECTONE_R2_BUCKET": self.r2_bucket is not None,
+            "PROJECTONE_R2_ACCESS_KEY_ID": self.r2_access_key_id is not None,
+            "PROJECTONE_R2_SECRET_ACCESS_KEY": self.r2_secret_access_key is not None,
+        }
+
+        if any(present.values()) and not all(present.values()):
+            missing = sorted(name for name, is_set in present.items() if not is_set)
+            raise ValueError(
+                "Object storage is partially configured. Set all four R2 "
+                "variables or none of them. Missing: " + ", ".join(missing)
+            )
+
+        return self
+
     @property
     def storage_is_configured(self) -> bool:
         """Return whether every value the storage adapter needs is present.
 
-        All four or none. A partially configured backend is the failure mode
-        worth naming explicitly: it starts, looks healthy, and fails on the
-        first upload with an error pointing at the credential rather than at the
-        missing configuration.
+        All four or none — enforced at startup by
+        `_reject_partial_storage_configuration`, so by the time this is read the
+        only reachable states are all-four and none.
         """
         return all(
             value is not None
@@ -267,6 +312,28 @@ class Settings(BaseSettings):
         return self.supabase_auth_url
 
 
+def _error_location(item: ErrorDetails) -> str:
+    """Return the environment variable name a validation error refers to.
+
+    Field errors carry the field name in `loc`, which becomes the variable name
+    once the `PROJECTONE_` prefix is applied. **Model-level errors carry an
+    empty `loc`** -- a `model_validator` checks a relationship between fields
+    rather than one field, so there is no single name to report.
+
+    That case is why this helper exists: indexing `loc[0]` unconditionally
+    raises `IndexError` while formatting the very message meant to explain a
+    misconfiguration, turning a clear startup failure into an unrelated crash
+    inside the error handler. The cross-field storage check is the first
+    model-level validator in this file, so the latent bug became reachable with
+    it.
+    """
+    location = item["loc"]
+    if not location:
+        # The validator's own message already names the variables involved.
+        return "configuration"
+    return f"{Settings.model_config['env_prefix']}{str(location[0]).upper()}"
+
+
 @lru_cache
 def get_settings() -> Settings:
     """Return the process-wide settings instance.
@@ -290,9 +357,19 @@ def get_settings() -> Settings:
         # default, because a default is what this design is avoiding.
         settings = Settings()  # type: ignore[call-arg]
     except ValidationError as error:
+        # `include_input=False` is load-bearing, not tidiness. Pydantic's default
+        # error rendering echoes the *entire* input mapping back in an
+        # `input_value=...` clause -- and for a settings model that mapping holds
+        # every credential the process was started with, in plaintext, on its way
+        # to a container log. `SecretStr` does not help here: it masks a value
+        # once it is a field, and this echo happens on the raw input before that.
+        #
+        # Each error is reformatted by hand below rather than passed through, so
+        # the only things printed are the variable name and the reason
+        # (CLAUDE.md §16, §25).
         details = "\n".join(
-            f"  - {Settings.model_config['env_prefix']}{str(item['loc'][0]).upper()}: {item['msg']}"
-            for item in error.errors()
+            f"  - {_error_location(item)}: {item['msg']}"
+            for item in error.errors(include_input=False)
         )
         sys.exit(
             "ProjectOne API cannot start: environment configuration is invalid.\n"

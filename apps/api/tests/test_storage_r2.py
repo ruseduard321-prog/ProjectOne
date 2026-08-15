@@ -26,7 +26,7 @@ from app.storage.errors import (
     StorageAccessDeniedError,
     StorageUnavailableError,
 )
-from app.storage.keys import InvalidLogicalNameError, build_object_key
+from app.storage.keys import MAX_LOGICAL_NAME_LENGTH, InvalidLogicalNameError
 from app.storage.provider import StorageProvider
 from app.storage.providers.r2 import (
     MAX_SIGNED_URL_EXPIRY,
@@ -166,7 +166,7 @@ class TestTheAdapterSatisfiesTheContract:
     def test_put_then_get_round_trips(self, provider: R2StorageProvider) -> None:
         stored = provider.put(WORKSPACE_A, "report.pdf", b"bytes", "application/pdf")
 
-        assert stored.key == build_object_key(WORKSPACE_A, "report.pdf")
+        assert stored.locator == "report.pdf"
         assert stored.size_bytes == 5
         assert stored.content_type == "application/pdf"
         assert provider.get(WORKSPACE_A, "report.pdf") == b"bytes"
@@ -270,14 +270,28 @@ class TestCrossWorkspaceAccessFailsClosed:
         assert client.deleted == []
 
 
-class TestSignedUrlExpiry:
-    """The expiry proof — by **using** an expired URL, not by reading metadata.
+class TestSignedUrlExpiryUnit:
+    """Unit-level expiry behaviour against the in-process fake.
 
-    STEP-27 requires this specific form of proof. Asserting on the `ExpiresIn`
-    value passed to the SDK would only prove the adapter forwarded a number; it
-    would pass just as happily against a backend that ignored expiry entirely.
-    The test below issues a URL that genuinely expires and then attempts to
-    fetch it, which is the property users actually depend on.
+    **This is not the mandatory expiry proof, and must not be described as one.**
+
+    `FakeS3Client` both manufactures the pseudo-presigned URL *and* implements
+    the verifier that decides it has expired. A passing test here therefore
+    demonstrates that the test double agrees with itself -- it says nothing
+    about whether a real boto3-signed URL is actually refused by Cloudflare R2
+    after its window closes.
+
+    What it does earn its place doing: it runs deterministically in CI with no
+    credentials, and it pins the adapter's own contribution -- that `expires_in`
+    is forwarded rather than ignored, that out-of-range values are refused
+    before a URL is issued, and that a URL addresses only the owning workspace's
+    key.
+
+    The real proof is an R2 integration test against a disposable private
+    object, recorded as outstanding in
+    [[STEP-27 Storage Provider Abstraction]] and gated on owner-provided
+    credentials. It is deliberately *not* wired into CI, because live vendor
+    credentials must not become a routine CI dependency.
     """
 
     def test_a_valid_signed_url_grants_access(
@@ -290,14 +304,15 @@ class TestSignedUrlExpiry:
 
         assert client.fetch(url) == b"secret-a"
 
-    def test_an_expired_signed_url_is_refused_when_used(
+    def test_an_expired_fake_url_is_refused_when_used(
         self, provider: R2StorageProvider, client: FakeS3Client
     ) -> None:
-        """**The required proof.** An expired URL is attempted and refused.
+        """An expired URL is *used* and refused -- against the fake, not R2.
 
-        The URL is issued with a one-second lifetime and then actually used
-        after that window has passed. The refusal comes from resolving the URL,
-        not from inspecting it.
+        Exercises the shape the real proof must take (issue, use, wait, use
+        again) so the integration test has a verified template. It does not
+        substitute for it: the component enforcing expiry here is the same
+        object that issued the URL.
         """
         provider.put(WORKSPACE_A, "report.pdf", b"secret-a", "application/pdf")
 
@@ -403,3 +418,107 @@ class TestVendorErrorsAreTranslated:
 
         assert BUCKET not in raised.value.public_message
         assert str(WORKSPACE_A) not in raised.value.public_message
+
+
+class TestPersistedLocatorRoundTrip:
+    """The persistence contract: store now, retrieve later, never parse a key.
+
+    STEP-28 uploads a file in one request and serves it back in another, so the
+    locator has to survive a round trip through `assets.storage_path`. The
+    question this class settles is what the *reading* code has to do with that
+    persisted value -- because if it has to parse `ws/<uuid>/<name>` to recover
+    a logical name, then caller-side raw-path handling has returned through the
+    database, and the interface's refusal to accept keys was cosmetic.
+
+    The answer is that it does nothing with it: the persisted value is passed
+    straight back, alongside the `workspace_id` already on the asset row.
+    """
+
+    def test_put_returns_the_logical_name_not_the_object_key(self) -> None:
+        """The locator must be provider-neutral, not an S3-shaped key.
+
+        Persisting `ws/<uuid>/<name>` would record one backend's addressing
+        scheme in a column that outlives the backend.
+        """
+        client = FakeS3Client()
+        provider = R2StorageProvider(client=client, bucket=BUCKET)
+
+        stored = provider.put(WORKSPACE_A, "report.pdf", b"bytes", "application/pdf")
+
+        assert stored.locator == "report.pdf"
+        assert "ws/" not in stored.locator
+        assert str(WORKSPACE_A) not in stored.locator
+
+    def test_the_full_key_never_leaves_the_storage_layer(self) -> None:
+        """The constructed key is used internally and not handed to the caller."""
+        client = FakeS3Client()
+        provider = R2StorageProvider(client=client, bucket=BUCKET)
+
+        stored = provider.put(WORKSPACE_A, "report.pdf", b"bytes", "application/pdf")
+
+        # Stored under the full key...
+        assert f"ws/{WORKSPACE_A}/report.pdf" in client.objects
+        # ...but that string is not what the caller was given.
+        assert stored.locator != f"ws/{WORKSPACE_A}/report.pdf"
+
+    def test_a_persisted_locator_retrieves_signs_and_deletes_without_parsing(
+        self,
+    ) -> None:
+        """**The round trip STEP-28 depends on**, with no string handling at all.
+
+        `persisted` stands in for `assets.storage_path` and `workspace_id` for
+        the column beside it. Every later operation takes them verbatim -- no
+        split, no strip, no prefix removal, no f-string.
+        """
+        client = FakeS3Client()
+        provider = R2StorageProvider(client=client, bucket=BUCKET)
+
+        # --- upload request: store, then persist ---------------------------
+        stored = provider.put(WORKSPACE_A, "report.pdf", b"secret-a", "application/pdf")
+        persisted_workspace_id = WORKSPACE_A  # assets.workspace_id
+        persisted_locator = stored.locator  # assets.storage_path
+
+        # --- a later request: read the row back and use it as-is -----------
+        assert provider.get(persisted_workspace_id, persisted_locator) == b"secret-a"
+
+        url = provider.signed_url(persisted_workspace_id, persisted_locator, timedelta(minutes=5))
+        assert client.fetch(url) == b"secret-a"
+
+        provider.delete(persisted_workspace_id, persisted_locator)
+        with pytest.raises(ObjectNotFoundError):
+            provider.get(persisted_workspace_id, persisted_locator)
+
+    def test_a_persisted_locator_is_still_workspace_scoped_on_retrieval(self) -> None:
+        """A locator is not a capability: it grants nothing across workspaces.
+
+        Two workspaces legitimately persist the *same* locator string, since it
+        is just the logical name. Isolation therefore has to come from the
+        workspace id supplied alongside it -- which is exactly what the key
+        construction does, and this proves the persisted form did not weaken it.
+        """
+        client = FakeS3Client()
+        provider = R2StorageProvider(client=client, bucket=BUCKET)
+
+        a = provider.put(WORKSPACE_A, "report.pdf", b"secret-a", "application/pdf")
+        b = provider.put(WORKSPACE_B, "report.pdf", b"secret-b", "application/pdf")
+
+        # Identical persisted values...
+        assert a.locator == b.locator
+
+        # ...still resolve to each workspace's own object, and never the other's.
+        assert provider.get(WORKSPACE_A, a.locator) == b"secret-a"
+        assert provider.get(WORKSPACE_B, b.locator) == b"secret-b"
+
+    def test_a_persisted_locator_fits_the_assets_storage_path_column(self) -> None:
+        """No migration is needed: the locator fits the existing constraint.
+
+        `assets.storage_path` is `text` with `char_length <= 1024`. A logical
+        name is bounded well below that, so the column takes the locator as-is.
+        """
+        client = FakeS3Client()
+        provider = R2StorageProvider(client=client, bucket=BUCKET)
+
+        longest = "a" * MAX_LOGICAL_NAME_LENGTH
+        stored = provider.put(WORKSPACE_A, longest, b"x", "application/pdf")
+
+        assert len(stored.locator) <= 1024

@@ -46,6 +46,8 @@ Four operations only — put, get, signed URL, delete. No listing, no multipart 
 >
 > Two rules follow, and neither is optional: **callers never supply a path** (every operation takes a workspace id and a logical name, and `app/storage/keys.py` is the only key constructor), and the workspace prefix is **delimiter-terminated** (`ws/<uuid>/`) so one workspace's namespace can never textually prefix another's.
 
+**What is persisted is a locator, not a key.** `put` returns `StoredObject.locator` — the logical name — and that is what `assets.storage_path` stores, beside the `workspace_id` already on the row. Retrieval passes both back unchanged. Persisting the constructed key would have forced the reading code to parse it back into a logical name, returning caller-side raw-path handling through the database and recording one backend's addressing scheme in a column that outlives it.
+
 ## Architecture Principles
 
 Modular services, stateless APIs where possible, event-driven processing, fault tolerance, observability and horizontal scalability.

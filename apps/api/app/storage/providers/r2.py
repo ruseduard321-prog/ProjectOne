@@ -119,7 +119,10 @@ class R2StorageProvider(StorageProvider):
         except Exception as error:  # noqa: BLE001 - translated below
             raise self._translate(error) from error
 
-        return StoredObject(key=key, size_bytes=len(data), content_type=content_type)
+        # The locator is the logical name, not `key`. The constructed key stays
+        # inside this layer so nothing above it ever holds an S3-shaped string
+        # it would have to parse to use again -- see `StoredObject`.
+        return StoredObject(locator=logical_name, size_bytes=len(data), content_type=content_type)
 
     def get(self, workspace_id: uuid.UUID, logical_name: str) -> bytes:
         """Return one workspace's object as bytes."""

@@ -30,6 +30,28 @@ could not be made safe by documentation -- the first caller to interpolate user
 input into one would reintroduce exactly the traversal bug the key module exists
 to prevent, and it would look entirely ordinary at the call site.
 
+## The persisted locator
+
+The same rule has to survive the round trip through the database, or it is only
+half a rule. A caller stores a file now and retrieves it in a different request,
+days later, so *something* is persisted -- and if that something were the object
+key, the reading code would have to parse `ws/<uuid>/<name>` back into a logical
+name to call anything here. Caller-side path handling would return through the
+schema.
+
+So `put` returns `StoredObject.locator`, which **is** the logical name, and that
+is what `assets.storage_path` stores. Retrieval passes it straight back with the
+workspace id already on the row:
+
+    stored = provider.put(workspace_id, logical_name, data, content_type)
+    asset.storage_path = stored.locator          # persist
+
+    provider.signed_url(asset.workspace_id, asset.storage_path, ttl)   # retrieve
+
+No parsing, no splitting, no reconstruction -- and no S3 key semantics recorded
+in a column that would outlive the provider that inspired them. The constructed
+key stays inside `app.storage.keys`.
+
 ## What is deliberately not on this interface
 
 Kept narrow on purpose, following the restraint `app/ai/provider.py` established
@@ -67,13 +89,33 @@ class StoredObject:
     mutable result is one a later caller can edit into a description of an
     object that does not exist.
 
-    `key` is the *constructed* key, returned so the caller can persist it (this
-    is what `assets.storage_path` stores). It is an output of construction, never
-    an input to it -- returning a key does not let a caller invent one, because
-    no method accepts one.
+    ## Why this carries a locator rather than the object key
+
+    An earlier draft returned the constructed `ws/<uuid>/<name>` key for the
+    caller to persist. That was a leak wearing a helpful face: the moment a key
+    is persisted, the code that later reads it has to turn it back into
+    something the interface accepts -- and since no method takes a key, it would
+    have to *parse* `ws/<uuid>/<name>` to recover the logical name. That is
+    caller-side handling of a raw storage path, which is the exact invariant
+    this design exists to prevent, reintroduced through the database instead of
+    through a signature.
+
+    It would also have pinned S3 key semantics into `assets.storage_path`. A
+    future backend whose addressing is not a slash-delimited key would then have
+    a schema full of rows in another provider's dialect.
+
+    So what is returned -- and what is persisted -- is `locator`: the **logical
+    name**, the same value that was passed in. Combined with the `workspace_id`
+    already on the asset row, it is exactly what `get`, `signed_url` and
+    `delete` accept, so retrieval is a lookup rather than a parse.
+
+    The full object key never leaves the storage layer.
     """
 
-    key: str
+    #: The value to persist (`assets.storage_path`). Provider-neutral and
+    #: passed straight back to `get`/`signed_url`/`delete` alongside the
+    #: workspace id -- never parsed, never split, never concatenated.
+    locator: str
     size_bytes: int
     content_type: str
 
