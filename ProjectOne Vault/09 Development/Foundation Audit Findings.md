@@ -66,7 +66,7 @@ The findings record produced by [[STEP-25 Foundation Audit and Internal Readines
 - **Consequence:** Isolation is **verified**. What remains is narrower: **a developer machine without PostgreSQL runs a suite that silently omits 306 of 734 tests and still reports green.** Locally the flag is unset, so the same fixture takes the `pytest.skip` branch. The risk is a contributor believing a local green run covers isolation when it does not — a false-confidence gap, not an unproven control.
 - **Recommended disposition:** Close the local gap so the omission is visible: print a prominent summary banner when the isolation suite is skipped, and document the one-line invocation for running it against a disposable container. Scheduled in [[STEP-25a Foundation Remediation]].
 - **Owner decision:** **Reclassified Medium on 2026-08-15.** *"Do not conflate 'cannot run locally' with 'not verified anywhere.'"* Isolation is proven in CI; this is a developer-environment verification gap.
-- **Status:** Open
+- **Status:** **Closed 2026-08-15** — **Closed** by [[STEP-25a Foundation Remediation]] (commit `8d49fe1`). An end-of-run banner in `tests/conftest.py` names the omitted count, states that isolation *is* proven in CI so the wording does not overstate the gap, and gives the one-line invocation for a disposable container. Observed: a full offline run reports **306 database-backed tests were NOT run** as the last thing on screen, and still passes — the skip is deliberately not a hard local failure.
 
 
 ### FA-02
@@ -77,7 +77,7 @@ The findings record produced by [[STEP-25 Foundation Audit and Internal Readines
 - **Consequence:** Reversibility is asserted by inspection, not demonstrated. A downgrade that fails only at runtime — a dropped object another migration depends on, an ordering error — would be invisible to this audit. **No complete downgrade verification exists anywhere**, including CI: the API job applies migrations forward to set the schema up and never exercises the reverse direction. Unlike FA-01, there is no other environment in which this is already proven, which is why it stays High.
 - **Recommended disposition:** Execute a full downgrade-to-base then upgrade-to-head cycle against the CI service container, and consider adding it as a CI step.
 - **Owner decision:** **Accepted 2026-08-15 — High retained.** No complete downgrade verification exists anywhere, including CI. Scheduled in [[STEP-25a Foundation Remediation]] (task 5).
-- **Status:** Open
+- **Status:** **Closed 2026-08-15** — **Closed** by [[STEP-25a Foundation Remediation]] (commit `8d49fe1`). `scripts/migration_cycle_drill.py` executes `upgrade head` → `downgrade base` → `upgrade head` and compares the twice-migrated schema against the once-migrated one across tables, columns, constraints, indexes, RLS flags, policies and functions. Wired into CI as a required step of the `api` job, so reversibility is re-proven on every pull request rather than asserted once. **Executes in CI only** — see the limitation note below.
 
 ### FA-03
 - **Area:** Backup and restore
@@ -87,7 +87,7 @@ The findings record produced by [[STEP-25 Foundation Audit and Internal Readines
 - **Consequence:** ProjectOne has **no demonstrated ability to restore from backup**, and no numeric recovery objective to restore against. This is the single largest unproven guarantee in the Foundation.
 - **Recommended disposition:** Owner decision required — D1 mandates a stop here. Likely its own numbered step: provision a disposable PostgreSQL, execute a schema-plus-data restore drill, and give [[Backup and Disaster Recovery]] real RPO/RTO numbers.
 - **Owner decision:** **Accepted 2026-08-15 — High retained.** Remediation must establish an **executed** backup/restore drill on a disposable PostgreSQL environment, never shared Supabase data. Scheduled in [[STEP-25a Foundation Remediation]] (task 2).
-- **Status:** Open
+- **Status:** **Closed 2026-08-15** — **Closed** by [[STEP-25a Foundation Remediation]] (commit `8d49fe1`). `scripts/backup_restore_drill.py` seeds **two workspaces**, dumps with `pg_dump`, restores into a **separate empty database**, and verifies schema *and* per-workspace data. Two workspaces deliberately: one proves the rows returned, two prove they returned attached to the right tenant. Both drills refuse to run against `supabase.co`, RDS or Azure hosts before connecting. **Executes in CI only** — see the limitation note below.
 
 ### FA-04
 - **Area:** Incomplete product behaviour / reliability
@@ -97,7 +97,7 @@ The findings record produced by [[STEP-25 Foundation Audit and Internal Readines
 - **Consequence:** The root boundary's "Try again" control does not recover. It is the boundary [[STEP-16b Auth Refresh Outage Handling]] depends on for outage recovery — a route-level boundary cannot catch a failure in the layout that wraps it — so the product's stated recovery path for an API outage is inert. STEP-16b's manual checklist recorded "a working retry control" against this wiring.
 - **Recommended disposition:** One-line fix using the existing `useErrorRecovery`. **Not performed here** (D4). Owner decides whether it becomes a remediation step before [[STEP-26 Product Design System and Screen Blueprints]].
 - **Owner decision:** **Accepted 2026-08-15 — High retained.** Kept separate from FA-11: same file, but a functional defect rather than an accessibility one. Scheduled in [[STEP-25a Foundation Remediation]] (task 3).
-- **Status:** Open
+- **Status:** **Closed 2026-08-15** — **Closed** by [[STEP-25a Foundation Remediation]] (commit `049456c`). `apps/web/src/app/error.tsx` now recovers through `useErrorRecovery(reset)`. **Verified by observation, not only by test**: with a fault injected into a Server Component, clicking *Try again* produced a real server request (1 → 2 in the dev-server log, where the old wiring produced zero across three clicks), and with the fault cleared a single click took the boundary to the fully recovered page without a reload.
 
 ### FA-05
 - **Area:** Security — log redaction / secret exposure
@@ -107,7 +107,7 @@ The findings record produced by [[STEP-25 Foundation Audit and Internal Readines
 - **Consequence:** A database connection failure — precisely the scenario [[DOC-02 Validate the Request-Path Credential at Startup]] describes as reachable via a rotated or wrong credential — can write a live database password into application logs. **The owner raised this to Critical on 2026-08-15**: the severity model's Critical test is *a secret is exposed in ... logs*, and the path is reachable, which settles it regardless of whether it has yet occurred. A logged database password is a credential an operator, a log aggregator, or anyone with log access can read. **This finding blocks progression to design** and is remediated first in [[STEP-25a Foundation Remediation]].
 - **Recommended disposition:** Add a URI-password pattern and a key-shaped pattern to the redaction set, with a negative-control test proving the un-redacted form fails. **First item in [[STEP-25a Foundation Remediation]].**
 - **Owner decision:** **Critical, 2026-08-15.** *"A reachable path that writes a plaintext database password into logs is a secret-exposure defect and must block progression to design."*
-- **Status:** Open
+- **Status:** **Closed 2026-08-15** — **Closed** by [[STEP-25a Foundation Remediation]] (commit `8e20702`) — the Critical finding, remediated first. Three named patterns added to `_REDACTIONS`: `_URI_PASSWORD`, `_KEY_SHAPED_ENV` and `_KEY_SHAPED_URL`. The URI rule replaces only the password, keeping scheme, user, host and database so a connection failure stays diagnosable. **Proven by reproduction and negative control**: 16 tests failed first, including the end-to-end probe showing the plaintext password in the emitted record; each rule was then physically deleted from the tuple, turning the suite red (10, 5 and 2 failures respectively).
 
 ### FA-06
 - **Area:** Security / observability
@@ -117,7 +117,7 @@ The findings record produced by [[STEP-25 Foundation Audit and Internal Readines
 - **Consequence:** The most security-relevant events in the product leave no audit trail. A credential-stuffing attempt or a suspicious session would be unreconstructable after the fact.
 - **Recommended disposition:** Own numbered step, or fold into whichever step next touches authentication.
 - **Owner decision:** **Accepted 2026-08-15 — Medium.** Scheduled in [[STEP-25a Foundation Remediation]] (task 7), with the constraint that a failed attempt must not become an account-existence oracle.
-- **Status:** Open
+- **Status:** **Open — BLOCKED on an owner decision.** [[STEP-25a Foundation Remediation]] could not close this without inventing a schema, which [[CLAUDE|CLAUDE.md]] §34 forbids. `audit_log` is deliberately tenant-scoped: `workspace_id` is `NOT NULL` with a `RESTRICT` foreign key, `actor_id` is `NOT NULL`, and the RLS policy filters on `workspace_id IN app_current_user_workspaces()`. Migration `a3c07d5e91f4` states the reasoning outright — *a nullable tenant column on a tenant-scoped table is a row that no policy can classify*. **Authentication events have neither column.** `sign_in` receives only an email and a password; there is no workspace until one is selected, and a *failed* attempt has no authenticated actor and may name no existing account at all. Storing them therefore requires one of: **(a)** making `workspace_id` nullable, reversing a documented multi-tenancy decision; **(b)** a separate `security_event_log` table with its own RLS model; or **(c)** structured application logs only, with no new table. Each is a schema or multi-tenancy change and therefore **Critical** under §21, requiring the owner's decision before implementation. See [[STEP-25a Foundation Remediation#FA-06 owner decision required]].
 
 ### FA-07
 - **Area:** Security / data retention
@@ -127,7 +127,7 @@ The findings record produced by [[STEP-25 Foundation Audit and Internal Readines
 - **Consequence:** Audit retention is unbounded, so the documented exception to user erasure is unbounded too. A compliance gap against §16's own wording, and it grows without limit.
 - **Recommended disposition:** Implement a **90-day** retention policy with a scheduled purge, made configurable before public release, and test the deletion/retention behaviour rather than only implementing it. Scheduled in [[STEP-25a Foundation Remediation]].
 - **Owner decision:** **Set on 2026-08-15 — initial audit-event retention is 90 days, configurable before public release.** The remediation must define deletion/retention behaviour *and* test it.
-- **Status:** Open
+- **Status:** **Closed 2026-08-15** — **Closed** by [[STEP-25a Foundation Remediation]] (commit `c196438`). 90 days via `PROJECTONE_AUDIT_RETENTION_DAYS`, configurable rather than hard-coded. Zero means *retain indefinitely* and never reaches a `DELETE`; a negative window is rejected at startup, since it would place the cutoff in the future and expire every row. The purge is a filtered `DELETE` over the privileged connection, never `TRUNCATE`. 15 tests pin the boundary in both directions; removing the `WHERE` clause turns the guard red. [[Table - audit_log]] updated.
 
 ### FA-08
 - **Area:** Tests and CI
@@ -137,7 +137,7 @@ The findings record produced by [[STEP-25 Foundation Audit and Internal Readines
 - **Consequence:** Drift between the canonical vault governance documents and the repository-root `CLAUDE.md` / `AGENTS.md` — the files the agent harnesses actually read — can reach `main` unblocked.
 - **Recommended disposition:** Add `governance docs (sync check)` to the `Protect main` ruleset's required checks. This is an **owner-operated repository-setting action** that Claude cannot perform, and it must be **verified before [[STEP-25a Foundation Remediation]] can complete**.
 - **Owner decision:** **Approved on 2026-08-15 — the governance-docs job must become a required main-branch check.** Recorded as an owner-operated setting change, verified as part of STEP-25a's Definition of Done.
-- **Status:** Open
+- **Status:** **Closed 2026-08-15** — **Closed** by [[STEP-25a Foundation Remediation]] (commit `284f29a`) — **verified, and no owner action is outstanding**. The `Protect main` ruleset (id `20714051`, `active`, updated 2026-08-11) lists `governance docs (sync check)` among its required status checks alongside `web` and `api`. The owner had already made the change; the workflow comment claiming otherwise was stale and is corrected. A new test guards the rename hazard the verification exposed: the ruleset matches on the literal check name, so renaming the job would silently remove the gate.
 
 ### FA-09
 - **Area:** Documentation
@@ -167,7 +167,7 @@ The findings record produced by [[STEP-25 Foundation Audit and Internal Readines
 - **Consequence:** When the root boundary renders — the outage path from [[STEP-16b Auth Refresh Outage Handling]] — a screen-reader user receives no announcement that an error occurred. Compounds FA-04 on the same file.
 - **Recommended disposition:** Add the alert role alongside the FA-04 fix. Feeds [[STEP-26 Product Design System and Screen Blueprints]]'s accessibility rules.
 - **Owner decision:** **Accepted 2026-08-15 — Medium retained.** Kept separate from FA-04: same file, but an accessibility finding with its own proof. Scheduled in [[STEP-25a Foundation Remediation]] (task 4).
-- **Status:** Open
+- **Status:** **Closed 2026-08-15** — **Closed** by [[STEP-25a Foundation Remediation]] (commit `049456c`). The root boundary's message container now carries `role="alert"`, matching the arrangement all four route boundaries already use. **Verified by observation**: the rendered accessibility tree shows an `alert` node wrapping the heading, message, retry control and reference — the node a screen reader announces, where previously there was no role at all.
 
 ### FA-12
 - **Area:** AI spend / observability
@@ -266,6 +266,31 @@ Per **D2**: existing tools only, single-user, local, repeated. **These are indic
 | Client JS shipped | — | **663 KB** across 19 chunks |
 
 No HTTP journey timings were taken: that would require running the application against the shared database, which execution rule 5 makes read-only and rule 12 requires asking about first.
+
+## Remediation outcome — STEP-25a, 2026-08-15
+
+**Eight of the nine scheduled findings are closed. One is blocked on an owner decision.**
+
+| ID | Severity | Outcome | Proof |
+|---|---|---|---|
+| **FA-05** | **Critical** | **Closed** | Reproduction + three negative controls |
+| FA-03 | High | **Closed** | Executed drill, CI only |
+| FA-04 | High | **Closed** | Observed recovery, 1 → 2 server requests |
+| FA-11 | Medium | **Closed** | Observed `alert` node in the accessibility tree |
+| FA-02 | High | **Closed** | Executed cycle, CI only |
+| FA-01 | Medium | **Closed** | Observed banner, 306 named |
+| **FA-06** | Medium | **BLOCKED** | Owner decision required — see the finding |
+| FA-07 | Medium | **Closed** | 15 tests, boundary pinned both directions |
+| FA-08 | Medium | **Closed** | Ruleset verified via API |
+
+**The Critical finding is closed**, so the consequence that created this step — *FA-05 blocks progression to design* — no longer holds.
+
+### Limitations, stated rather than implied
+
+- **FA-02 and FA-03 execute in CI only.** The remediation environment has no Docker, no WSL distribution, no PostgreSQL server and no `pg_dump`/`psql`, so neither drill was run locally. Provisioning one would have meant installing software on the owner's machine, which the execution rules make a stop-and-ask. Both are wired into the `api` job against the existing disposable `postgres:17` service container, so they execute on every pull request — **the proof is CI's, and it is real, but it is not a local reproduction.** Until that job completes green on this branch, both findings are closed *pending CI confirmation*.
+- **FA-04's observation used an injected fault**, not a genuine API outage: reaching the authenticated routes needs credentials this environment does not hold. The injected fault exercises the same code path — a Server Component throwing, caught by the root boundary — and the fault injection was fully reverted, with the working tree confirmed byte-identical to the commit.
+- **FA-11 was verified through the rendered accessibility tree**, which is what a screen reader consumes, rather than with a screen reader itself.
+- **FA-07's purge is implemented and tested, but nothing schedules it yet.** The mechanism, its configuration and its boundary behaviour are proven; wiring it to a scheduler is deployment work that belongs with the infrastructure it runs on.
 
 ## Approved remediation order
 

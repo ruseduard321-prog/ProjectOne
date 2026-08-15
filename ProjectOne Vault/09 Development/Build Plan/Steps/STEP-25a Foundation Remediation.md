@@ -145,6 +145,26 @@ Any schema change here is **expand/contract** and ships with its RLS unchanged (
 
 **Claude cannot perform this** — it is a repository-settings change only the owner can make. This task is therefore: request it explicitly, then **verify it took effect** by observing the ruleset's required-check list or a PR that reports the check as required. Verification is part of this step's Definition of Done; the change itself is the owner's action.
 
+## FA-06 owner decision required
+
+**Task 7 is blocked, and deliberately not guessed at.** Auditing authentication events cannot be done through the existing `AuditService` without changing a documented multi-tenancy decision, and [[CLAUDE|CLAUDE.md]] §34 forbids inventing a schema.
+
+**The constraint.** `audit_log` is tenant-scoped by design (migration `a3c07d5e91f4`): `workspace_id` is `NOT NULL` with a `RESTRICT` foreign key, `actor_id` is `NOT NULL`, and the RLS policy filters on `workspace_id IN app_current_user_workspaces()`. The migration states the reasoning outright — *a nullable tenant column on a tenant-scoped table is a row that no policy can classify.*
+
+**Why authentication events do not fit.** `POST /auth/sign-in` receives an email and a password and nothing else. There is no workspace until one is selected, and no authenticated actor until the attempt succeeds. A **failed** attempt — the most security-relevant case, and the one FA-06 names explicitly — has neither, and may name no existing account at all.
+
+### The three options
+
+| | Option | What it costs | What it buys |
+|---|---|---|---|
+| **A** | Make `workspace_id` nullable on `audit_log` | Reverses a documented decision; creates rows no RLS policy can classify; every existing policy and query needs re-examination | One table, one query path |
+| **B** | A separate `security_event_log` table | A new table, a new RLS model, a new migration, a second thing to retain and purge | Keeps `audit_log`'s tenant invariant intact; the natural home for events that are genuinely not tenant-scoped |
+| **C** | Structured application logs only | No queryable trail; no retention policy; not an audit record in the §16 sense | No schema change at all |
+
+**Recommendation: B.** It is the only option that records failed attempts *and* leaves `audit_log`'s tenant invariant untouched. A is a multi-tenancy regression traded for convenience, and C does not satisfy §16's requirement for an audit trail of security-relevant actions — it would close the finding on paper only.
+
+**This is Critical either way** ([[CLAUDE|CLAUDE.md]] §21: schema, security controls, multi-tenancy), so it needs the owner's decision before implementation, not after. The two constraints the audit attached hold under any option: no credential, token or cookie value may enter the record, and a failed attempt must not become an account-existence oracle — the property `core/errors.py` already protects in its 401 responses.
+
 ## Validation
 
 Observed, not assumed. Every check names its instrument, and every fix to a control carries a **negative control** proving the test fails without it.
