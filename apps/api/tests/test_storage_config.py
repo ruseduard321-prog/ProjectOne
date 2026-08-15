@@ -9,12 +9,43 @@ misleading "storage is not configured" on the first upload.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pytest
 from pydantic import ValidationError
 
 from app.core.config import Settings, _error_location
+
+
+@pytest.fixture(autouse=True)
+def isolate_from_ambient_configuration(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Cut these tests off from the developer's real environment.
+
+    Without this the suite is **environment-dependent in the worst way**: it
+    passed on a machine with no R2 configured and failed on one with, because
+    `Settings` reads `.env` and `PROJECTONE_*` variables. A case constructing a
+    deliberately partial configuration would have the missing values quietly
+    supplied from the ambient environment, so the assertion that partial input
+    is rejected would be testing a *complete* input and failing.
+
+    Both sources are removed: every `PROJECTONE_R2_*` variable, and the `.env`
+    file itself (repointed at an empty file in a temp directory). What the test
+    passes in is then the only configuration that exists, which is the only way
+    these assertions mean what they say.
+    """
+    for name in (
+        "PROJECTONE_R2_ACCOUNT_ID",
+        "PROJECTONE_R2_BUCKET",
+        "PROJECTONE_R2_ACCESS_KEY_ID",
+        "PROJECTONE_R2_SECRET_ACCESS_KEY",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    empty_env = tmp_path / ".env"
+    empty_env.write_text("", encoding="utf-8")
+    monkeypatch.setitem(Settings.model_config, "env_file", str(empty_env))
+
 
 #: Everything unrelated to storage that `Settings` requires. Storage validity is
 #: what is under test, so the rest is held constant and valid.

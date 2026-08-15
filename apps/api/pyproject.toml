@@ -102,3 +102,10 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# `integration` marks tests that reach a real external service. They are
+# additionally gated behind an explicit opt-in environment variable, so a plain
+# `pytest` run never touches a live account -- live vendor credentials must not
+# become a routine CI dependency (STEP-27 review).
+markers = [
+    "integration: reaches a real external service; opt-in, never in shared CI",
+]

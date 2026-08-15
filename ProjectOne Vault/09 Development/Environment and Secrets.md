@@ -99,6 +99,10 @@ Three properties are deliberate:
 - **All four or none.** A partially configured backend starts, looks healthy, and fails on the first upload with an error pointing at the credential instead of at the missing configuration. `Settings.storage_is_configured` is what makes that check one decision rather than four.
 - **The endpoint is derived, never configured.** `https://<ACCOUNT_ID>.r2.cloudflarestorage.com` is a pure function of the account id; accepting it separately would create two values that can disagree, and a deployment pointed at another account's endpoint is a tenant-isolation failure rather than a typo.
 
+**The R2 integration proof is opt-in and never runs in CI.** `tests/test_storage_r2_integration.py` reaches a real bucket, so it is double-gated: storage must be configured *and* `PROJECTONE_RUN_R2_INTEGRATION_TESTS=1` must be set. Two gates rather than one so a developer who happens to have R2 configured does not start writing to a live bucket as a side effect of running tests.
+
+**Live vendor credentials must not become a routine CI dependency.** A suite that cannot run without a Cloudflare account fails on every fork and every credential rotation, and the usual response to that is to weaken the test rather than fix the credential.
+
 **Backend only.** These never appear in `apps/web` in any form — see the `NEXT_PUBLIC_` trap above. A browser that could read them could read every workspace's objects.
 
 ## Configuration Changes Behavior, Not Code Paths

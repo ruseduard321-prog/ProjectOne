@@ -6,14 +6,14 @@ version: "2.0"
 last_updated: 2026-08-15
 tags: [engineering, workflow, build-step, backend, infrastructure]
 step_id: STEP-27
-step_status: In Progress
+step_status: Done
 detail_level: full
 phase: "Platform Substrate"
 ---
 
 # STEP-27 — Storage Provider Abstraction
 
-**Status:** In Progress
+**Status:** Done
 **Phase:** Platform Substrate — The absent infrastructure every media, approval and automation capability sits behind: storage, async execution, and enough notification to make an asynchronous run visible.
 **Detail level:** full — expanded by [[STEP-26 Product Design System Foundation]], per [[Execution Protocol#Progressive Detail]].
 
@@ -133,31 +133,37 @@ The prefix is **delimiter-terminated** (`ws/<uuid>/`), which is what makes conta
 
 **No shared infrastructure was touched.** No Cloudflare account, bucket, credential or API call, and no access to the shared Supabase project. Every proof runs in-process against a stand-in S3 client, which is what makes them runnable in CI.
 
-## Status: In Progress — one required proof outstanding
+## Status: Done — all four review corrections complete
 
-Owner review of [PR #13](https://github.com/ruseduard321-prog/ProjectOne/pull/13) on 2026-08-15 **approved the architecture** — R2 behind `StorageProvider`, tenant-safe construction from workspace UUID plus logical name, the dedicated adapter, the scoped mypy override, and storage being optional while no caller exists — and required four corrections. Three are complete; the fourth is a proof that cannot be performed without owner-provided credentials.
+Owner review of [PR #13](https://github.com/ruseduard321-prog/ProjectOne/pull/13) on 2026-08-15 **approved the architecture** — R2 behind `StorageProvider`, tenant-safe construction from workspace UUID plus logical name, the dedicated adapter, the scoped mypy override, and storage being optional while no caller exists — and required four corrections. All four are now complete.
 
-### Outstanding: the real R2 signed-URL expiry proof
+### ✅ Real R2 signed-URL expiry proof — performed 2026-08-15
 
-**The unit test is not the proof, and is no longer described as one.** `FakeS3Client` both manufactures the pseudo-presigned URL *and* implements the verifier that decides it expired, so a pass demonstrates the double agreeing with itself — not that R2 refuses an expired URL. It is retained, honestly labelled, as a deterministic CI test of the adapter's own contribution (that `expires_in` is forwarded, that out-of-range values are refused, that a URL addresses only the owning workspace's key).
+**Performed live against the `projectone-dev` bucket with explicit owner approval.** This is the proof the unit test structurally could not provide: there, `FakeS3Client` both issues the URL and decides it expired, so a pass shows the double agreeing with itself. Here boto3 signs and **Cloudflare refuses**.
 
-The required proof, still to be performed:
+| Step | Observed |
+|---|---|
+| Disposable private object created | `ws/<workspace-uuid>/step27-evidence-<random>.txt`, 38 bytes |
+| Presigned GET issued | minimum supported lifetime — **1 second** |
+| URL addresses the workspace key | confirmed — `ws/<uuid>/<name>` present in the URL |
+| HTTP GET **before** expiry | **`200`**, body byte-identical to what was stored |
+| Wait | lifetime + 5s margin (R2's clock is not this machine's) |
+| HTTP GET **after** expiry, same URL | **`403`** — `<Code>ExpiredRequest</Code><Message>Request has expired</Message>` |
+| Object itself after expiry | still readable through the API — expiry invalidates the *URL*, not the data |
+| Disposable object deleted | yes |
+| Cleanup verified | `ObjectNotFoundError` on re-read; **bucket listing shows 0 objects** |
 
-1. a private disposable test object in a real R2 bucket;
-2. a real boto3 S3-compatible client against R2;
-3. a presigned GET URL at the minimum supported lifetime;
-4. an actual HTTP GET **before** expiry, returning the object;
-5. a wait past expiry;
-6. an actual HTTP GET **against the same URL**, refused by R2;
-7. deletion of the disposable object.
+Both fetches were plain `urllib` HTTP requests carrying **no credentials** — deliberately not boto3, because the property users depend on is that anything speaking HTTP can use a presigned URL, and fetching through the SDK that signed it would test something narrower.
 
-**Blocked on:** owner-provided R2 credentials and a bucket, plus explicit approval to create a disposable object. No Cloudflare resource has been accessed or created. This proof is deliberately **not** wired into CI — live vendor credentials must not become a routine CI dependency.
+The proof is committed as `tests/test_storage_r2_integration.py`, marked `integration` and **double-gated**: it skips unless storage is configured *and* `PROJECTONE_RUN_R2_INTEGRATION_TESTS=1` is set. **It is deliberately not wired into CI** — live vendor credentials must not become a routine CI dependency, since a suite that fails on every fork and every credential rotation gets weakened rather than fixed. Two gates rather than one so a developer who happens to have R2 configured does not start writing to a real bucket as a side effect of running tests.
 
-### Complete: persisted locator contract
+**Nothing else in the Cloudflare account was read, created or modified. Shared Supabase was not accessed.**
 
-`StoredObject.key` returned the constructed `ws/<uuid>/<name>` key for persistence. That was a leak through the database: the code reading it back would have had to *parse* the key to recover a logical name, since no method accepts a key — reintroducing caller-side raw-path handling, and pinning S3 key semantics into `assets.storage_path`.
+### ✅ Persisted locator contract
 
-`StoredObject.locator` now carries the **logical name**. Combined with `workspace_id`, already on the asset row, it is exactly what `get`/`signed_url`/`delete` accept:
+`StoredObject.key` returned the constructed `ws/<uuid>/<name>` for persistence. That was the raw-path rule leaking through the database rather than through a signature: the code reading `storage_path` back would have had to *parse* it into a logical name, since no method accepts a key — and the column would have recorded S3 addressing semantics outliving the provider.
+
+`StoredObject.locator` now carries the **logical name**. With `workspace_id`, already on the asset row, it is exactly what `get`/`signed_url`/`delete` accept:
 
 ```
 stored = provider.put(workspace_id, logical_name, data, content_type)
@@ -165,18 +171,28 @@ asset.storage_path = stored.locator                                   # persist
 provider.signed_url(asset.workspace_id, asset.storage_path, ttl)      # retrieve
 ```
 
-No parsing, no reconstruction, **no migration** — the value fits the existing `text`/`char_length <= 1024` column.
+No parsing, no reconstruction, **no migration** — the value fits the existing `text` / `char_length <= 1024` column. A locator is not a capability: two workspaces legitimately persist the same string, and isolation comes from the workspace id passed with it.
 
-### Complete: boundary guard closed at any depth
+### ✅ Boundary guard closed at any depth
 
-The guard walked only module scope, so a function-local `import boto3` in any service would have passed. It now walks every node, catches `importlib.import_module("boto3")` and `__import__`, and exempts exactly one file — `app/storage/factory.py`, the composition root — pinned by path and by permitted SDK. Verified non-vacuously against **both** a module-level and a function-local violation.
+The guard walked only module scope, so a function-local `import boto3` in any service would have passed. It now walks every AST node, catches `importlib.import_module("boto3")` and `__import__`, and exempts exactly one file — `app/storage/factory.py`, the composition root — pinned by path *and* by permitted SDK. Verified non-vacuously against **both** a module-level and a function-local violation.
 
-### Complete: all-or-none configuration
+The loophole mattered because deferring an import inside a function is ordinary Python practice: it would have been opened by someone doing something reasonable for an unrelated purpose, not by someone circumventing the rule.
 
-Zero R2 values is valid; four is valid; **one, two or three now fails at startup** naming the missing variables. Two defects were found and fixed while proving this:
+### ✅ All-or-none configuration
 
-- **A secret leak.** Pydantic's default error rendering echoes the whole input mapping in an `input_value=...` clause — every credential the process started with, in plaintext, on its way to a log. `SecretStr` does not help, because the echo happens on raw input before field assignment. Fixed with `errors(include_input=False)` and hand-formatting. **This affected every existing secret** (`DATABASE_URL`, `SUPABASE_SECRET_KEY`, `byok_encryption_key`), not only the new ones.
+Zero R2 values is valid; four is valid; **one, two or three now fails at startup** naming the missing variables. Two defects were found and fixed while proving this, **both pre-existing and neither storage-specific**:
+
+- **A credential leak.** Pydantic's default error rendering echoes the whole input mapping in an `input_value=...` clause — every credential the process started with, in plaintext, on its way to a container log. `SecretStr` never covered it, because the echo is of raw input before field assignment. Fixed with `errors(include_input=False)` and hand-formatting. **This affected `DATABASE_URL`, `SUPABASE_SECRET_KEY` and `byok_encryption_key`**, not only the new R2 values.
 - **A crash in the error handler.** `get_settings()` indexed `item['loc'][0]` unconditionally; model-level validators report an empty `loc`, so the formatter raised `IndexError` while explaining a misconfiguration. This step's cross-field check is the first model-level validator in the file, which made the latent bug reachable.
+
+### One defect found by running the proof
+
+Configuring real credentials broke eleven configuration tests, and the failure was in the **tests**, not the code. `Settings` reads `.env` and `PROJECTONE_*` variables, so a case constructing a deliberately *partial* configuration had its missing values quietly supplied from the ambient environment — the assertion "partial input is rejected" was in fact exercising a complete input.
+
+They passed before only because no R2 configuration existed on the machine, and CI would have hidden it for the same reason. That is the worst shape a test can have: green everywhere it runs, wrong about what it proves.
+
+Fixed with an autouse fixture that removes every `PROJECTONE_R2_*` variable and repoints `env_file` at an empty temp file, so what a test passes in is the only configuration that exists. Verified passing in **both** environments — with credentials present and with R2 variables forced into the environment.
 
 ## Audit Gaps Closed
 
