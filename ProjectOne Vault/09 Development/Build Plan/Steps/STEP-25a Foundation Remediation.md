@@ -175,7 +175,7 @@ Observed, not assumed. Every check names its instrument, and every fix to a cont
 | 2 | Removing the new redaction pattern makes that test **fail** | Negative control | **PASS** — 10 failures without it |
 | 3 | A key-shaped credential (`*_KEY`, `*_SECRET`, `*_TOKEN`, `*_PASSWORD`) is redacted | Executed probe | **PASS** — executed probe |
 | 4 | Already-redacted lines are not degraded by the new patterns | Executed probe on the existing bearer-token cases | **PASS** — bearer cases unchanged |
-| 5 | Restore drill completes: schema **and** per-workspace data match the source | Executed on a **disposable** database | **PENDING** — blocked on `pg_dump` version in CI |
+| 5 | Restore drill completes: schema **and** per-workspace data match the source | Executed on a **disposable** database | **PASS** — executed in CI |
 | 6 | The restore target was a separate empty database, and no shared Supabase data was touched | Command record | **PASS** — separate empty DB; guard refuses Supabase |
 | 7 | `downgrade base` then `upgrade head` both succeed; the resulting schema matches | Executed on a **disposable** database | **PASS** — executed in CI |
 | 8 | The root boundary's retry triggers a refresh, not a bare `reset()` | Unit test + observed against a real API outage | **PASS** — observed 1 → 2 server requests |
@@ -190,7 +190,7 @@ Observed, not assumed. Every check names its instrument, and every fix to a cont
 | 17 | Full API and web suites pass, with **no new skips** | `pytest` and `vitest` | **PASS** — API 479, web 261; no new skips |
 | 18 | Lint, format and type-check clean in both apps | Ruff, mypy strict, ESLint, `tsc` | **PASS** — all clean |
 | 19 | Governance documents in sync | `./scripts/sync-governance-docs.sh --check` | **PASS** — in sync |
-| 20 | **Required CI green, with the database-backed suite executing** | Check runs on the PR head; `PROJECTONE_REQUIRE_DATABASE_TESTS` keeps a skip red | pending — PR #7 running |
+| 20 | **Required CI green, with the database-backed suite executing** | Check runs on the PR head; `PROJECTONE_REQUIRE_DATABASE_TESTS` keeps a skip red | **PASS** — all three checks green on `194ca13` |
 | 21 | `governance docs (sync check)` is **verified** as a required check | Ruleset or PR observation (task 9) | **PASS** — ruleset `20714051` read via API |
 
 ## Manual Checklist
@@ -204,17 +204,17 @@ Observed, not assumed. Every check names its instrument, and every fix to a cont
 
 ## Definition of Done
 
-- [ ] **Seven of nine closed** — FA-05, FA-02, FA-04, FA-11, FA-01, FA-07 and FA-08, each proven by execution. **FA-03** is built and blocked on a CI toolchain fix, not on capability. **FA-06** is blocked on the owner's schema decision. Nothing was closed that was not proven.
+- [ ] **Eight of nine closed** — FA-05, FA-02, FA-03, FA-04, FA-11, FA-01, FA-07 and FA-08, each proven by execution. **FA-06** is blocked on the owner's schema decision, recorded rather than guessed at. Nothing was closed that was not proven.
 - [x] **FA-05 verified by negative control.** 16 tests failed before the fix, including the end-to-end probe showing the plaintext password in the emitted record. Each of the three rules was then deleted from `_REDACTIONS`, turning the suite red (10, 5 and 2 failures).
-- [ ] **FA-03 drill built; restore not yet proven.** It seeds two workspaces, dumps, restores into a separate empty database and verifies schema and per-tenant data. Currently blocked on CI toolchain rather than capability: `pg_dump` 16 refuses a 17 server because the runner's own binary shadows the installed version-17 client. **Restore is not claimed as proven until it completes green.** [[Backup and Disaster Recovery]] records the drill and marks RPO/RTO **provisional, owner decision required**.
+- [x] **FA-03 restore drill executed and PASSES** on a disposable database in CI, verifying schema *and* per-workspace data across two workspaces, restored into a separate empty database. [[Backup and Disaster Recovery]] records the proven capability and marks RPO/RTO **provisional, owner decision required** — per the instruction not to invent a production SLA.
 - [x] **FA-02 cycle executed and PASSES** on a disposable database in CI, comparing the twice-migrated schema against the once-migrated one. Runs on every pull request. Its first two failures were defects in the drill — it compared system-generated `NOT NULL` constraint names that embed the table OID and so cannot survive a recreate. The downgrade path was sound; the measurement was not.
 - [x] **The shared Supabase development database was never a target.** Never connected to, read from or written to. Both drills refuse `supabase.co`, RDS and Azure hosts before opening a connection — verified by running them against such URLs.
 - [x] **FA-08 verified.** Ruleset `20714051` (`Protect main`, active, updated 2026-08-11) lists the check among its required status checks. The owner had already made the change, so no owner action is outstanding; the stale workflow comment is corrected and a rename guard added.
 - [x] [[Foundation Audit Findings]] updated: eight closures carry their evidence; FA-06 records why it is blocked; the eight deferred findings remain `Open`.
 - [x] Documentation updated: [[Backup and Disaster Recovery]], [[Table - audit_log]] and [[Build Plan]] Current State. **[[Compliance and Governance]] deliberately not edited** — its audit statement is a principle that stays true, and the concrete retention window belongs with the table that implements it rather than duplicated (§19: link, do not duplicate).
 - [x] API **479 passed**, 306 skipped (the pre-existing FA-01 gap, now visible); web **261 passed**. Ruff, ruff format, mypy strict, ESLint zero-warning, `tsc --noEmit` and the production build all clean.
-- [ ] **Pending** — PR #7 running. This run is also FA-02's and FA-03's proof, since both drills execute as steps of the `api` job.
-- [ ] **Complete except the FA-06 item**, which is blocked rather than skipped.
+- [x] **Required CI green on `194ca13`**: `api`, `web` and `governance docs (sync check)` all `success`. This run is also FA-02's and FA-03's proof — both drills execute as steps of the `api` job, and both passed.
+- [ ] **Complete except the FA-06 item**, which is blocked on the owner's decision rather than skipped.
 - [ ] Every review conversation resolved.
 - [ ] **Pending owner review.** Two decisions are outstanding: FA-06's storage shape, and whether to accept eight-of-nine closure with FA-06 carried forward.
 - [ ] Pull Request open and **NOT merged**; the owner squash-merges.

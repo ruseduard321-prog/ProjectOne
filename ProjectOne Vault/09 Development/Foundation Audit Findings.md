@@ -88,7 +88,9 @@ The findings record produced by [[STEP-25 Foundation Audit and Internal Readines
 - **Consequence:** ProjectOne has **no demonstrated ability to restore from backup**, and no numeric recovery objective to restore against. This is the single largest unproven guarantee in the Foundation.
 - **Recommended disposition:** Owner decision required — D1 mandates a stop here. Likely its own numbered step: provision a disposable PostgreSQL, execute a schema-plus-data restore drill, and give [[Backup and Disaster Recovery]] real RPO/RTO numbers.
 - **Owner decision:** **Accepted 2026-08-15 — High retained.** Remediation must establish an **executed** backup/restore drill on a disposable PostgreSQL environment, never shared Supabase data. Scheduled in [[STEP-25a Foundation Remediation]] (task 2).
-- **Status:** **Open — restore still unproven; blocked on a CI toolchain fix, not on capability.** `scripts/backup_restore_drill.py` is built and wired in with `if: always()`: it seeds **two workspaces**, dumps, restores into a **separate empty** database, and verifies schema *and* per-tenant data. It has not yet completed, and the current blocker is environmental rather than architectural — `pg_dump` 16.14 refuses to dump a 17.11 server, because the runner's own `/usr/bin/pg_dump` shadows the version-17 client the workflow installs. The fix prepends the versioned directory to `PATH`; the drill now also prints its client version and path up front so a toolchain mismatch reads as one rather than as a restore failure. **Restore is not claimed as proven until the drill completes green.**
+- **Status:** **Closed 2026-08-15 — restore proven by execution.** `scripts/backup_restore_drill.py` runs in the `api` job on every pull request against a disposable `postgres:17` container: it applies migrations to head, seeds **two workspaces**, takes a `pg_dump` backup, restores into a **separate empty database**, and verifies schema *and* data — tables, columns, constraints, RLS enabled *and* forced, policy count, the Alembic revision pointer, and row content per tenant. **It passes.** Two workspaces deliberately: one proves the rows returned, two prove they returned attached to the right tenant. A separate target equally so — restoring over the source would pass on an empty dump.
+  - *Getting here took three corrections, all to the drill rather than to ProjectOne:* a seed omitting `projects.created_by` (`NOT NULL`, no default); a constraint comparison including OID-derived system names; and `pg_dump` 16 shadowing the version-17 client the workflow installs, which needed the versioned directory prepended to `PATH`.
+  - **The drill refuses `supabase.co`, RDS and Azure hosts before connecting.** The shared Supabase development database was never a target.
 
 ### FA-04
 - **Area:** Incomplete product behaviour / reliability
@@ -270,12 +272,12 @@ No HTTP journey timings were taken: that would require running the application a
 
 ## Remediation outcome — STEP-25a, 2026-08-15
 
-**Seven of the nine scheduled findings are closed. One is blocked on a CI toolchain fix. One is blocked on an owner decision.**
+**Eight of the nine scheduled findings are closed and proven by execution. One (FA-06) is blocked on an owner decision.**
 
 | ID | Severity | Outcome | Proof |
 |---|---|---|---|
 | **FA-05** | **Critical** | **Closed** | Reproduction + three negative controls |
-| FA-03 | High | **OPEN** | Drill built; blocked on `pg_dump` version in CI |
+| FA-03 | High | **Closed** | Restore executes and verifies in CI |
 | FA-04 | High | **Closed** | Observed recovery, 1 → 2 server requests |
 | FA-11 | Medium | **Closed** | Observed `alert` node in the accessibility tree |
 | FA-02 | High | **Closed** | Cycle executes and passes in CI |
@@ -290,13 +292,13 @@ No HTTP journey timings were taken: that would require running the application a
 > Both drills failed on first execution, and **both failures were defects in the drills themselves**:
 >
 > - **FA-02** compared PostgreSQL's system-generated `NOT NULL` constraint names, which embed the table OID and cannot survive a drop-and-recreate. Once excluded, the cycle **passes** — the downgrade path was sound all along, and the earlier report that it was "genuinely broken" was wrong.
-> - **FA-03** seeded `projects` without `created_by`, a `NOT NULL` column with no default. Fixed; the drill is now blocked on `pg_dump` 16 shadowing the version-17 client in CI, which is a toolchain problem rather than a restore one.
+> - **FA-03** seeded `projects` without `created_by`, a `NOT NULL` column with no default — then hit `pg_dump` 16 shadowing the version-17 client the workflow installs. Both fixed; the drill now **passes**.
 >
 > Recorded rather than tidied away, because it is the honest lesson of the step: **a drill that has never run is not evidence, and its first failures are as likely to be its own.** That is exactly why FA-02 and FA-03 were High — an untested capability tells you nothing either way.
 
 ### Limitations, stated rather than implied
 
-- **FA-02 and FA-03 execute in CI only.** The remediation environment has no Docker, no WSL distribution, no PostgreSQL server and no `pg_dump`, so neither drill could run locally; provisioning one would have meant installing software, which the execution rules make a stop-and-ask. Both run in the `api` job against the disposable `postgres:17` container, on every pull request. **FA-02 passes there. FA-03 has not yet completed**, so restore remains unproven and is not claimed otherwise.
+- **FA-02 and FA-03 execute in CI only.** The remediation environment has no Docker, no WSL distribution, no PostgreSQL server and no `pg_dump`, so neither drill could run locally; provisioning one would have meant installing software, which the execution rules make a stop-and-ask. Both run in the `api` job against the disposable `postgres:17` container and **both pass there**, on every pull request. That is a real and repeating proof — but it is CI's, not a local reproduction, and is recorded as such rather than rounded up.
 - **FA-04's observation used an injected fault**, not a genuine API outage: reaching the authenticated routes needs credentials this environment does not hold. The injected fault exercises the same code path — a Server Component throwing, caught by the root boundary — and the fault injection was fully reverted, with the working tree confirmed byte-identical to the commit.
 - **FA-11 was verified through the rendered accessibility tree**, which is what a screen reader consumes, rather than with a screen reader itself.
 - **FA-07's purge is implemented and tested, but nothing schedules it yet.** The mechanism, its configuration and its boundary behaviour are proven; wiring it to a scheduler is deployment work that belongs with the infrastructure it runs on.

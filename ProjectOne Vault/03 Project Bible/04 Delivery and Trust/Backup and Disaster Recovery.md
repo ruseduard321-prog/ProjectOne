@@ -21,7 +21,7 @@ Encrypted daily, weekly and monthly backups with periodic restore testing.
 
 ## Recovery Objectives
 
-**Restore capability is proven; the objectives themselves are provisional and await the owner.** [[STEP-25a Foundation Remediation]] (FA-03) closed the gap this section previously described — that RPO and RTO *should be defined* while no values existed and no restore had ever been performed.
+**Restore capability is proven — executed, verified, and re-run on every pull request. The objectives themselves are provisional and await the owner.** [[STEP-25a Foundation Remediation]] (FA-03) closed the gap this section previously described — that RPO and RTO *should be defined* while no values existed and no restore had ever been performed.
 
 ### What is now proven
 
@@ -46,7 +46,7 @@ The drill refuses to run against `supabase.co`, RDS or Azure hosts before connec
 |---|---|---|
 | **RPO** (acceptable data loss) | **Not set — owner decision required** | Depends on backup frequency, which the hosting arrangement determines |
 | **RTO** (acceptable downtime) | **Not set — owner decision required** | The drill measures restore duration at test scale only |
-| Restore *capability* | **Proven** | Executed, verified against schema and per-tenant data |
+| Restore *capability* | **Proven 2026-08-15** | Executed in CI; schema, per-tenant data, RLS flags and the migration pointer all verified against the source |
 
 ### Still outstanding
 
