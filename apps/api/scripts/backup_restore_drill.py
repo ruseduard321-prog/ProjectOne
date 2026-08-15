@@ -39,6 +39,7 @@ from typing import IO, Any
 from urllib.parse import urlsplit, urlunsplit
 
 import psycopg
+from migration_cycle_drill import annotate
 
 # Hosts that are never disposable — the same guard the migration drill applies.
 _FORBIDDEN_HOST_FRAGMENTS = ("supabase.co", "supabase.in", "rds.amazonaws.com", "azure.com")
@@ -319,6 +320,10 @@ def main() -> int:  # noqa: C901 - a linear drill; splitting it would obscure th
                 print("the restored database does NOT match the source:", file=sys.stderr)
                 for line in failures[:20]:
                     print(line, file=sys.stderr)
+                annotate(
+                    "FA-03: restored database does not match the source",
+                    "\n".join(failures[:20]),
+                )
                 return 1
 
             # Stated explicitly rather than implied by the absence of failures:
@@ -348,5 +353,23 @@ def main() -> int:  # noqa: C901 - a linear drill; splitting it would obscure th
     return 0
 
 
+def _main_reporting_failures() -> int:
+    """Run the drill, ensuring any failure reaches an annotation.
+
+    `_run` raises SystemExit carrying the subprocess stderr, and an unexpected
+    exception would otherwise surface only as a traceback in a log nobody
+    without admin rights can read. Both are turned into an annotation first.
+    """
+    try:
+        return main()
+    except SystemExit as error:
+        if error.code not in (0, None):
+            annotate("FA-03: backup/restore drill failed", str(error))
+        raise
+    except Exception as error:
+        annotate("FA-03: backup/restore drill errored", f"{type(error).__name__}: {error}")
+        raise
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(_main_reporting_failures())

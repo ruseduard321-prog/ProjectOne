@@ -98,6 +98,29 @@ _SCHEMA_QUERIES: dict[str, str] = {
 }
 
 
+def annotate(title: str, detail: str) -> None:
+    """Emit a GitHub Actions annotation, so a failure is readable without admin.
+
+    Job logs on this repository need admin rights to download, artifacts need
+    authentication, and the step summary is web-UI only — none of which a
+    contributor debugging from a terminal has. Check-run annotations are served
+    to anyone who can see the run, so that is where a drill failure has to land
+    or it is a dead end. The same reasoning as `tests/conftest.py`'s reporter.
+
+    Inert outside GitHub Actions: the environment variable is simply absent.
+    """
+    if not os.environ.get("GITHUB_ACTIONS"):
+        return
+
+    # Newlines terminate a workflow command, so multi-line detail has to be
+    # encoded or everything after the first line is silently dropped.
+    encoded = detail.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+    # The leading newline is load-bearing: GitHub only parses a command that
+    # starts at the beginning of a line.
+    print(f"\n::error title={title}::{encoded}", flush=True)
+
+
 def _require_disposable(url: str) -> None:
     """Refuse to run against anything that is not obviously throwaway."""
     lowered = url.lower()
@@ -207,6 +230,10 @@ def main() -> int:
             "why this drill exists.",
             file=sys.stderr,
         )
+        annotate(
+            "FA-02: downgrade path is broken",
+            f"stopped at revision: {stuck or '<none>'}\n{type(error).__name__}: {error}",
+        )
         return 1
 
     remaining = _capture_schema(url)["tables"]
@@ -218,6 +245,10 @@ def main() -> int:
         print("downgrade base left objects behind:", file=sys.stderr)
         for row in leftovers:
             print(f"  {row[0]}", file=sys.stderr)
+        annotate(
+            "FA-02: downgrade left objects behind",
+            "\n".join(str(row[0]) for row in leftovers[:20]),
+        )
         return 1
     print("    schema is empty, as a downgrade to base must leave it")
 
@@ -235,6 +266,7 @@ def main() -> int:
         print("the migration cycle is NOT idempotent:", file=sys.stderr)
         for line in differences:
             print(line, file=sys.stderr)
+        annotate("FA-02: migration cycle is not idempotent", "\n".join(differences[:20]))
         return 1
 
     counts = ", ".join(f"{name}={len(rows)}" for name, rows in sorted(before.items()))

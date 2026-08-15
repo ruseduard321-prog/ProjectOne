@@ -382,6 +382,21 @@ jobs:
       # Downloading job logs requires admin rights on this repository, but
       # artifacts do not — so the same output is also uploaded, keeping a failing
       # run diagnosable by anyone who can see it rather than only by an admin.
+      # The step summary carries these too, but it is not reachable through the
+      # REST API — only the web UI — so a contributor debugging from a terminal
+      # could see the drill failed and not why. An artifact is API-readable,
+      # which is the difference between a diagnostic and a dead end.
+      - name: Upload drill output
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-drill-output
+          path: |
+            apps/api/migration-drill.txt
+            apps/api/restore-drill.txt
+          retention-days: 7
+          if-no-files-found: ignore
+
       - name: Upload test output
         if: failure()
         uses: actions/upload-artifact@v4
