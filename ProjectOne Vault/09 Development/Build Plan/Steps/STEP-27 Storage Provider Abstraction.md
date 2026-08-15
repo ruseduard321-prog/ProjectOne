@@ -2,8 +2,8 @@
 title: STEP-27 Storage Provider Abstraction
 category: Development/Build Step
 status: draft
-version: "2.0"
-last_updated: 2026-08-15
+version: "2.1"
+last_updated: 2026-08-16
 tags: [engineering, workflow, build-step, backend, infrastructure]
 step_id: STEP-27
 step_status: Done
@@ -13,7 +13,7 @@ phase: "Platform Substrate"
 
 # STEP-27 — Storage Provider Abstraction
 
-**Status:** Done
+**Status:** Done — [PR #13](https://github.com/ruseduard321-prog/ProjectOne/pull/13) squash-merged to `main` as `8e29e47` on 2026-08-16, under [[ADR-004 Object Storage Provider and Tenant-Safe Key Construction]] (`Accepted`).
 **Phase:** Platform Substrate — The absent infrastructure every media, approval and automation capability sits behind: storage, async execution, and enough notification to make an asynchronous run visible.
 **Detail level:** full — expanded by [[STEP-26 Product Design System Foundation]], per [[Execution Protocol#Progressive Detail]].
 
@@ -121,21 +121,25 @@ The workspace segment is typed `uuid.UUID` rather than `str`, which removes host
 
 The prefix is **delimiter-terminated** (`ws/<uuid>/`), which is what makes containment exact. Without the trailing slash, prefix comparison is wrong by construction — the `ws-1` / `ws-10` case.
 
-**Proofs (95 storage tests, all passing):**
+**Proofs (116 storage tests, all passing; full suite 609 passed / 321 skipped):**
 
 - `tests/test_storage_keys.py` — traversal, absolute paths, encoded separators (`%2f`, `%252f`), backslashes, null bytes, control characters, Unicode fullwidth solidus, non-normalised forms, over-length names, empty names; hostile workspace identifiers; the `ws-1`/`ws-10` case; containment across 52 identifiers; and that a rejection never echoes the rejected value back into an error message.
 - `tests/test_storage_r2.py` — cross-workspace read, overwrite and **delete** all fail closed; traversal aimed at another workspace refused on all four operations with the backend never contacted; vendor error translation; no bucket or workspace id in user-facing error text.
 - `tests/test_storage_boundary.py` — the architectural guard.
 
-**Signed-URL expiry is proven by use, not by inspection.** A URL is issued with a one-second lifetime, fetched successfully, then fetched again after the window has passed and refused. The stand-in client enforces the expiry embedded in the URL exactly as a backend would; asserting on the `ExpiresIn` argument would only have proven the adapter forwarded a number.
+**Signed-URL expiry is proven against real Cloudflare R2** — see [[#✅ Real R2 signed-URL expiry proof — performed 2026-08-15]] below for the evidence. `tests/test_storage_r2.py` additionally carries a deterministic unit test of the same shape against the in-process stand-in; it is labelled `TestSignedUrlExpiryUnit` and proves only that the double is self-consistent, since that double both issues the URL and decides it expired.
 
-**Architectural vendor-boundary test.** `tests/test_storage_boundary.py` parses every module above `app/storage/providers/` and fails if any imports `boto3`, `botocore`, `s3transfer` or `supabase` at module scope; it also asserts no contract method accepts a `key`/`path`/`prefix`/`bucket` parameter, and that the factory is annotated to return the abstraction rather than the concrete adapter. **Verified non-vacuous**: temporarily adding `import boto3` to `app/services/project_service.py` made it fail, and it passed again once removed.
+**Architectural vendor-boundary test.** `tests/test_storage_boundary.py` parses every module above `app/storage/providers/` and fails if any references `boto3`, `botocore`, `s3transfer` or `supabase` **at any AST depth** — module scope, function body or dynamic `importlib.import_module`/`__import__` — with exactly one exemption, the composition root `app/storage/factory.py`, pinned by path and by permitted SDK. It also asserts no contract method accepts a `key`/`path`/`prefix`/`bucket` parameter, and that the factory is annotated to return the abstraction rather than the concrete adapter. **Verified non-vacuous against both** a module-level and a function-local violation. (The original guard checked module scope only; the function-scope loophole was closed at review — see below.)
 
-**No shared infrastructure was touched.** No Cloudflare account, bucket, credential or API call, and no access to the shared Supabase project. Every proof runs in-process against a stand-in S3 client, which is what makes them runnable in CI.
+**Every proof above runs in-process against a stand-in S3 client**, with no network and no credentials, which is what makes them runnable in CI.
 
-## Status: Done — all four review corrections complete
+**Live infrastructure access, stated precisely.** One live proof was performed, with explicit owner approval, against the `projectone-dev` bucket only — the signed-URL expiry proof recorded below. It created and deleted two disposable objects and touched nothing else in the Cloudflare account. **The shared Supabase project was never accessed at any point in this step.**
 
-Owner review of [PR #13](https://github.com/ruseduard321-prog/ProjectOne/pull/13) on 2026-08-15 **approved the architecture** — R2 behind `StorageProvider`, tenant-safe construction from workspace UUID plus logical name, the dedicated adapter, the scoped mypy override, and storage being optional while no caller exists — and required four corrections. All four are now complete.
+## Completion: all four review corrections complete, merged
+
+**[PR #13](https://github.com/ruseduard321-prog/ProjectOne/pull/13) is merged** — squash-merged to `main` as `8e29e47`. Final validation: **609 passed / 321 skipped** (320 pre-existing database-isolation skips plus the opt-in R2 integration proof), with `ruff check`, `ruff format --check` and `mypy app` clean.
+
+Owner review of the PR on 2026-08-15 **approved the architecture** — R2 behind `StorageProvider`, tenant-safe construction from workspace UUID plus logical name, the dedicated adapter, the scoped mypy override, and storage being optional while no caller exists — and required four corrections. All four are now complete.
 
 ### ✅ Real R2 signed-URL expiry proof — performed 2026-08-15
 
