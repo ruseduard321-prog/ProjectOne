@@ -133,6 +133,14 @@ The prefix is **delimiter-terminated** (`ws/<uuid>/`), which is what makes conta
 
 **No shared infrastructure was touched.** No Cloudflare account, bucket, credential or API call, and no access to the shared Supabase project. Every proof runs in-process against a stand-in S3 client, which is what makes them runnable in CI.
 
+## Status: In Progress — awaiting the owner's review gate
+
+Implementation, documentation and validation are complete, and **every required CI check is green** on [PR #13](https://github.com/ruseduard321-prog/ProjectOne/pull/13) (`api`, `web`, `governance docs`; `Supabase Preview` skipped).
+
+The step is **not** `Done`, because it carries an owner approval gate: it is Critical under [[CLAUDE|CLAUDE.md]] §21 (infrastructure configuration and a new tenant boundary), and [[Execution Protocol#Step Completion]] requires that gate to be *satisfied* rather than merely pending. Silence is never approval.
+
+**Marked `Done` when:** the owner reviews and approves PR #13. Claude does not merge it.
+
 ## Audit Gaps Closed
 
 **File storage backend** — *Missing, P0, no step* — the audit's largest single blocker
