@@ -36,6 +36,7 @@ Practices, standards and process documentation for day-to-day engineering work.
 - [[Execution Protocol]] — the rules Claude follows on *"Implement the next step."*
 - [[Foundation Audit Findings]] — the prioritised record of what STEP-25 found across the Foundation build: what is sound, what is defective, and what could not be proven
 - [[STEP-25a Foundation Remediation]] — the nine findings that must close before design begins, FA-05 first
+- [[Product Coverage Audit]] — the complete intended product compared against the implementation on `main`: what exists, what is partial, what is missing, and what has no build step at all. An audit record, not a plan
 
 ## Documentation Tasks
 
