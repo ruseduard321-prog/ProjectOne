@@ -73,7 +73,7 @@ Status appears in two places — the step note and the row below — and they mu
 | | **Design Foundation** | | |
 | STEP-26 | [[STEP-26 Product Design System Foundation]] | Done | full |
 | | **Platform Substrate** | | |
-| STEP-27 | [[STEP-27 Storage Provider Abstraction]] | Not Started | full |
+| STEP-27 | [[STEP-27 Storage Provider Abstraction]] | Done | full |
 | STEP-28 | [[STEP-28 Asset Upload and Download]] | Not Started | outline |
 | STEP-29 | [[STEP-29 Asset Management UI]] | Not Started | outline |
 | STEP-30 | [[STEP-30 Async Job Infrastructure]] | Not Started | outline |

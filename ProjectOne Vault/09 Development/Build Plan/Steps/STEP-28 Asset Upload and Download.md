@@ -29,6 +29,21 @@ Give assets real bytes: an upload path that validates and stores, and a retrieva
 
 - [[STEP-27 Storage Provider Abstraction]]
 
+## Inherited from earlier steps
+
+Recorded during synchronization, not expansion.
+
+Added by [[STEP-27 Storage Provider Abstraction]]:
+
+- **The storage contract is fixed and vendor-neutral.** `StorageProvider` (`app/storage/provider.py`) exposes exactly **put, get, signed URL, delete**. There is no listing operation, so any scope here that assumed one needs a different design rather than a new call.
+- **This step supplies the `logical_name`, never a path.** No storage method accepts a key, prefix or bucket — `app/storage/keys.py` constructs every key from a workspace id plus a validated logical name. Upload validation therefore covers *file content and size*; **path safety is already guaranteed upstream and must not be re-implemented here**.
+- **Persist `StoredObject.locator` into `assets.storage_path`, and pass it back verbatim.** The locator *is* the logical name, so retrieval is `provider.signed_url(asset.workspace_id, asset.storage_path, ttl)` — using the two columns as they are. **Never parse, split, strip or prefix a persisted value**, and never reconstruct `ws/<uuid>/...`: the full object key is internal to the storage layer and is not what is stored. A locator is not a capability — isolation comes from the workspace id supplied alongside it, so two workspaces legitimately persist the same string.
+- **No migration.** The locator fits `assets.storage_path` (`text`, `char_length <= 1024`) as-is.
+- **Logical names are restricted to `[A-Za-z0-9._-]`.** A user-supplied filename will frequently not satisfy this (spaces, non-ASCII, multiple dots are all common), so this step owns deriving a safe logical name from an uploaded filename — and `assets.name` remains where the human-readable original belongs.
+- **Signed-URL expiry is bounded at 7 days** by the backend, and `expires_in` is a required argument with no default — the retrieval path must choose it explicitly.
+- **Storage configuration is currently optional** (`PROJECTONE_R2_*`, all-four-or-none). **This is the step that makes it required**, since it introduces the first real caller; until then `build_storage_provider()` raises `StorageNotConfiguredError` at the point of use.
+- **Erasure registration is genuinely new work.** STEP-27 added a store but no caller, so nothing was registered with `data_ownership_service.py`. Deleting a workspace's objects is therefore this step's obligation, as the Scope below already states.
+
 ## Scope
 
 - Upload endpoint with size, MIME and extension validation.

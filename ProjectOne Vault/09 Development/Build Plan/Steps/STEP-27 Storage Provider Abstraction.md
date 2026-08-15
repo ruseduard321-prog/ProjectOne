@@ -6,14 +6,14 @@ version: "2.0"
 last_updated: 2026-08-15
 tags: [engineering, workflow, build-step, backend, infrastructure]
 step_id: STEP-27
-step_status: Not Started
+step_status: Done
 detail_level: full
 phase: "Platform Substrate"
 ---
 
 # STEP-27 — Storage Provider Abstraction
 
-**Status:** Not Started
+**Status:** Done
 **Phase:** Platform Substrate — The absent infrastructure every media, approval and automation capability sits behind: storage, async execution, and enough notification to make an asynchronous run visible.
 **Detail level:** full — expanded by [[STEP-26 Product Design System Foundation]], per [[Execution Protocol#Progressive Detail]].
 
@@ -92,6 +92,108 @@ A storage provider is reachable through a vendor-neutral interface, tenant-scope
 
 **Owner approval gate** — Critical, so the owner reviews before merge.
 
+## Provider Decision (resolved)
+
+**This step was `Blocked` and is now unblocked.** The block is retained as history rather than deleted, because *why* the provider was chosen is the part a future reader needs.
+
+**Blocked because (2026-08-15):** ProjectOne had no canonical, owner-approved object-storage provider decision, while this step's Definition of Done requires a real adapter. Verified against `main` @ `6f8f50f`: `08 ADR/` held ADR-001/002/003 only, none deciding storage; [[ADR-001 Technology Stack]]'s two "storage" mentions were incidental (a rejected option's prose and a stated consequence), so **Supabase Postgres did not imply Supabase Storage**; [[Infrastructure]] listed "Object Storage" as an unnamed box; no vendor name appeared in any vault markdown; and `apps/api/pyproject.toml` pinned no object-storage SDK.
+
+**Resolved by owner decision on 2026-08-15:** **Cloudflare R2 (Standard)** is ProjectOne's initial production object-storage provider, accessed through the vendor-neutral `StorageProvider` boundary via R2's **S3-compatible API**. Recorded as [[ADR-004 Object Storage Provider and Tenant-Safe Key Construction]], status `Accepted`.
+
+The decision is an **adapter choice, not an architectural surrender**: the canonical architecture is the vendor-neutral boundary, and R2-specific SDK types, configuration and errors stay strictly below it. Changing the primary provider is itself an ADR-level decision.
+
+**Bearing on this step's security requirements: none — they are unchanged.** R2 has no Row Level Security equivalent, so the path convention still carries the entire isolation burden, exactly as the warning callout below states. The owner's rationale notes that even Supabase Storage would not have removed this obligation, because server-side S3 access keys bypass its RLS. The hostile-identifier and prefix-confusion proofs remain mandatory.
+
+## What Was Built
+
+| Concern | Where |
+|---|---|
+| Contract (`StorageProvider` ABC, `StoredObject`) | `app/storage/provider.py` |
+| Tenant-safe key construction | `app/storage/keys.py` |
+| Error hierarchy | `app/storage/errors.py` |
+| R2 adapter (S3-compatible) | `app/storage/providers/r2.py` |
+| Client assembly, credential unwrapping | `app/storage/factory.py` |
+| Configuration | `app/core/config.py`, `apps/api/.env.example` |
+
+**Object key convention:** `ws/<workspace-uuid>/<logical-name>`.
+
+The workspace segment is typed `uuid.UUID` rather than `str`, which removes hostile workspace identifiers by construction rather than by filtering — a UUID cannot hold `/`, `..`, `%2f` or a null byte. The logical name is validated against an **allowlist** (`[A-Za-z0-9._-]+`, NFKC-normalised, percent-encoding rejected), because a denylist has to anticipate every encoding of every separator and fails open on the one nobody thought of.
+
+The prefix is **delimiter-terminated** (`ws/<uuid>/`), which is what makes containment exact. Without the trailing slash, prefix comparison is wrong by construction — the `ws-1` / `ws-10` case.
+
+**Proofs (95 storage tests, all passing):**
+
+- `tests/test_storage_keys.py` — traversal, absolute paths, encoded separators (`%2f`, `%252f`), backslashes, null bytes, control characters, Unicode fullwidth solidus, non-normalised forms, over-length names, empty names; hostile workspace identifiers; the `ws-1`/`ws-10` case; containment across 52 identifiers; and that a rejection never echoes the rejected value back into an error message.
+- `tests/test_storage_r2.py` — cross-workspace read, overwrite and **delete** all fail closed; traversal aimed at another workspace refused on all four operations with the backend never contacted; vendor error translation; no bucket or workspace id in user-facing error text.
+- `tests/test_storage_boundary.py` — the architectural guard.
+
+**Signed-URL expiry is proven by use, not by inspection.** A URL is issued with a one-second lifetime, fetched successfully, then fetched again after the window has passed and refused. The stand-in client enforces the expiry embedded in the URL exactly as a backend would; asserting on the `ExpiresIn` argument would only have proven the adapter forwarded a number.
+
+**Architectural vendor-boundary test.** `tests/test_storage_boundary.py` parses every module above `app/storage/providers/` and fails if any imports `boto3`, `botocore`, `s3transfer` or `supabase` at module scope; it also asserts no contract method accepts a `key`/`path`/`prefix`/`bucket` parameter, and that the factory is annotated to return the abstraction rather than the concrete adapter. **Verified non-vacuous**: temporarily adding `import boto3` to `app/services/project_service.py` made it fail, and it passed again once removed.
+
+**No shared infrastructure was touched.** No Cloudflare account, bucket, credential or API call, and no access to the shared Supabase project. Every proof runs in-process against a stand-in S3 client, which is what makes them runnable in CI.
+
+## Status: Done — all four review corrections complete
+
+Owner review of [PR #13](https://github.com/ruseduard321-prog/ProjectOne/pull/13) on 2026-08-15 **approved the architecture** — R2 behind `StorageProvider`, tenant-safe construction from workspace UUID plus logical name, the dedicated adapter, the scoped mypy override, and storage being optional while no caller exists — and required four corrections. All four are now complete.
+
+### ✅ Real R2 signed-URL expiry proof — performed 2026-08-15
+
+**Performed live against the `projectone-dev` bucket with explicit owner approval.** This is the proof the unit test structurally could not provide: there, `FakeS3Client` both issues the URL and decides it expired, so a pass shows the double agreeing with itself. Here boto3 signs and **Cloudflare refuses**.
+
+| Step | Observed |
+|---|---|
+| Disposable private object created | `ws/<workspace-uuid>/step27-evidence-<random>.txt`, 38 bytes |
+| Presigned GET issued | minimum supported lifetime — **1 second** |
+| URL addresses the workspace key | confirmed — `ws/<uuid>/<name>` present in the URL |
+| HTTP GET **before** expiry | **`200`**, body byte-identical to what was stored |
+| Wait | lifetime + 5s margin (R2's clock is not this machine's) |
+| HTTP GET **after** expiry, same URL | **`403`** — `<Code>ExpiredRequest</Code><Message>Request has expired</Message>` |
+| Object itself after expiry | still readable through the API — expiry invalidates the *URL*, not the data |
+| Disposable object deleted | yes |
+| Cleanup verified | `ObjectNotFoundError` on re-read; **bucket listing shows 0 objects** |
+
+Both fetches were plain `urllib` HTTP requests carrying **no credentials** — deliberately not boto3, because the property users depend on is that anything speaking HTTP can use a presigned URL, and fetching through the SDK that signed it would test something narrower.
+
+The proof is committed as `tests/test_storage_r2_integration.py`, marked `integration` and **double-gated**: it skips unless storage is configured *and* `PROJECTONE_RUN_R2_INTEGRATION_TESTS=1` is set. **It is deliberately not wired into CI** — live vendor credentials must not become a routine CI dependency, since a suite that fails on every fork and every credential rotation gets weakened rather than fixed. Two gates rather than one so a developer who happens to have R2 configured does not start writing to a real bucket as a side effect of running tests.
+
+**Nothing else in the Cloudflare account was read, created or modified. Shared Supabase was not accessed.**
+
+### ✅ Persisted locator contract
+
+`StoredObject.key` returned the constructed `ws/<uuid>/<name>` for persistence. That was the raw-path rule leaking through the database rather than through a signature: the code reading `storage_path` back would have had to *parse* it into a logical name, since no method accepts a key — and the column would have recorded S3 addressing semantics outliving the provider.
+
+`StoredObject.locator` now carries the **logical name**. With `workspace_id`, already on the asset row, it is exactly what `get`/`signed_url`/`delete` accept:
+
+```
+stored = provider.put(workspace_id, logical_name, data, content_type)
+asset.storage_path = stored.locator                                   # persist
+provider.signed_url(asset.workspace_id, asset.storage_path, ttl)      # retrieve
+```
+
+No parsing, no reconstruction, **no migration** — the value fits the existing `text` / `char_length <= 1024` column. A locator is not a capability: two workspaces legitimately persist the same string, and isolation comes from the workspace id passed with it.
+
+### ✅ Boundary guard closed at any depth
+
+The guard walked only module scope, so a function-local `import boto3` in any service would have passed. It now walks every AST node, catches `importlib.import_module("boto3")` and `__import__`, and exempts exactly one file — `app/storage/factory.py`, the composition root — pinned by path *and* by permitted SDK. Verified non-vacuously against **both** a module-level and a function-local violation.
+
+The loophole mattered because deferring an import inside a function is ordinary Python practice: it would have been opened by someone doing something reasonable for an unrelated purpose, not by someone circumventing the rule.
+
+### ✅ All-or-none configuration
+
+Zero R2 values is valid; four is valid; **one, two or three now fails at startup** naming the missing variables. Two defects were found and fixed while proving this, **both pre-existing and neither storage-specific**:
+
+- **A credential leak.** Pydantic's default error rendering echoes the whole input mapping in an `input_value=...` clause — every credential the process started with, in plaintext, on its way to a container log. `SecretStr` never covered it, because the echo is of raw input before field assignment. Fixed with `errors(include_input=False)` and hand-formatting. **This affected `DATABASE_URL`, `SUPABASE_SECRET_KEY` and `byok_encryption_key`**, not only the new R2 values.
+- **A crash in the error handler.** `get_settings()` indexed `item['loc'][0]` unconditionally; model-level validators report an empty `loc`, so the formatter raised `IndexError` while explaining a misconfiguration. This step's cross-field check is the first model-level validator in the file, which made the latent bug reachable.
+
+### One defect found by running the proof
+
+Configuring real credentials broke eleven configuration tests, and the failure was in the **tests**, not the code. `Settings` reads `.env` and `PROJECTONE_*` variables, so a case constructing a deliberately *partial* configuration had its missing values quietly supplied from the ambient environment — the assertion "partial input is rejected" was in fact exercising a complete input.
+
+They passed before only because no R2 configuration existed on the machine, and CI would have hidden it for the same reason. That is the worst shape a test can have: green everywhere it runs, wrong about what it proves.
+
+Fixed with an autouse fixture that removes every `PROJECTONE_R2_*` variable and repoints `env_file` at an empty temp file, so what a test passes in is the only configuration that exists. Verified passing in **both** environments — with credentials present and with R2 variables forced into the environment.
+
 ## Audit Gaps Closed
 
 **File storage backend** — *Missing, P0, no step* — the audit's largest single blocker
@@ -103,4 +205,4 @@ A storage provider is reachable through a vendor-neutral interface, tenant-scope
 - **Previous:** [[STEP-26 Product Design System Foundation]]
 - **Next:** [[STEP-28 Asset Upload and Download]]
 - **Parent:** [[Build Plan]]
-- **Related Notes:** [[Product Coverage Audit]] · [[Execution Protocol]] · [[Environment and Secrets]] · [[Backend Architecture]]
+- **Related Notes:** [[ADR-004 Object Storage Provider and Tenant-Safe Key Construction]] · [[Product Coverage Audit]] · [[Execution Protocol]] · [[Environment and Secrets]] · [[Backend Architecture]]
