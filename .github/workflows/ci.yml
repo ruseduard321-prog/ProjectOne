@@ -259,6 +259,54 @@ jobs:
           set -o pipefail
           pytest -ra --tb=short | tee pytest-output.txt
 
+      # STEP-25a, FA-02. The audit confirmed by inspection that all 18
+      # migrations have non-empty downgrade bodies and that the history is
+      # linear, and neither fact proves a downgrade *works* — a dropped object
+      # another migration depends on fails only at runtime. Nothing exercised
+      # the reverse direction anywhere, including this job, which applies
+      # migrations forward and stops.
+      #
+      # The drill runs `upgrade head -> downgrade base -> upgrade head` and
+      # compares the twice-migrated schema against the once-migrated one, so a
+      # downgrade that leaves a table behind or an upgrade that rebuilds a
+      # column differently is caught rather than exiting zero.
+      #
+      # After the test suite, deliberately: both drills rewrite the schema
+      # destructively, and running them first would hand the isolation tests a
+      # database in a state they do not expect.
+      - name: Verify migrations reverse (FA-02)
+        run: python scripts/migration_cycle_drill.py
+
+      # STEP-25a, FA-03. The audit recorded restore as the single largest
+      # unproven guarantee in the Foundation: a documented strategy, no restore
+      # ever performed, and no RPO/RTO values. This seeds two workspaces, dumps,
+      # restores into a *separate empty* database, and verifies schema and
+      # per-workspace data — two tenants so the restore is provably
+      # tenant-correct rather than merely non-empty.
+      #
+      # Runs here rather than on a developer machine because this is where a
+      # disposable PostgreSQL exists, and because a drill that runs on every PR
+      # keeps proving itself, while one run once on a laptop proves it once.
+      # `pg_dump` refuses to dump a server newer than itself, and the service
+      # container is pinned to 17. The runner's default client tracks whatever
+      # Ubuntu ships, so this installs the matching major version explicitly
+      # rather than leaving the drill to fail on a version mismatch that has
+      # nothing to do with the backup being tested.
+      - name: Install PostgreSQL 17 client
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            --fail https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] \
+            https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-17
+          pg_dump --version
+
+      - name: Verify backup and restore (FA-03)
+        run: python scripts/backup_restore_drill.py
+
       # Job logs need admin rights on this repository to download, so a
       # contributor without them can see *that* the suite failed but not *why* —
       # which turns a one-line fix into several blind round-trips. The step
