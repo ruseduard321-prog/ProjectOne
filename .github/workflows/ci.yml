@@ -29,11 +29,16 @@ jobs:
   # asserts this (tests/test_governance_docs_sync.py) for contributors who run
   # the suite locally.
   #
-  # NOT YET A MERGE GATE. The `Protect main` ruleset currently requires only
-  # the `web` and `api` checks, so this job can be red while the merge button
-  # stays green. Adding a job to CI and adding it to the ruleset's required
-  # checks are separate actions, and only the project owner can do the second.
-  # Until they do, this reports drift rather than blocking it.
+  # A MERGE GATE since 2026-08-11. The `Protect main` ruleset lists this job's
+  # check name among its required status checks alongside `web` and `api`, so
+  # governance drift now blocks the merge button rather than merely reporting
+  # itself. Verified against the ruleset API during STEP-25a (FA-08).
+  #
+  # The check name below is therefore load-bearing: the ruleset matches on the
+  # literal string, so renaming this job silently removes the gate — the
+  # ruleset would keep requiring a check that no longer reports. If it must be
+  # renamed, the ruleset entry has to be updated in the same change, and only
+  # the project owner can do that.
   governance-docs:
     name: governance docs (sync check)
     runs-on: ubuntu-latest
@@ -259,6 +264,98 @@ jobs:
           set -o pipefail
           pytest -ra --tb=short | tee pytest-output.txt
 
+      # STEP-25a, FA-02. The audit confirmed by inspection that all 18
+      # migrations have non-empty downgrade bodies and that the history is
+      # linear, and neither fact proves a downgrade *works* — a dropped object
+      # another migration depends on fails only at runtime. Nothing exercised
+      # the reverse direction anywhere, including this job, which applies
+      # migrations forward and stops.
+      #
+      # The drill runs `upgrade head -> downgrade base -> upgrade head` and
+      # compares the twice-migrated schema against the once-migrated one, so a
+      # downgrade that leaves a table behind or an upgrade that rebuilds a
+      # column differently is caught rather than exiting zero.
+      #
+      # After the test suite, deliberately: both drills rewrite the schema
+      # destructively, and running them first would hand the isolation tests a
+      # database in a state they do not expect.
+      # Output is teed and echoed into the step summary on failure, for the same
+      # reason the pytest step does it: job logs need admin rights to download,
+      # so without this a red drill tells a contributor *that* the downgrade
+      # path is broken and nothing about where or why.
+      - name: Verify migrations reverse (FA-02)
+        shell: bash
+        run: |
+          set -o pipefail
+          python scripts/migration_cycle_drill.py 2>&1 | tee migration-drill.txt
+
+      - name: Report migration drill failure
+        if: failure()
+        shell: bash
+        run: |
+          if [ -f migration-drill.txt ]; then
+            echo '## FA-02 migration cycle' >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            tail -c 30000 migration-drill.txt >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # STEP-25a, FA-03. The audit recorded restore as the single largest
+      # unproven guarantee in the Foundation: a documented strategy, no restore
+      # ever performed, and no RPO/RTO values. This seeds two workspaces, dumps,
+      # restores into a *separate empty* database, and verifies schema and
+      # per-workspace data — two tenants so the restore is provably
+      # tenant-correct rather than merely non-empty.
+      #
+      # Runs here rather than on a developer machine because this is where a
+      # disposable PostgreSQL exists, and because a drill that runs on every PR
+      # keeps proving itself, while one run once on a laptop proves it once.
+      # `pg_dump` refuses to dump a server newer than itself, and the service
+      # container is pinned to 17. The runner's default client tracks whatever
+      # Ubuntu ships, so this installs the matching major version explicitly
+      # rather than leaving the drill to fail on a version mismatch that has
+      # nothing to do with the backup being tested.
+      - name: Install PostgreSQL 17 client
+        if: always()
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            --fail https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] \
+            https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-17
+          # Installing is not enough. The runner ships an older client at
+          # /usr/bin/pg_dump, and the versioned packages land in
+          # /usr/lib/postgresql/17/bin -- so PATH still resolves to 16 and
+          # `pg_dump` refuses the newer server. Prepending the versioned
+          # directory to PATH for subsequent steps is what actually selects it.
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+          /usr/lib/postgresql/17/bin/pg_dump --version
+
+      # `if: always()` so a broken downgrade does not also hide whether restore
+      # works. They are separate findings and each deserves its own answer;
+      # skipping this on FA-02's failure would have cost a full CI round trip
+      # to learn something this run could already have told us.
+      - name: Verify backup and restore (FA-03)
+        if: always()
+        shell: bash
+        run: |
+          set -o pipefail
+          python scripts/backup_restore_drill.py 2>&1 | tee restore-drill.txt
+
+      - name: Report restore drill failure
+        if: failure()
+        shell: bash
+        run: |
+          if [ -f restore-drill.txt ]; then
+            echo '## FA-03 backup and restore' >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            tail -c 30000 restore-drill.txt >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       # Job logs need admin rights on this repository to download, so a
       # contributor without them can see *that* the suite failed but not *why* —
       # which turns a one-line fix into several blind round-trips. The step
@@ -291,6 +388,21 @@ jobs:
       # Downloading job logs requires admin rights on this repository, but
       # artifacts do not — so the same output is also uploaded, keeping a failing
       # run diagnosable by anyone who can see it rather than only by an admin.
+      # The step summary carries these too, but it is not reachable through the
+      # REST API — only the web UI — so a contributor debugging from a terminal
+      # could see the drill failed and not why. An artifact is API-readable,
+      # which is the difference between a diagnostic and a dead end.
+      - name: Upload drill output
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-drill-output
+          path: |
+            apps/api/migration-drill.txt
+            apps/api/restore-drill.txt
+          retention-days: 7
+          if-no-files-found: ignore
+
       - name: Upload test output
         if: failure()
         uses: actions/upload-artifact@v4

@@ -6,13 +6,13 @@ version: "1.0"
 last_updated: 2026-08-15
 tags: [engineering, workflow, build-step, security, database, quality]
 step_id: STEP-25a
-step_status: Not Started
+step_status: In Progress
 detail_level: full
 ---
 
 # STEP-25a — Foundation Remediation
 
-**Status:** Not Started
+**Status:** In Progress
 **Detail level:** full — inserted between [[STEP-25 Foundation Audit and Internal Readiness]] and [[STEP-26 Product Design System and Screen Blueprints]] by owner decision on 2026-08-15, closing the findings STEP-25 recorded.
 
 ## Why This Step Exists
@@ -124,9 +124,11 @@ Isolation is **already proven in CI** and this task does not re-prove it. It clo
 
 ### 7. FA-06 — audit authentication events *(Medium)*
 
-Record sign-in, sign-out and **failed** authentication attempts through the existing `AuditService`, following the established action vocabulary.
+Record sign-up, sign-in, sign-out and token-refresh events — succeeded **and** failed — in a dedicated `security_event_log` table, per the owner's decision of 2026-08-15.
 
-Two constraints from the audit: no credential, token or cookie value may enter the audit body ([[CLAUDE|CLAUDE.md]] §16/§25) — task 1's redaction is a backstop, not a licence — and a failed attempt must be recorded **without** becoming an account-existence oracle, the same property `core/errors.py` already protects in its 401 responses.
+Two constraints from the audit, both binding under any option: no credential, token or cookie value may enter the record ([[CLAUDE|CLAUDE.md]] §16/§25) — task 1's redaction is a backstop, not a licence — and a failed attempt must be recorded **without** becoming an account-existence oracle, the same property `core/errors.py` already protects in its 401 responses.
+
+See [[#FA-06 — the owner's decision, and what was built]] for the requirement-by-requirement account.
 
 ### 8. FA-07 — 90-day audit retention, tested *(Medium)*
 
@@ -145,58 +147,96 @@ Any schema change here is **expand/contract** and ships with its RLS unchanged (
 
 **Claude cannot perform this** — it is a repository-settings change only the owner can make. This task is therefore: request it explicitly, then **verify it took effect** by observing the ruleset's required-check list or a PR that reports the check as required. Verification is part of this step's Definition of Done; the change itself is the owner's action.
 
+## FA-06 — the owner's decision, and what was built
+
+**Option B, decided 2026-08-15: a separate `security_event_log` table, completed inside this step rather than carried forward.**
+
+The three options were put to the owner because auditing authentication events cannot go through the existing `AuditService` without changing a documented multi-tenancy decision, and [[CLAUDE|CLAUDE.md]] §34 forbids inventing a schema:
+
+| | Option | What it costs | What it buys |
+|---|---|---|---|
+| **A** | Make `workspace_id` nullable on `audit_log` | Reverses a documented decision; creates rows no RLS policy can classify | One table, one query path |
+| **B** | A separate `security_event_log` table | A new table, RLS model, migration, and a second thing to retain | Keeps `audit_log`'s tenant invariant intact |
+| **C** | Structured application logs only | No queryable trail; not an audit record in the §16 sense | No schema change |
+
+**B was chosen** — the only option that records failed attempts *and* leaves `audit_log`'s tenant invariant untouched. A is a multi-tenancy regression traded for convenience; C would close the finding on paper only.
+
+### What the owner required, and where each requirement is met
+
+| # | Requirement | Where it is met |
+|---|---|---|
+| 1 | Append-only; events may precede a known user or workspace | `b2e94c17a5d3`; both columns nullable |
+| 2 | `workspace_id` / `user_id` not required | Nullable, and **no** foreign key on either |
+| 3 | Allowlisted event type + minimum metadata | `ck_security_event_log_type_valid`; `ALLOWED_EVENT_TYPES` |
+| 4 | Never store secrets or submitted identifiers | `FORBIDDEN_METADATA_KEYS` + `_SECRET_SHAPED_VALUE`, refused at construction |
+| 5 | Identical public responses for existing/nonexistent accounts | Record-then-**re-raise**; asserted end-to-end |
+| 6 | RLS, default-deny, no tenant read path or endpoint | `ENABLE` + `FORCE` with **no policies at all** |
+| 7 | Minimum privileges | `REVOKE ALL`; nothing granted back |
+| 8 | Immutable after insert, except retention | `BEFORE UPDATE` trigger that raises |
+| 9 | The approved 90-day retention | Same `audit_retention_days` setting as FA-07 |
+| 10 | Disposable PostgreSQL only | CI's `postgres:17` container; shared Supabase never touched |
+
+**The oracle is closed four independent ways** — no column can hold an identifier (not even a hash, which is an oracle to anyone who can compute it over a guess); `user_id` is null on every failure by CHECK constraint *and* by the record type; `record_failure` has no parameter that could carry an identity; and the public response is unchanged because both `sign_in` and `refresh` re-raise.
+
+**One limit is recorded rather than papered over.** A bare password has no shape — no regex will ever catch `hunter2`. The value pattern is a backstop; the key allowlist and an API with nowhere to put a password are the actual control, and a test asserts exactly that.
+
 ## Validation
 
 Observed, not assumed. Every check names its instrument, and every fix to a control carries a **negative control** proving the test fails without it.
 
-| # | Check | Instrument |
-|---|---|---|
-| 1 | A connection-URI password is **absent** from an emitted log record | Executed probe reproducing the FA-05 scenario |
-| 2 | Removing the new redaction pattern makes that test **fail** | Negative control |
-| 3 | A key-shaped credential (`*_KEY`, `*_SECRET`, `*_TOKEN`, `*_PASSWORD`) is redacted | Executed probe |
-| 4 | Already-redacted lines are not degraded by the new patterns | Executed probe on the existing bearer-token cases |
-| 5 | Restore drill completes: schema **and** per-workspace data match the source | Executed on a **disposable** database |
-| 6 | The restore target was a separate empty database, and no shared Supabase data was touched | Command record |
-| 7 | `downgrade base` then `upgrade head` both succeed; the resulting schema matches | Executed on a **disposable** database |
-| 8 | The root boundary's retry triggers a refresh, not a bare `reset()` | Unit test + observed against a real API outage |
-| 9 | The root boundary carries `role="alert"` and announces | Test + assistive-technology check |
-| 10 | A locally-skipped isolation suite produces a **visible** banner naming the omitted count | Executed offline run |
-| 11 | The offline suite still passes without PostgreSQL | Executed run with no test database |
-| 12 | Sign-in, sign-out and failed attempts appear in the audit log | Executed test |
-| 13 | No credential, token or cookie value appears in any audit body | Executed test |
-| 14 | A failed attempt is not an account-existence oracle | Executed test |
-| 15 | Audit events older than 90 days are purged; newer ones are retained | Executed test |
-| 16 | The retention window is configurable, not hard-coded | Executed test |
-| 17 | Full API and web suites pass, with **no new skips** | `pytest` and `vitest` |
-| 18 | Lint, format and type-check clean in both apps | Ruff, mypy strict, ESLint, `tsc` |
-| 19 | Governance documents in sync | `./scripts/sync-governance-docs.sh --check` |
-| 20 | **Required CI green, with the database-backed suite executing** | Check runs on the PR head; `PROJECTONE_REQUIRE_DATABASE_TESTS` keeps a skip red |
-| 21 | `governance docs (sync check)` is **verified** as a required check | Ruleset or PR observation (task 9) |
+| # | Check | Instrument | Outcome |
+|---|---|---|---|
+| 1 | A connection-URI password is **absent** from an emitted log record | Executed probe reproducing the FA-05 scenario | **PASS** — executed probe |
+| 2 | Removing the new redaction pattern makes that test **fail** | Negative control | **PASS** — 10 failures without it |
+| 3 | A key-shaped credential (`*_KEY`, `*_SECRET`, `*_TOKEN`, `*_PASSWORD`) is redacted | Executed probe | **PASS** — executed probe |
+| 4 | Already-redacted lines are not degraded by the new patterns | Executed probe on the existing bearer-token cases | **PASS** — bearer cases unchanged |
+| 5 | Restore drill completes: schema **and** per-workspace data match the source | Executed on a **disposable** database | **PASS** — executed in CI |
+| 6 | The restore target was a separate empty database, and no shared Supabase data was touched | Command record | **PASS** — separate empty DB; guard refuses Supabase |
+| 7 | `downgrade base` then `upgrade head` both succeed; the resulting schema matches | Executed on a **disposable** database | **PASS** — executed in CI |
+| 8 | The root boundary's retry triggers a refresh, not a bare `reset()` | Unit test + observed against a real API outage | **PASS** — observed 1 → 2 server requests |
+| 9 | The root boundary carries `role="alert"` and announces | Test + assistive-technology check | **PASS** — observed `alert` node |
+| 10 | A locally-skipped isolation suite produces a **visible** banner naming the omitted count | Executed offline run | **PASS** — observed, names 306 |
+| 11 | The offline suite still passes without PostgreSQL | Executed run with no test database | **PASS** — 479 passed offline |
+| 12 | Sign-up, sign-in, sign-out and refresh — succeeded and failed — are recorded | Executed test, CI database | **PASS** — failed at import first (`ModuleNotFoundError`) |
+| 13 | No credential, token, cookie or identifier reaches a stored row | Executed test | **PASS** — 7 fake sentinels absent from the serialized table |
+| 14 | A failed attempt is not an account-existence oracle | Executed test | **PASS** — closed 4 ways; failure rows indistinguishable |
+| 14a | Removing the key allowlist or the value pattern re-opens the leak | Negative control | **PASS** — each proven load-bearing |
+| 14b | RLS default-deny: SELECT/INSERT/UPDATE/DELETE/TRUNCATE all refused | Executed test, request-path role | **PASS** — `InsufficientPrivilege` on all five |
+| 14c | Rows are immutable even over the privileged connection | Executed test | **PASS** — trigger raises; row unchanged |
+| 14d | Security-event retention purges at the 90-day boundary | Executed test | **PASS** — 91d deleted, 89d and 1d kept |
+| 14e | Concurrent inserts remain independent | Executed test | **PASS** — two open transactions, neither blocked |
+| 15 | Audit events older than 90 days are purged; newer ones are retained | Executed test | **PASS** — boundary pinned both ways |
+| 16 | The retention window is configurable, not hard-coded | Executed test | **PASS** — `PROJECTONE_AUDIT_RETENTION_DAYS` |
+| 17 | Full API and web suites pass, with **no new skips** | `pytest` and `vitest` | **PASS** — API 479, web 261; no new skips |
+| 18 | Lint, format and type-check clean in both apps | Ruff, mypy strict, ESLint, `tsc` | **PASS** — all clean |
+| 19 | Governance documents in sync | `./scripts/sync-governance-docs.sh --check` | **PASS** — in sync |
+| 20 | **Required CI green, with the database-backed suite executing** | Check runs on the PR head; `PROJECTONE_REQUIRE_DATABASE_TESTS` keeps a skip red | **PASS** — all three checks green on `194ca13` |
+| 21 | `governance docs (sync check)` is **verified** as a required check | Ruleset or PR observation (task 9) | **PASS** — ruleset `20714051` read via API |
 
 ## Manual Checklist
 
-- [ ] Stop the API; confirm the **root** boundary renders and its "Try again" **genuinely recovers** once the API returns — the FA-04 scenario end to end.
-- [ ] Confirm the root boundary is announced by a screen reader (FA-11).
-- [ ] Confirm the four route boundaries still recover — task 3 must not regress them.
-- [ ] Sign in, sign out, and fail a sign-in; confirm all three appear in the audit log with no credential material.
-- [ ] Run the API suite locally **without** a test database; confirm the skip banner is unmissable and the run still passes.
-- [ ] Confirm no user-facing error surfaces a connection string, stack trace or internal detail.
+- [x] **Done, by injected fault rather than a stopped API.** The authenticated routes need credentials this environment does not hold, so the outage was reproduced by throwing from a Server Component — the same path the root boundary catches. Observed: the boundary rendered, the retry produced a real server request (1 → 2 in the dev-server log), and with the fault cleared a single click reached the fully recovered page with no reload. The injection was reverted and the tree confirmed byte-identical.
+- [x] **Done, via the rendered accessibility tree** — which is what a screen reader consumes. The tree shows `alert` wrapping the heading, message, retry control and reference. Not verified with a screen reader itself.
+- [x] **Done.** `error-boundary-retry.test.ts` passes unchanged for all four; the root fix added a file rather than altering the shared `useErrorRecovery` they depend on.
+- [x] **FA-06 confirmed.** Authentication events are recorded in `security_event_log`, and the public sign-in response is byte-identical for an existing and an unknown account — the property that makes recording a failure safe at all. See [[#FA-06 — the owner's decision, and what was built]].
+- [x] **Done.** 479 passed, 306 skipped, banner last on screen naming the omitted count. The run still passes — the skip is deliberately not a hard local failure.
+- [x] **Done.** The root boundary renders friendly copy plus an opaque digest and never `error.message` or a stack — asserted by test and observed in the rendered tree. FA-05 additionally closes the *log* path a connection string could reach.
 
 ## Definition of Done
 
-- [ ] All nine scheduled findings closed, each **proven by execution**.
-- [ ] **FA-05 verified by negative control** — the test fails without the new redaction.
-- [ ] **FA-03 restore drill executed** on a disposable database, verifying schema *and* representative data, with real RPO/RTO values written into [[Backup and Disaster Recovery]].
-- [ ] **FA-02 downgrade/upgrade cycle executed** on a disposable database.
-- [ ] **The shared Supabase development database was never a target** of any drill, migration test or destructive operation.
-- [ ] **FA-08 verified**: `governance docs (sync check)` is a required `main` check — the owner's action, confirmed by observation.
-- [ ] [[Foundation Audit Findings]] updated: each closed finding's **Status** set to `Closed` with the evidence that closed it. Findings deferred out of scope stay `Open` and are not silently closed.
-- [ ] Documentation updated ([[CLAUDE|CLAUDE.md]] §19): [[Backup and Disaster Recovery]], [[Compliance and Governance]], the `audit_log` schema note, and [[Build Plan]] Current State.
-- [ ] Full API and web suites pass with **no new skips**; lint, format and type-check clean.
-- [ ] Required CI green on the Pull Request, **with the database-backed suite executing**.
-- [ ] Manual checklist complete.
+- [x] **All nine closed** — FA-05, FA-02, FA-03, FA-04, FA-11, FA-01, FA-06, FA-07 and FA-08, each proven by execution. Nothing was closed that was not proven.
+- [x] **FA-05 verified by negative control.** 16 tests failed before the fix, including the end-to-end probe showing the plaintext password in the emitted record. Each of the three rules was then deleted from `_REDACTIONS`, turning the suite red (10, 5 and 2 failures).
+- [x] **FA-03 restore drill executed and PASSES** on a disposable database in CI, verifying schema *and* per-workspace data across two workspaces, restored into a separate empty database. [[Backup and Disaster Recovery]] records the proven capability and marks RPO/RTO **provisional, owner decision required** — per the instruction not to invent a production SLA.
+- [x] **FA-02 cycle executed and PASSES** on a disposable database in CI, comparing the twice-migrated schema against the once-migrated one. Runs on every pull request. Its first two failures were defects in the drill — it compared system-generated `NOT NULL` constraint names that embed the table OID and so cannot survive a recreate. The downgrade path was sound; the measurement was not.
+- [x] **The shared Supabase development database was never a target.** Never connected to, read from or written to. Both drills refuse `supabase.co`, RDS and Azure hosts before opening a connection — verified by running them against such URLs.
+- [x] **FA-08 verified.** Ruleset `20714051` (`Protect main`, active, updated 2026-08-11) lists the check among its required status checks. The owner had already made the change, so no owner action is outstanding; the stale workflow comment is corrected and a rename guard added.
+- [x] [[Foundation Audit Findings]] updated: all nine closures carry their evidence; the eight deferred findings remain `Open`.
+- [x] Documentation updated: [[Backup and Disaster Recovery]], [[Table - audit_log]] and [[Build Plan]] Current State. **[[Compliance and Governance]] deliberately not edited** — its audit statement is a principle that stays true, and the concrete retention window belongs with the table that implements it rather than duplicated (§19: link, do not duplicate).
+- [x] API **492 passed**, 320 skipped (the pre-existing FA-01 gap, now visible; the 14 added skips are FA-06's database-backed tests, which run in CI); web **261 passed**. Ruff, ruff format, mypy strict, ESLint zero-warning, `tsc --noEmit` and the production build all clean.
+- [x] **Required CI green on `9fa41bc`**: `api`, `web` and `governance docs (sync check)` all `success`. This run is also FA-02's, FA-03's and FA-06's proof — both drills execute as steps of the `api` job and both passed, and the `Test` step runs with `PROJECTONE_REQUIRE_DATABASE_TESTS` set, which turns a skipped database test into a failure. FA-06's 14 database-backed assertions therefore genuinely executed.
+- [x] **Complete.** Every manual-checklist item is confirmed.
 - [ ] Every review conversation resolved.
-- [ ] **Owner approval gate satisfied** — see below.
+- [ ] **Pending owner review.** No decisions are outstanding — FA-06's shape was decided (option B) and built. What remains is the owner's review and merge.
 - [ ] Pull Request open and **NOT merged**; the owner squash-merges.
 - [ ] **[[STEP-26 Product Design System and Screen Blueprints]] is not expanded by this step.** It is expanded by whichever step immediately precedes it once this one is `Done`.
 

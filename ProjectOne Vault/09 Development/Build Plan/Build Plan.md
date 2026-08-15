@@ -66,7 +66,7 @@ Status appears in two places — the step note and the row below — and they mu
 | STEP-24 | [[STEP-24 Dashboard]] | Done | full |
 | STEP-16b | [[STEP-16b Auth Refresh Outage Handling]] | Done | full |
 | STEP-25 | [[STEP-25 Foundation Audit and Internal Readiness]] | Done | full |
-| STEP-25a | [[STEP-25a Foundation Remediation]] | Not Started | full |
+| STEP-25a | [[STEP-25a Foundation Remediation]] | In Progress | full |
 | STEP-26 | [[STEP-26 Product Design System and Screen Blueprints]] | Not Started | outline |
 | STEP-27 | [[STEP-27 Product-wide UI Rebuild]] | Not Started | outline |
 | STEP-28 | [[STEP-28 Full Product Verification Polish and Hardening]] | Not Started | outline |
@@ -164,7 +164,7 @@ Two things [[API Architecture]] requires are explicitly **not** built yet and ar
 
 Three defects were found during validation: **a partial unique index does not prevent a duplicate live membership** (re-adding a removed member with a plain INSERT leaves one dead and one live row, passing the constraint while corrupting every count), **audit rows blocked test teardown** because `audit_log.workspace_id` is deliberately `RESTRICT`, and **a cluster-wide role grant left by the STEP-12 run** blocked the harness. All three are fixed; see [[STEP-13 Auth Users Workspaces Endpoints#Outcome]].
 
-Two gaps are recorded rather than forgotten: **audit retention is unbounded** (no purge schedule — needs a decision by [[STEP-25 Foundation Audit and Internal Readiness]]), and **authentication events are not audited** — sign-in, sign-out and failed attempts are arguably the most security-relevant events of all. **Idempotency keys** remain unbuilt, and `POST /workspaces` is now the first endpoint that could use them.
+Two gaps were recorded here rather than forgotten, and **both are now closed by [[STEP-25a Foundation Remediation]]**: audit retention is bounded at a configurable 90 days (FA-07), and authentication events are recorded in [[Table - security_event_log]] (FA-06). **Idempotency keys** remain unbuilt, and `POST /workspaces` is now the first endpoint that could use them.
 
 **STEP-13 carries an owner approval gate** (Critical — public API contract, authorization, multi-tenancy, database schema). It is `Done` and committed, but STEP-14 does not begin until the owner confirms it — including confirming the CI run, which this environment cannot observe on a private repository.
 
@@ -393,6 +393,15 @@ The fix re-throws `ApiUnreachableError` and leaves every other error on the exis
 **Remediation is a step, not a footnote.** [[STEP-25a Foundation Remediation]] was inserted by owner decision on 2026-08-15 between STEP-25 and [[STEP-26 Product Design System and Screen Blueprints]], carrying nine findings with **FA-05 first** — an active leak outranks a missing capability, because one is happening and the other has not yet happened. Eight lower-severity findings were deferred to [[STEP-28 Full Product Verification Polish and Hardening]] or a later remediation rather than folded in, since a remediation step that absorbs every open item stops being one.
 
 **Design does not begin until that Critical finding is closed.** [[STEP-26 Product Design System and Screen Blueprints]] stays `Not Started` at `outline` and is expanded by the step immediately preceding it — now STEP-25a. Expanding it earlier would have written a design plan against a foundation still carrying a credential leak.
+
+**The Critical finding is now closed.** [[STEP-25a Foundation Remediation]] closed **all nine** scheduled findings on 2026-08-15 — FA-05 first, proven by reproduction and by three negative controls that turn the suite red when each redaction rule is deleted. FA-04 and FA-11 were verified by observation rather than by test alone: a click on the repaired root boundary produces a real server request where the old wiring produced none, and the rendered accessibility tree now carries the `alert` node a screen reader announces.
+
+**FA-06 was decided by the owner and built inside the step.** Authentication-event auditing could not use `audit_log` — its `workspace_id` is `NOT NULL` by design and a failed sign-in has no tenant — so the three options were put to the owner rather than guessed at. **Option B was chosen on 2026-08-15**: a separate `security_event_log` table, which keeps `audit_log`'s tenant invariant intact. It is append-only, has **no RLS policies at all** (default-deny is the entire access model, since the events are not tenant-scoped), grants nothing to any client role, and is immutable against the privileged connection too via an UPDATE trigger. The account-existence oracle is closed four independent ways, including the one that is easy to miss: the public sign-in response is identical for an existing and an unknown account, because recording re-raises rather than translating. See [[Table - security_event_log]].
+
+**FA-02 and FA-03 are both proven, by execution.** Both were unproven capabilities, so the drills *were* the deliverable. The migration cycle — `upgrade head` → `downgrade base` → `upgrade head`, with the resulting schema compared against the original — and the restore drill — seed two workspaces, dump, restore into a **separate empty** database, verify schema *and* per-tenant data — now run on every pull request against a disposable `postgres:17` container, and **both pass**. Neither refuses to run against anything that is not obviously disposable, so the shared Supabase database can never be a target.
+
+**Both drills failed first on their own bugs, which is recorded rather than tidied away.** FA-02's compared PostgreSQL's system-generated `NOT NULL` constraint names, which embed the table OID and cannot survive a drop-and-recreate — so it reported a broken downgrade path that was in fact sound. FA-03's seed omitted a `NOT NULL` column, then hit a `pg_dump` version shadowing the client the workflow installed. The lesson is the step's own: **a drill that has never run is not evidence, and its first failures are as likely to be its own.** That is precisely why these findings were High.
+
 
 ---
 

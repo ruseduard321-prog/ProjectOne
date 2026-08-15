@@ -17,6 +17,7 @@ operations RLS deliberately forbids -- not a convenience bypass.
 import json
 import uuid
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
 import psycopg
@@ -93,6 +94,54 @@ class AuditRepository:
                     json.dumps(entry.detail),
                 ),
             )
+
+    @staticmethod
+    def purge_statement() -> str:
+        """Return the retention purge statement.
+
+        Exposed as a string so it is directly assertable. The failure this
+        guards is a `DELETE` whose predicate is wrong or missing, and that is
+        not a defect any downstream test catches — once an unfiltered delete has
+        run, the evidence it was wrong is the thing it destroyed.
+
+        `TRUNCATE` is deliberately not used despite being faster: it bypasses
+        row-level filtering entirely, so a bug in the caller could not be
+        limited by the statement itself.
+        """
+        return """
+            DELETE FROM public.audit_log
+            WHERE created_at < %s
+        """
+
+    def purge_older_than(self, cutoff: datetime) -> int:
+        """Delete audit rows created before `cutoff`, returning how many.
+
+        Runs over the **privileged** connection, like `record`: the table has no
+        DELETE policy and `authenticated` holds no DELETE grant, both
+        deliberately (migration `a3c07d5e91f4`), because a client able to delete
+        its own audit rows could erase the trail of what it did.
+
+        This is the audited-service-path shape CLAUDE.md §16 requires for the
+        operations RLS forbids — a scheduled retention purge is exactly such an
+        operation, and it is not a licence for anything else to delete here.
+
+        Args:
+            cutoff: Rows strictly older than this are removed.
+
+        Returns:
+            The number of rows deleted, so the purge can be monitored rather
+            than trusted (CLAUDE.md §26).
+        """
+        with (
+            psycopg.connect(
+                self._settings.database_url.get_secret_value(),
+                connect_timeout=self._settings.database_health_timeout_seconds,
+            ) as connection,
+            connection.cursor() as cursor,
+        ):
+            cursor.execute(self.purge_statement(), (cutoff,))
+
+            return cursor.rowcount
 
     @staticmethod
     def read_for_workspace(

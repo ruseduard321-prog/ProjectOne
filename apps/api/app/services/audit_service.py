@@ -24,9 +24,11 @@ exists.
 """
 
 import uuid
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Any
 
+from app.core.config import Settings
 from app.core.logging import get_logger, log_context
 from app.repositories.audit import AuditEntry, AuditRepository
 from app.services.token_service import AuthenticatedUser
@@ -70,6 +72,80 @@ class AuditService:
     def __init__(self, audit: AuditRepository) -> None:
         """Store the repository writes go through."""
         self._audit = audit
+
+    @staticmethod
+    def retention_cutoff(settings: Settings) -> datetime | None:
+        """Return the timestamp before which audit rows have expired.
+
+        **FA-07.** The window is the owner's decision of 2026-08-15: 90 days,
+        configurable before public release.
+
+        Returns None when retention is disabled, and that is the whole reason
+        this returns an optional rather than a datetime. `audit_retention_days
+        = 0` means *retain indefinitely*, and the dangerous misreading is "keep
+        nothing" — a cutoff of `now` would expire the entire log. Refusing to
+        produce a cutoff at all makes that outcome unreachable rather than
+        merely unlikely.
+
+        Args:
+            settings: The configuration holding the window.
+
+        Returns:
+            The cutoff, or None when nothing should ever be purged.
+        """
+        if settings.audit_retention_days <= 0:
+            return None
+
+        return datetime.now(UTC) - timedelta(days=settings.audit_retention_days)
+
+    @staticmethod
+    def retention_disclosure(settings: Settings) -> str:
+        """Describe the retention window in the words a user is owed.
+
+        CLAUDE.md §16 requires the audit-log exception to user erasure to be
+        *disclosed* as bounded, not merely to be bounded. Deriving the sentence
+        from the configured value is what stops the disclosure and the behaviour
+        drifting apart — the failure mode of every hardcoded privacy notice.
+        """
+        if settings.audit_retention_days <= 0:
+            return "Audit events are retained indefinitely."
+
+        return (
+            f"Audit events are retained for {settings.audit_retention_days} days, "
+            "then permanently deleted."
+        )
+
+    def purge_expired(self, settings: Settings) -> int:
+        """Delete audit events past the retention window.
+
+        Unlike `record`, this does **not** swallow failures. A silent audit
+        write failure loses one line; a silent purge failure means retention is
+        not happening, which is a compliance position quietly becoming false —
+        the caller needs to know so it can alert (CLAUDE.md §26).
+
+        Args:
+            settings: The configuration holding the retention window.
+
+        Returns:
+            How many rows were deleted. Zero when retention is disabled, and the
+            repository is not asked to delete at all in that case.
+        """
+        cutoff = self.retention_cutoff(settings)
+
+        if cutoff is None:
+            return 0
+
+        deleted = self._audit.purge_older_than(cutoff)
+
+        logger.info(
+            log_context(
+                event="audit_retention_purge",
+                retention_days=settings.audit_retention_days,
+                deleted=deleted,
+            )
+        )
+
+        return deleted
 
     def record(
         self,

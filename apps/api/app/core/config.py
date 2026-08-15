@@ -152,6 +152,29 @@ class Settings(BaseSettings):
     # generation genuinely is slow -- a completion is not a health check.
     ai_provider_timeout_seconds: float = 30.0
 
+    # How long an audit event is kept before being permanently deleted.
+    #
+    # **90 days, set by the project owner on 2026-08-15** (FA-07). CLAUDE.md §16
+    # requires audit logs to be retained on a *stated* schedule and disclosed as
+    # a bounded exception to user erasure -- before this, there was no retention
+    # mechanism at all, so the exception was unbounded and growing.
+    #
+    # Configurable rather than hard-coded, because the compliance position will
+    # firm up before public release and a window that needs a code change to
+    # move is a window nobody moves (CLAUDE.md §28a).
+    #
+    # **Zero means retain indefinitely**, for a deployment under an obligation
+    # to keep everything. It is the safer reading of the ambiguous value: a
+    # purge that treats 0 as "keep nothing" would delete the entire trail, so
+    # the code refuses to derive a cutoff from it at all rather than relying on
+    # arithmetic to land the right way.
+    #
+    # `ge=0` so a negative window is rejected at startup. A negative value would
+    # place the cutoff in the *future*, making every existing row expired -- a
+    # configuration typo that silently destroys the audit log is exactly the
+    # failure this bound exists to prevent (CLAUDE.md §24).
+    audit_retention_days: int = Field(default=90, ge=0)
+
     @property
     def trusted_proxy_networks(self) -> tuple[IPv4Network | IPv6Network, ...]:
         """Return the parsed trusted-proxy allowlist.

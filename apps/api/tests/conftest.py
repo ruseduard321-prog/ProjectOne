@@ -60,6 +60,73 @@ def pytest_runtest_logreport(report: pytest.TestReport) -> None:
     print(f"\n::error title=pytest {report.when} failure::{report.nodeid}%0A{detail}")
 
 
+def database_skip_banner(*, skipped: int) -> str | None:
+    """Return the end-of-run notice for omitted database tests, or None.
+
+    **FA-01.** On a machine with no PostgreSQL the isolation tests skip and the
+    suite reports green while omitting several hundred tests — which a
+    contributor can reasonably read as full coverage. `-ra` already lists every
+    skip reason, but three hundred identical lines is not a signal anyone reads;
+    one summary naming the count is.
+
+    Deliberately **not** a failure. A contributor without PostgreSQL must still
+    be able to run the offline suite, which is the design this file records
+    above. Visibility was the finding; a hard local failure would trade one
+    wrong behaviour for another.
+
+    The wording is equally deliberate. Tenant isolation *is* verified — in CI,
+    against a disposable container, enforced by `PROJECTONE_REQUIRE_DATABASE_TESTS`
+    turning a skip into a failure. A banner implying otherwise would teach every
+    reader something false.
+
+    Args:
+        skipped: How many tests were omitted for want of a database.
+
+    Returns:
+        The banner text, or None when nothing was skipped.
+    """
+    if skipped <= 0:
+        return None
+
+    return (
+        "\n" + "=" * 72 + f"\n  {skipped} database-backed tests were NOT run.\n\n"
+        f"  {TEST_DATABASE_URL_VAR} is not set, so the RLS and tenant-isolation\n"
+        "  tests were skipped. This run does NOT cover them.\n\n"
+        "  Isolation itself is verified in CI, which runs these same tests\n"
+        "  against a disposable postgres:17 container and fails the build if\n"
+        "  they skip. What is missing here is local coverage, not the proof.\n\n"
+        "  To run them locally against a disposable database:\n\n"
+        "    docker run --rm -d -p 5433:5432 -e POSTGRES_PASSWORD=throwaway \\\n"
+        "      -e POSTGRES_DB=projectone_test --name projectone-test postgres:17\n"
+        f"    export {TEST_DATABASE_URL_VAR}=\\\n"
+        "      postgresql://postgres:throwaway@127.0.0.1:5433/projectone_test\n"
+        "    pytest\n" + "=" * 72
+    )
+
+
+def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter) -> None:
+    """Print the skip banner where a reader will actually see it.
+
+    At the very end of the run, after pytest's own summary line: anything
+    earlier scrolls past on a suite this size, and the point of the banner is
+    that it is the last thing on screen.
+    """
+    if os.environ.get(TEST_DATABASE_URL_VAR):
+        return
+
+    skipped_reports = terminalreporter.stats.get("skipped", [])
+    omitted = sum(
+        1
+        for report in skipped_reports
+        if TEST_DATABASE_URL_VAR in str(getattr(report, "longrepr", ""))
+    )
+
+    banner = database_skip_banner(skipped=omitted)
+
+    if banner is not None:
+        terminalreporter.write_line(banner)
+
+
 # Applied to the throwaway test database only.
 #
 # `auth.uid()` is supplied by Supabase's platform image, not by PostgreSQL, so a

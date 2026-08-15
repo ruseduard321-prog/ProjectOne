@@ -24,6 +24,7 @@ As of [[STEP-22 Minimum Workflow Engine]]:
 | [[Table - workspaces]] | The tenant boundary | Is the boundary | ✅ Enabled + forced |
 | [[Table - workspace_members]] | User ↔ workspace membership with role | Yes | ✅ Enabled + forced |
 | [[Table - audit_log]] | Who changed what, and when — append-only | Yes | ✅ Enabled + forced (SELECT only) |
+| [[Table - security_event_log]] | Authentication events — append-only | No (nullable, no FK) | ✅ Enabled + forced (**no policies at all**) |
 | [[Table - provider_credentials]] | Workspace AI provider keys (BYOK), encrypted at rest | Yes | ✅ Enabled + forced |
 | [[Table - ai_spend_records]] | The AI spend ledger — append-only | Yes | ✅ Enabled + forced (SELECT only) |
 | [[Table - ai_budgets]] | Spend ceilings, running totals and the spend breaker | Yes | ✅ Enabled + forced |
@@ -36,6 +37,7 @@ As of [[STEP-22 Minimum Workflow Engine]]:
 Two tables deliberately break [[Table Conventions]], and in both cases the departure **is** the security property:
 
 - [[Table - audit_log]] — no `deleted_at`, no `version`, no `touch_row` trigger, and a single SELECT policy. An audit record its own subject can edit or remove is not an audit record.
+- [[Table - security_event_log]] — the same departures, and one more: **no policies whatsoever**. It is not tenant-scoped, so there is no correct tenant scope to read it under; default-deny is the whole access model. Its `user_id` and `workspace_id` are nullable with no foreign keys, because the events it records occur before either is known.
 - [[Table - ai_spend_records]] — keeps the standard columns but has no INSERT or UPDATE policy and no trigger. A client-writable spend ledger is forgeable, and a workspace could flood it to poison its own anomaly baseline.
 
 [[Table - ai_shutdown_switches]] holds the schema's one **nullable** tenant column: `workspace_id IS NULL` means platform-wide, so that row belongs to no tenant and is deliberately unreachable by every RLS policy.
@@ -136,4 +138,4 @@ Apply with `./scripts/migrate.sh up` (or `.\scripts\migrate.ps1 up`); see `scrip
 - **Previous:** [[Web Session Handling]]
 - **Next:** [[Table - users]]
 - **Parent:** [[Database MOC]]
-- **Related Notes:** [[Table Conventions]] · [[RLS Policy Pattern]] · [[Table - users]] · [[Table - workspaces]] · [[Table - workspace_members]] · [[Table - audit_log]] · [[Database Architecture]] · [[Chapter 07 - Database Standards]]
+- **Related Notes:** [[Table Conventions]] · [[RLS Policy Pattern]] · [[Table - users]] · [[Table - workspaces]] · [[Table - workspace_members]] · [[Table - audit_log]] · [[Table - security_event_log]] · [[Database Architecture]] · [[Chapter 07 - Database Standards]]
