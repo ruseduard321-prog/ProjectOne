@@ -75,13 +75,27 @@ def _require_tooling() -> None:
     A drill that cannot find its tools must say so rather than fail obscurely
     three steps later — the audit environment had exactly this gap.
     """
-    missing = [name for name in ("pg_dump", "psql") if shutil.which(name) is None]
+    missing = [name for name in ("pg_dump", "pg_restore") if shutil.which(name) is None]
 
     if missing:
         raise SystemExit(
             f"missing required tooling: {', '.join(missing)}. "
             "The restore drill needs the PostgreSQL client binaries."
         )
+
+    # `pg_dump` refuses a server newer than itself, and says so only once it has
+    # connected -- several steps into a drill that then reads like a restore
+    # failure rather than a toolchain one. Printing the client version and its
+    # path up front turns that into a line naming both, which is exactly what
+    # happened in CI: the runner's own /usr/bin/pg_dump (16) shadowed the 17
+    # client the workflow had installed to /usr/lib/postgresql/17/bin.
+    version = subprocess.run(  # noqa: S603 - fixed argv, no shell
+        ["pg_dump", "--version"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    print(f"    client: {version.stdout.strip()} ({shutil.which('pg_dump')})")
 
 
 def _seed(url: str) -> dict[str, Any]:

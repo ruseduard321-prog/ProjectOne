@@ -326,7 +326,13 @@ jobs:
             | sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update
           sudo apt-get install -y postgresql-client-17
-          pg_dump --version
+          # Installing is not enough. The runner ships an older client at
+          # /usr/bin/pg_dump, and the versioned packages land in
+          # /usr/lib/postgresql/17/bin -- so PATH still resolves to 16 and
+          # `pg_dump` refuses the newer server. Prepending the versioned
+          # directory to PATH for subsequent steps is what actually selects it.
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+          /usr/lib/postgresql/17/bin/pg_dump --version
 
       # `if: always()` so a broken downgrade does not also hide whether restore
       # works. They are separate findings and each deserves its own answer;
