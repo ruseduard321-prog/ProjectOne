@@ -1,14 +1,41 @@
 ---
-title: STEP-27 Product-wide UI Rebuild
+title: STEP-27 Product-wide UI Rebuild (Superseded — renumbered)
 category: Development/Build Step
-status: draft
-version: "1.0"
-last_updated: 2026-08-14
-tags: [engineering, workflow, build-step, design, frontend]
-step_id: STEP-27
-step_status: Not Started
-detail_level: outline
+status: superseded
+version: "2.0"
+last_updated: 2026-08-15
+tags: [engineering, workflow, build-step, superseded, history]
+step_status: Superseded
+detail_level: historical
+superseded_by: "[[STEP-80 Product-wide UI Rebuild]]"
 ---
+
+# STEP-27 Product-wide UI Rebuild (Superseded — renumbered)
+
+> [!warning] Superseded — kept as history, binding on nothing
+> This outline was replaced by owner decision on 2026-08-15, following the [[Product Coverage Audit]]. It is **not** an executable step and holds no status in the [[Build Plan]].
+>
+> **Successor:** [[STEP-80 Product-wide UI Rebuild]]
+
+## Why This Was Superseded
+
+This step was not cancelled — it **moved**, by owner decision on 2026-08-15, and is now [[STEP-80 Product-wide UI Rebuild]].
+
+**Why it moved.** At STEP-27 the rebuild would have restyled the Foundation surfaces — dashboard, projects, chat, settings — and nothing else, because nothing else existed. Every domain built afterwards would then have been styled as it arrived, which is precisely the per-screen drift a single consolidating pass exists to prevent. The [[Product Coverage Audit]] made the scale of that gap concrete.
+
+Run after the product surface exists, one pass covers a whole product rather than a fraction of one.
+
+**Its scope and its binding rules carry forward unchanged**, including the rule that makes the split worth having: **the design is not revised during implementation.** A blueprint found wrong at the keyboard means stopping, updating the blueprint step and obtaining the owner's re-approval — never improvising a better design in place. Regression protection carries forward too: existing behavioural tests stay green, and a rebuild requiring deleted assertions is a rebuild that changed behaviour.
+
+---
+
+## What the Outline Said
+
+The original outline is preserved below, unedited, so the earlier reasoning stays readable. **Nothing in it binds current work** — where it disagrees with the successor step, the successor wins.
+
+<details>
+<summary>Original outline (2026-08-14)</summary>
+
 
 # STEP-27 — Product-wide UI Rebuild
 
@@ -67,3 +94,12 @@ Not yet expanded.
 - **Previous:** [[STEP-26 Product Design System and Screen Blueprints]]
 - **Next:** [[STEP-28 Full Product Verification Polish and Hardening]]
 - **Parent:** [[Build Plan]]
+
+</details>
+
+---
+
+## Navigation
+
+- **Parent:** [[Build Plan]]
+- **Related Notes:** [[STEP-80 Product-wide UI Rebuild]] · [[Product Coverage Audit]]

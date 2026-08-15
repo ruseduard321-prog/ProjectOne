@@ -32,7 +32,7 @@ Practices, standards and process documentation for day-to-day engineering work.
 
 ## Build Execution
 
-- [[Build Plan]] — the step index taking ProjectOne from empty repository to first public release (26 planned, plus inserted steps)
+- [[Build Plan]] — the step index taking ProjectOne from empty repository to a private invite-only beta: 33 steps delivered, 64 future steps (STEP-26–STEP-89) in fourteen phases, rebuilt on 2026-08-15 against the [[Product Coverage Audit]]
 - [[Execution Protocol]] — the rules Claude follows on *"Implement the next step."*
 - [[Foundation Audit Findings]] — the prioritised record of what STEP-25 found across the Foundation build: what is sound, what is defective, and what could not be proven
 - [[STEP-25a Foundation Remediation]] — the nine findings that must close before design begins, FA-05 first

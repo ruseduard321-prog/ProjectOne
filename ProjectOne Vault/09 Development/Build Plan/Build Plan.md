@@ -2,17 +2,19 @@
 title: Build Plan
 category: Development
 status: stable
-version: "3.0"
-last_updated: 2026-08-14
+version: "4.0"
+last_updated: 2026-08-15
 tags: [engineering, documentation, workflow]
 aliases: ["Implementation Plan", "Build Roadmap", "Step Index"]
 ---
 
 # ProjectOne Build Plan
 
-The ordered execution index taking ProjectOne from an empty repository to a verified, production-quality product. **33 sequential steps** (28 numbered, plus five inserted by owner decision: STEP-11a, STEP-16a, STEP-12a, STEP-16b, STEP-25a), each sized for a single Claude Code session.
+The ordered execution index taking ProjectOne from an empty repository to a verified product in the hands of real users. **97 sequential steps** — 33 delivered (28 numbered plus five inserted by owner decision: STEP-11a, STEP-16a, STEP-12a, STEP-16b, STEP-25a), and **64 future steps, STEP-26 through STEP-89**, each sized for a single Claude Code session.
 
-**Public release is not a step in this plan.** It is unscheduled by owner decision on 2026-08-14, and a numbered release step will be created later — using the next available number — only once the owner decides the application is ready. The earlier `STEP-26 First Public Release` material is preserved, unnumbered and non-binding, as [[Public Release Draft - Unscheduled]].
+**The future half of this plan was rebuilt on 2026-08-15**, by owner decision, against the [[Product Coverage Audit]]. That audit measured the complete intended product against what `main` actually implements and found 24 capabilities Missing, 14 Foundation/Partial and — the finding that forced the rebuild — several P0 prerequisites with **no executable step anywhere**: file storage, async execution, the AI capability model beyond chat completion, and the Memory System. A three-step tail could not carry them.
+
+**Dependency order outranks historical numbering.** Where the two conflicted, the dependency won and the number moved. Two previously-numbered steps were renumbered rather than cancelled, and one was split; all three are recorded in [[#Superseded Step Numbering]] rather than quietly overwritten.
 
 **Steps execute in table order, not in numeric order.** A step numbered `Na` is placed where it belongs in the *dependency* sequence, while its number records which step's contract it amends. STEP-12a amends STEP-12's middleware contract but runs after STEP-16a, because the regression it fixes was only introduced by STEP-16.
 
@@ -37,6 +39,7 @@ Status appears in two places — the step note and the row below — and they mu
 
 | ID | Title | Status | Detail |
 |---|---|---|---|
+| | **Foundation — delivered** | | |
 | STEP-01 | [[STEP-01 Repository Bootstrap]] | Done | full |
 | STEP-02 | [[STEP-02 Stack Confirmation ADR]] | Done | full |
 | STEP-03 | [[STEP-03 Web App Skeleton]] | Done | full |
@@ -67,20 +70,155 @@ Status appears in two places — the step note and the row below — and they mu
 | STEP-16b | [[STEP-16b Auth Refresh Outage Handling]] | Done | full |
 | STEP-25 | [[STEP-25 Foundation Audit and Internal Readiness]] | Done | full |
 | STEP-25a | [[STEP-25a Foundation Remediation]] | Done | full |
-| STEP-26 | [[STEP-26 Product Design System and Screen Blueprints]] | Not Started | outline |
-| STEP-27 | [[STEP-27 Product-wide UI Rebuild]] | Not Started | outline |
-| STEP-28 | [[STEP-28 Full Product Verification Polish and Hardening]] | Not Started | outline |
+| | **Design Foundation** | | |
+| STEP-26 | [[STEP-26 Product Design System Foundation]] | Not Started | full |
+| | **Platform Substrate** | | |
+| STEP-27 | [[STEP-27 Storage Provider Abstraction]] | Not Started | outline |
+| STEP-28 | [[STEP-28 Asset Upload and Download]] | Not Started | outline |
+| STEP-29 | [[STEP-29 Asset Management UI]] | Not Started | outline |
+| STEP-30 | [[STEP-30 Async Job Infrastructure]] | Not Started | outline |
+| STEP-31 | [[STEP-31 Workflow Async Execution]] | Not Started | outline |
+| STEP-32 | [[STEP-32 Media Processing Pipeline]] | Not Started | outline |
+| STEP-33 | [[STEP-33 Storage Quotas and Lifecycle]] | Not Started | outline |
+| STEP-34 | [[STEP-34 Notifications Domain]] | Not Started | outline |
+| STEP-35 | [[STEP-35 Notifications UI]] | Not Started | outline |
+| STEP-36 | [[STEP-36 Notification Delivery Channels]] | Not Started | outline |
+| STEP-37 | [[STEP-37 Notification Preferences]] | Not Started | outline |
+| | **AI Capability Expansion** | | |
+| STEP-38 | [[STEP-38 AI Capability Contract Expansion]] | Not Started | outline |
+| STEP-39 | [[STEP-39 Image Generation Capability]] | Not Started | outline |
+| STEP-40 | [[STEP-40 Text-to-Speech Capability]] | Not Started | outline |
+| STEP-41 | [[STEP-41 Embeddings Capability]] | Not Started | outline |
+| STEP-42 | [[STEP-42 Tool Calling Capability]] | Not Started | outline |
+| STEP-43 | [[STEP-43 Chat Tool Actions]] | Not Started | outline |
+| | **Context and Memory** | | |
+| STEP-44 | [[STEP-44 Shared Context Manager]] | Not Started | outline |
+| STEP-45 | [[STEP-45 Memory Schema and Scopes]] | Not Started | outline |
+| STEP-46 | [[STEP-46 Memory Retrieval]] | Not Started | outline |
+| STEP-47 | [[STEP-47 Memory Update Policies]] | Not Started | outline |
+| STEP-48 | [[STEP-48 Memory Inspection and Control]] | Not Started | outline |
+| STEP-49 | [[STEP-49 Richer Chat Context]] | Not Started | outline |
+| | **Workflow and Agent Infrastructure** | | |
+| STEP-50 | [[STEP-50 Agent Invocation Safety Ceiling]] | Not Started | outline |
+| STEP-51 | [[STEP-51 Workflow Retry and Failure Recovery]] | Not Started | outline |
+| STEP-52 | [[STEP-52 Workflow Branching]] | Not Started | outline |
+| STEP-53 | [[STEP-53 Workflow Parallel Execution]] | Not Started | outline |
+| STEP-54 | [[STEP-54 Multi-Agent Orchestration]] | Not Started | outline |
+| | **Content Intelligence** | | |
+| STEP-55 | [[STEP-55 Research Agent]] | Not Started | outline |
+| STEP-56 | [[STEP-56 Script Agent]] | Not Started | outline |
+| STEP-57 | [[STEP-57 Script Review and Editing UI]] | Not Started | outline |
+| | **Media Production** | | |
+| STEP-58 | [[STEP-58 Media Generation Agent]] | Not Started | outline |
+| STEP-59 | [[STEP-59 Voice and Audio Generation]] | Not Started | outline |
+| STEP-60 | [[STEP-60 Audio Track Assembly]] | Not Started | outline |
+| | **Video Production** | | |
+| STEP-61 | [[STEP-61 Video Assembly Agent]] | Not Started | outline |
+| STEP-62 | [[STEP-62 Quality Assurance Agent]] | Not Started | outline |
+| STEP-63 | [[STEP-63 Regeneration and Review UI]] | Not Started | outline |
+| STEP-64 | [[STEP-64 Subtitles and Publishing Metadata]] | Not Started | outline |
+| STEP-65 | [[STEP-65 Video Export and Delivery]] | Not Started | outline |
+| | **Distribution** | | |
+| STEP-66 | [[STEP-66 Channels Domain]] | Not Started | outline |
+| STEP-67 | [[STEP-67 Connected Accounts and OAuth]] | Not Started | outline |
+| STEP-68 | [[STEP-68 Publishing Execution]] | Not Started | outline |
+| STEP-69 | [[STEP-69 Publishing Agent and Multi-Platform Targeting]] | Not Started | outline |
+| | **Analytics and Optimization** | | |
+| STEP-70 | [[STEP-70 Analytics Schema and Event Ingestion]] | Not Started | outline |
+| STEP-71 | [[STEP-71 Platform Metrics Ingestion]] | Not Started | outline |
+| STEP-72 | [[STEP-72 Analytics Metrics and Surfaces]] | Not Started | outline |
+| STEP-73 | [[STEP-73 Analytics Agent]] | Not Started | outline |
+| STEP-74 | [[STEP-74 Strategy Agent and Continuous Optimization]] | Not Started | outline |
+| | **Automation** | | |
+| STEP-75 | [[STEP-75 Workflow Scheduling and Triggers]] | Not Started | outline |
+| STEP-76 | [[STEP-76 Scheduled Publishing]] | Not Started | outline |
+| STEP-77 | [[STEP-77 Workspace and Collaboration Foundations]] | Not Started | outline |
+| STEP-78 | [[STEP-78 Prompt Store and Versioning]] | Not Started | outline |
+| | **Product UI Consolidation** | | |
+| STEP-79 | [[STEP-79 Domain Screen Blueprints]] | Not Started | outline |
+| STEP-80 | [[STEP-80 Product-wide UI Rebuild]] | Not Started | outline |
+| | **Commercial Readiness** | | |
+| STEP-81 | [[STEP-81 Billing Schema and Subscription Management]] | Not Started | outline |
+| STEP-82 | [[STEP-82 Plan Limits and Quota Enforcement]] | Not Started | outline |
+| STEP-83 | [[STEP-83 Billing UI and Invoices]] | Not Started | outline |
+| | **Verification and Release Hardening** | | |
+| STEP-84 | [[STEP-84 Observability and Alerting]] | Not Started | outline |
+| STEP-85 | [[STEP-85 Staging Environment and Deployment Pipeline]] | Not Started | outline |
+| STEP-86 | [[STEP-86 Backup, Recovery Objectives and Disaster Drill]] | Not Started | outline |
+| STEP-87 | [[STEP-87 Security Review and Penetration Testing]] | Not Started | outline |
+| STEP-88 | [[STEP-88 Full Product Verification and Hardening]] | Not Started | outline |
+| STEP-89 | [[STEP-89 Private Beta Release]] | Not Started | outline |
+
+## Phases
+
+The future sequence is grouped into fourteen phases. Grouping is descriptive — **numbering is one continuous sequence**, and a phase boundary is not a gate.
+
+| Phase | Steps | Count | What it establishes |
+|---|---|---|---|
+| **Design Foundation** | STEP-26–STEP-26 | 1 | The shared visual and interaction system, established once against the surfaces that actually exist. |
+| **Platform Substrate** | STEP-27–STEP-37 | 11 | The absent infrastructure every media, approval and automation capability sits behind: storage, async execution, notifications. |
+| **AI Capability Expansion** | STEP-38–STEP-43 | 6 | Turning a chat-only AI layer into one that can produce media and take actions, inside the cost model each capability needs. |
+| **Context and Memory** | STEP-44–STEP-49 | 6 | Shared context assembly and the five-scope Memory System, with the user controls [[CLAUDE|CLAUDE.md]] §15 requires of it. |
+| **Workflow and Agent Infrastructure** | STEP-50–STEP-54 | 5 | The engine extensions and the agent-safety ceiling that must exist before agents can chain. |
+| **Content Intelligence** | STEP-55–STEP-57 | 3 | The first real agent chain: research and script, producing content worth generating media for. |
+| **Media Production** | STEP-58–STEP-60 | 3 | Image, audio and voice generation as governed, resumable, storage-backed workflows. |
+| **Video Production** | STEP-61–STEP-65 | 5 | Assembly, rendering, quality checks, regeneration and export. |
+| **Distribution** | STEP-66–STEP-69 | 4 | Channels, connected accounts and the publishing path that turns finished content into published content. |
+| **Analytics and Optimization** | STEP-70–STEP-74 | 5 | Event data first, then metrics, then the agents that reason over them. |
+| **Automation** | STEP-75–STEP-78 | 4 | Scheduled and triggered execution, once there is something worth automating. |
+| **Product UI Consolidation** | STEP-79–STEP-80 | 2 | The product-wide visual rebuild, run once the real product surface exists. |
+| **Commercial Readiness** | STEP-81–STEP-83 | 3 | Billing and plan enforcement, immediately before a paid release and not before. |
+| **Verification and Release Hardening** | STEP-84–STEP-89 | 6 | Observability, staging, deployment, full-product verification and the beta itself. |
+
+### Why this order
+
+The order is derived from what genuinely blocks what, not from how important a capability is. Four chains determine most of it:
+
+- **Storage → upload → media generation → assembly → publishing.** Nothing about media moves until files can be stored; the audit named this the single largest blocker in the product.
+- **Async execution → long-running generation → rendering → scheduling.** Workflow runs currently execute inside the HTTP request, and a multi-minute render cannot.
+- **Capability contract → image / TTS / embeddings / tool calling → the agents that use them.** `Capability.CHAT_COMPLETION` is today the only member of the enum.
+- **Agent safety ceiling → chained agents → multi-agent workflows.** [[CLAUDE|CLAUDE.md]] §15a's cap on chained invocation is scheduled **before** the first agent chain, not alongside it.
+
+Three placements are owner decisions rather than dependency conclusions, and are recorded as such:
+
+- **Design is split.** [[STEP-26 Product Design System Foundation]] establishes the shared system now, against surfaces that exist. Screens for domains that do not yet exist are blueprinted in [[STEP-79 Domain Screen Blueprints]], once their behaviour is known rather than imagined.
+- **The UI rebuild runs late** ([[STEP-80 Product-wide UI Rebuild]]), so one consolidating pass covers a whole product rather than a fraction of one.
+- **Billing runs late** ([[STEP-81 Billing Schema and Subscription Management]] onward). The first release is a private, invite-only, free beta, which needs none of it; billing enters before a commercial paid release, once core product value has been demonstrated.
 
 ## Scope Boundary
 
-These 28 steps deliver a **verified, production-quality product**: the Foundation loop (sign up → workspace → project → AI chat → dashboard) built, audited, redesigned, rebuilt and verified end to end. Everything the [[Roadmap]] places in Phase 2 (Video Generation, Analytics, advanced agents, publishing) and Phase 3 (teams, enterprise, marketplace) is **out of scope for this plan** and gets its own step sequence.
+These steps deliver the complete target product loop — idea → planning → research → script → media → voice → assembly → quality checks → review and regeneration → export → connected-platform publishing → analytics → strategy feedback — plus the platform capabilities [[Product Bible]] names as pillars: Projects, AI Chat, Agents, Memory, Automation, Analytics, Publishing, Collaboration foundations and Continuous Optimization.
 
-**They do not deliver a public release.** STEP-28 produces a verified build and an honest defect record; whether and when to publish is a separate owner decision, and the step that publishes does not yet exist. See [[Public Release Draft - Unscheduled]].
+**They end at a private beta, not a public launch.** [[STEP-89 Private Beta Release]] puts the product in front of invited users, free of charge. A public, paid launch is a separate owner decision and a later step that does not yet exist.
 
-> [!note] Superseded: the former plan shape
-> Until 2026-08-14 this plan ended at a numbered `STEP-26 First Public Release`, and a **UI Polish phase** was to follow *after* that release, per [[Design Backlog and UI Vision]]'s Foundation Rule. Both were withdrawn by owner decision: design work now happens *before* release consideration (STEP-26–STEP-27), and release is unscheduled rather than the plan's endpoint. The earlier arrangement is recorded rather than erased, because a plan whose history is invisible invites the same question to be reopened repeatedly.
+Deliberately **not** in this plan, and deferred with reasons stated in [[#Deferred by Decision]]: enterprise capabilities, a marketplace, real-time collaborative editing and formal compliance certification — all [[Roadmap]] Phase 3 material.
 
-One consequence is worth stating plainly: **[[Billing]] is not in these 28 steps.** A public release that charges money needs it; a free/invite-only beta does not. That question is now resolved when the release step is written, not by STEP-25 — see [[Public Release Draft - Unscheduled]].
+## Superseded Step Numbering
+
+Three step notes were superseded on 2026-08-15. All three are **kept as history** with their original outlines intact, marked `Superseded`, holding no status in this plan.
+
+| Former step | Became | Why |
+|---|---|---|
+| `STEP-26 Product Design System and Screen Blueprints` | **Split** — [[STEP-26 Product Design System Foundation]] keeps the number and the design-system half; [[STEP-79 Domain Screen Blueprints]] takes the blueprints | Blueprinting Video Generation, Analytics, Publishing or Billing screens today would design against a specification rather than a product |
+| `STEP-27 Product-wide UI Rebuild` | **Renumbered** — [[STEP-80 Product-wide UI Rebuild]] | At STEP-27 it would have restyled the Foundation surfaces and nothing else, leaving every later domain to drift again |
+| `STEP-28 Full Product Verification Polish and Hardening` | **Renumbered** — [[STEP-88 Full Product Verification and Hardening]] | Its own goal is to verify *the whole product, once*; at STEP-28 the whole product was the Foundation loop |
+
+The approved visual direction, the reference image, the ADR checkpoint, the no-redesign-during-implementation rule and the defect policy all **carry forward** into the successor steps. Nothing was discarded in the renumbering — see each superseded note for the detail.
+
+## Deferred by Decision
+
+Capabilities the [[Product Coverage Audit]] recorded as specified-but-absent which are **deliberately not scheduled**, with the reason stated rather than left as silence:
+
+| Capability | Reason |
+|---|---|
+| MFA, OAuth and social sign-in | Accepted in [[Foundation Audit Findings]]. Not required for an invite-only beta; revisit before public sign-up |
+| Streaming AI responses | A UX quality improvement, not a capability gap. The provider contract excludes it deliberately, and adding it is one method per provider whenever it is wanted |
+| Team collaboration beyond workspaces and roles | [[Roadmap]] Phase 3. [[STEP-77 Workspace and Collaboration Foundations]] delivers the foundation; presence and real-time co-editing are a separate product decision |
+| Integrations and Advanced settings sections | [[Settings]] names both; neither has defined scope in any source document. Scoping them is an owner decision before they can become steps |
+| Project versioning and project search | [[Projects]] names both as principles. Deferred until real usage shows what a version and a search actually need to cover |
+| Marketplace, enterprise capabilities, formal certification | [[Roadmap]] Phase 3, explicitly beyond this plan |
+| Idempotency keys | Recorded as an open gap since STEP-22. Folded into the API surfaces of the steps that need them rather than carried as a standalone step |
+| Public paid launch | The owner's release decision makes the first release a free invite-only beta. The step that publishes publicly will be created when that decision is made |
 
 ## Source Documents
 
@@ -390,9 +528,9 @@ The fix re-throws `ApiUnreachableError` and leaves every other error on the exis
 
 **The audit fixed nothing, deliberately.** An audit that remediates what it finds has changed the system it was measuring. No application code, migration, CI configuration or database was touched, no vault link was repaired and no schema note was created — and the shared Supabase database was never connected to at any point.
 
-**Remediation is a step, not a footnote.** [[STEP-25a Foundation Remediation]] was inserted by owner decision on 2026-08-15 between STEP-25 and [[STEP-26 Product Design System and Screen Blueprints]], carrying nine findings with **FA-05 first** — an active leak outranks a missing capability, because one is happening and the other has not yet happened. Eight lower-severity findings were deferred to [[STEP-28 Full Product Verification Polish and Hardening]] or a later remediation rather than folded in, since a remediation step that absorbs every open item stops being one.
+**Remediation is a step, not a footnote.** [[STEP-25a Foundation Remediation]] was inserted by owner decision on 2026-08-15 between STEP-25 and the design step that follows it, carrying nine findings with **FA-05 first** — an active leak outranks a missing capability, because one is happening and the other has not yet happened. Eight lower-severity findings were deferred to full-product verification (now [[STEP-88 Full Product Verification and Hardening]]) or a later remediation rather than folded in, since a remediation step that absorbs every open item stops being one.
 
-**The gate that held design back is now open.** [[STEP-26 Product Design System and Screen Blueprints]] stays `Not Started` at `outline` and was deliberately **not** expanded by STEP-25a — expanding it earlier would have written a design plan against a foundation still carrying a credential leak. With FA-05 closed and merged, expanding STEP-26 is the next piece of work, and it has not been started.
+**The gate that held design back is now open.** The design step stays `Not Started` and was deliberately **not** expanded by STEP-25a — expanding it earlier would have written a design plan against a foundation still carrying a credential leak. With FA-05 closed and merged, design became the next piece of work. What that step *is* then changed: see the post-audit paragraphs below.
 
 **The Critical finding is closed and merged.** [[STEP-25a Foundation Remediation]] is `Done` — squash-merged to `main` as `54ad963` on 2026-08-15, closing **all nine** scheduled findings — FA-05 first, proven by reproduction and by three negative controls that turn the suite red when each redaction rule is deleted. FA-04 and FA-11 were verified by observation rather than by test alone: a click on the repaired root boundary produces a real server request where the old wiring produced none, and the rendered accessibility tree now carries the `alert` node a screen reader announces.
 
@@ -402,6 +540,20 @@ The fix re-throws `ApiUnreachableError` and leaves every other error on the exis
 
 **Both drills failed first on their own bugs, which is recorded rather than tidied away.** FA-02's compared PostgreSQL's system-generated `NOT NULL` constraint names, which embed the table OID and cannot survive a drop-and-recreate — so it reported a broken downgrade path that was in fact sound. FA-03's seed omitted a `NOT NULL` column, then hit a `pg_dump` version shadowing the client the workflow installed. The lesson is the step's own: **a drill that has never run is not evidence, and its first failures are as likely to be its own.** That is precisely why these findings were High.
 
+
+### After the Product Coverage Audit — 2026-08-15
+
+**The product was measured against its own specification, and the plan could not carry the gap.** [[Product Coverage Audit]] — merged to `main` as `270a0a4` — assessed **68 capabilities across 13 domains**: 21 Implemented, 14 Foundation/Partial, 24 Missing, 5 Intentionally Deferred, 4 Documentation Drift. Two of [[Product Bible]]'s eight pillars are substantially delivered. The remaining plan at that moment was three steps long.
+
+**Three P0 prerequisites had no executable step anywhere** — not deferred with a reason, simply absent: **file storage** (`assets.storage_path` is null on every row any route can create), **async execution** (workflow runs execute inside the HTTP request, so a multi-minute render cannot), and **the AI capability model beyond chat completion** (`Capability.CHAT_COMPLETION` is the only member of the enum). The **Memory System** was a fourth, with four of its five scopes entirely absent.
+
+**The future plan was rebuilt on 2026-08-15 by owner decision**, from STEP-26 to **STEP-89** — 64 steps in fourteen phases, ordered by dependency rather than by the previous numbering. Every P0 and P1 gap the audit recorded now has a step, and every capability the audit marked `no step` is either scheduled or listed in [[#Deferred by Decision]] with its reason.
+
+**Four owner decisions shaped it.** STEP-26 is restricted to the *common* design foundation and the surfaces that exist today, with speculative domain blueprints removed. The product-wide UI rebuild moved to [[STEP-80 Product-wide UI Rebuild]] and full verification to [[STEP-88 Full Product Verification and Hardening]], so each runs against a whole product rather than a fraction of one. The first release is a **private, invite-only, free beta** ([[STEP-89 Private Beta Release]]), which is why billing enters at [[STEP-81 Billing Schema and Subscription Management]] and not before.
+
+**One ordering correction is worth recording.** The first draft of this sequence placed media processing before the async infrastructure it depends on. The structural check that every step's dependencies carry a lower number than the step itself caught it, and async execution moved earlier — dependency order outranking a tidy grouping, which is the rule this rebuild was run under.
+
+**Nothing was implemented.** The rebuild is planning documentation: no application code, no migration, no CI change, and the shared Supabase database was never connected to. [[STEP-26 Product Design System Foundation]] is `Not Started` and is the next step.
 
 ---
 
