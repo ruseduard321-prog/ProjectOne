@@ -30,44 +30,53 @@
  * ------------------------------------------------------------------ */
 
 :root {
-  /* Neutral (slate) — a slight blue cast; pure black is deliberately absent */
-  --neutral-50: #f8fafc;
-  --neutral-100: #f1f5f9;
-  --neutral-200: #e2e8f0;
-  --neutral-400: #94a3b8;
-  --neutral-500: #64748b;
-  --neutral-600: #475569;
-  --neutral-700: #334155;
-  --neutral-800: #1e293b;
-  --neutral-900: #0f172a;
-  --neutral-950: #020617;
+  /* Ivory — the warm canvas. Not grey and not white: the cream cast is what
+     separates this product from every default admin panel, and it is the
+     direction's load-bearing hue. */
+  --ivory-50: #FFFDF8;
+  --ivory-100: #FAF6EE;
+  --ivory-200: #F2ECE1;
+  --ivory-300: #E4DBCB;
+  --ivory-400: #CFC4B0;
 
-  /* Accent (indigo) — the value most expected to change */
-  --accent-50: #eef2ff;
-  --accent-200: #c7d2fe;
-  --accent-400: #818cf8;
-  --accent-500: #6366f1;
-  --accent-600: #4f46e5;
-  --accent-700: #4338ca;
+  /* Ink — warm near-blacks and greys. Pure black (#000) is deliberately
+     absent: it is harsher on screen than a warm near-black and is the fastest
+     way to make an interface feel cheap. */
+  --ink-400: #9A9189;
+  /* ink-450 exists because one value could not serve two bars: navigation's
+     muted text needs 4.5 on a dark plane, an input's edge needs 3:1 on ivory.
+     ink-400 satisfies the first and fails the second at 2.87. See ADR-003. */
+  --ink-450: #8F867E;
+  --ink-500: #6E665F;
+  --ink-600: #57504A;
+  --ink-700: #3A3531;
+  --ink-800: #232120;
+  --ink-900: #121110;
+  --ink-950: #0F0E0D;
 
-  /* Success (green) */
-  --success-50: #f0fdf4;
-  --success-500: #22c55e;
-  --success-600: #16a34a;
-  --success-700: #15803d;
+  /* Charcoal — dark-theme surfaces. Warmer than the ink ramp so the dark
+     theme reads as the same product, not a different one. */
+  --char-800: #1A1816;
+  --char-700: #242120;
+  --char-600: #332F2C;
 
-  /* Warning (amber) */
-  --warning-50: #fffbeb;
-  --warning-500: #f59e0b;
-  --warning-600: #d97706;
-  --warning-700: #b45309;
+  /* Vermilion — the single accent. 500 is the fill hue from the approved
+     direction; 600 is the step that also survives as text on ivory. */
+  --verm-300: #F58555;
+  --verm-400: #F0663A;
+  --verm-500: #E2511F;
+  --verm-600: #C84016;
+  --verm-700: #A83512;
 
-  /* Danger (red) */
-  --danger-50: #fef2f2;
-  --danger-400: #f87171;
-  --danger-500: #ef4444;
-  --danger-600: #dc2626;
-  --danger-700: #b91c1c;
+  /* Semantic hues, muted toward the warm palette rather than pure spectrum.
+     All three clear the 4.5 TEXT bar in light mode — the outgoing values
+     cleared only 3:1 and could not carry running text. */
+  --green-400: #5FA971;
+  --green-600: #2F6B3D;
+  --amber-400: #D9A339;
+  --amber-700: #7A5A0C;
+  --red-400: #EF7A68;
+  --red-600: #C0341F;
 
   --white: #ffffff;
 }
@@ -81,33 +90,56 @@
  * ------------------------------------------------------------------ */
 
 :root {
-  --color-background: var(--neutral-50);
-  --color-surface: var(--white);
+  --color-background: var(--ivory-100);
+  --color-surface: var(--ivory-50);
   --color-surface-raised: var(--white);
 
+  /* The matte-black navigation plane. A DARK surface inside the LIGHT theme,
+     which no canvas token can describe — every other surface/text pairing
+     assumes foreground and background move together with the theme, and
+     navigation breaks that assumption (ADR-003 §3).
+
+     A component rendering inside navigation references the `nav-*` family. A
+     component rendering on the canvas never does. */
+  --color-nav-surface: var(--ink-900);
+  --color-nav-surface-raised: var(--ink-800);
+  --color-text-on-nav: var(--ivory-100);
+  --color-text-on-nav-muted: var(--ink-400);
+  /* The accent ON the navigation plane is the lighter step in BOTH themes,
+     because the plane it sits on is dark in both. The light-mode accent is
+     3.99 here and fails AA outright. */
+  --color-accent-on-nav: var(--verm-400);
+
   /* Decorative dividers — carries no information a user must perceive */
-  --color-border: var(--neutral-200);
+  --color-border: var(--ivory-300);
   /* Interactive boundaries — must clear WCAG 3:1 non-text contrast (§6.2) */
-  --color-border-strong: var(--neutral-500);
+  --color-border-strong: var(--ink-450);
 
-  --color-text: var(--neutral-900);
-  --color-text-muted: var(--neutral-500);
+  --color-text: var(--ink-900);
+  --color-text-muted: var(--ink-500);
 
-  --color-accent: var(--accent-600);
-  --color-accent-hover: var(--accent-700);
+  /* Two accent roles, not one. The direction's vermilion is a FILL colour:
+     measured, it is ~3.6 against white and fails the 4.5 text bar by
+     construction. `accent` is the step that survives as text; `accent-fill` is
+     the step that carries text on top of it. Reaching for `accent` where a
+     fill belongs produces a slightly dark fill — quiet, not broken — which is
+     the part of this system most likely to be got wrong (ADR-003). */
+  --color-accent: var(--verm-600);
+  --color-accent-hover: var(--verm-700);
+  --color-accent-fill: var(--verm-600);
   --color-accent-contrast: var(--white);
 
-  --color-success: var(--success-600);
-  --color-warning: var(--warning-600);
-  --color-danger: var(--danger-600);
+  --color-success: var(--green-600);
+  --color-warning: var(--amber-700);
+  --color-danger: var(--red-600);
   --color-danger-contrast: var(--white);
 
-  /* Loading placeholders. A distinct role from `surface-raised`, which in light
-     mode is #ffffff and would leave a skeleton invisible on the canvas (§6.5:
-     name the role, do not reach for a primitive). */
-  --color-skeleton: var(--neutral-200);
+  /* Loading placeholders. A distinct role from `surface-raised`, which would
+     leave a skeleton invisible on the canvas (§6.5: name the role, do not
+     reach for a primitive). */
+  --color-skeleton: var(--ivory-300);
 
-  --color-focus-ring: var(--accent-500);
+  --color-focus-ring: var(--verm-600);
 }
 
 /* ------------------------------------------------------------------ *
@@ -123,35 +155,46 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --color-background: var(--neutral-950);
-    --color-surface: var(--neutral-900);
-    /* neutral-800, not neutral-700: at 700 this surface is light enough that
-       muted text (4.04) and the accent both fall below AA on it (§6.3). */
-    --color-surface-raised: var(--neutral-800);
+    --color-background: var(--ink-950);
+    --color-surface: var(--char-800);
+    --color-surface-raised: var(--char-700);
 
-    --color-border: var(--neutral-700);
-    --color-border-strong: var(--neutral-400);
+    /* Navigation barely moves between themes: it was already a dark plane.
+       Its surfaces shift one step so the rail still reads as distinct from a
+       now-dark canvas rather than merging into it. */
+    --color-nav-surface: var(--ink-950);
+    --color-nav-surface-raised: var(--char-800);
+    --color-text-on-nav: var(--ivory-200);
+    --color-text-on-nav-muted: var(--ink-400);
+    --color-accent-on-nav: var(--verm-400);
 
-    --color-text: var(--neutral-100);
-    --color-text-muted: var(--neutral-400);
+    --color-border: var(--char-600);
+    --color-border-strong: var(--ink-400);
 
-    /* accent-400, not accent-500: as *text* on a dark card accent-500 is only
-       4.00 and fails AA. accent-hover moves up a step so the two stay
-       distinguishable (§6.3). */
-    --color-accent: var(--accent-400);
-    --color-accent-hover: var(--accent-200);
-    --color-accent-contrast: var(--neutral-950);
+    --color-text: var(--ivory-200);
+    /* ink-400, not ink-450: at 450 muted text is 4.48 on `surface-raised`,
+       below the 4.5 bar. The lightest dark surface is where both themes run
+       out of room, and it is the surface to check first on any change. */
+    --color-text-muted: var(--ink-400);
 
-    --color-success: var(--success-500);
-    --color-warning: var(--warning-500);
-    /* danger-400, not danger-500: as text on surface-raised, 500 is 3.89. */
-    --color-danger: var(--danger-400);
+    /* Accent and semantic hues shift one step lighter: a hue tuned against
+       ivory is too dark against near-black (§6.2). The accent/fill split
+       widens here — as text the accent must be light, as a fill it must stay
+       saturated enough to read as the brand. */
+    --color-accent: var(--verm-400);
+    --color-accent-hover: var(--verm-300);
+    --color-accent-fill: var(--verm-500);
+    --color-accent-contrast: var(--ink-950);
+
+    --color-success: var(--green-400);
+    --color-warning: var(--amber-400);
+    --color-danger: var(--red-400);
     /* Not white: white on the lighter dark-mode red fails outright (§6.2) */
-    --color-danger-contrast: var(--neutral-950);
+    --color-danger-contrast: var(--ink-950);
 
-    --color-skeleton: var(--neutral-700);
+    --color-skeleton: var(--char-600);
 
-    --color-focus-ring: var(--accent-400);
+    --color-focus-ring: var(--verm-400);
   }
 }
 
@@ -175,10 +218,16 @@
   --color-surface-raised: var(--color-surface-raised);
   --color-border: var(--color-border);
   --color-border-strong: var(--color-border-strong);
+  --color-nav-surface: var(--color-nav-surface);
+  --color-nav-surface-raised: var(--color-nav-surface-raised);
+  --color-text-on-nav: var(--color-text-on-nav);
+  --color-text-on-nav-muted: var(--color-text-on-nav-muted);
+  --color-accent-on-nav: var(--color-accent-on-nav);
   --color-text: var(--color-text);
   --color-text-muted: var(--color-text-muted);
   --color-accent: var(--color-accent);
   --color-accent-hover: var(--color-accent-hover);
+  --color-accent-fill: var(--color-accent-fill);
   --color-accent-contrast: var(--color-accent-contrast);
   --color-success: var(--color-success);
   --color-warning: var(--color-warning);
@@ -190,6 +239,12 @@
   /* Typography (§5.1) — --font-inter is supplied by next/font in layout.tsx */
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system,
     "Segoe UI", Roboto, sans-serif;
+  /* Editorial display face. Bounded deliberately to --text-2xl and above:
+     page titles and large headings, never body copy, labels, table cells or
+     controls. A serif at 14px in a dense table costs legibility, which §9
+     makes non-negotiable — the editorial quality lives in display moments,
+     not in every cell (ADR-003 §5). Supplied by next/font in layout.tsx. */
+  --font-display: var(--font-instrument-serif), Georgia, "Times New Roman", serif;
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
 
   /* Type scale (§5.2) — 1.25 major third. Line height tightens as size grows. */

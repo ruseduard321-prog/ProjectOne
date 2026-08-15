@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Inter, Instrument_Serif } from "next/font/google";
 import "./globals.css";
 
 /**
@@ -17,6 +17,21 @@ const inter = Inter({
   variable: "--font-inter",
 });
 
+/**
+ * The editorial display face, self-hosted on the same terms as Inter.
+ *
+ * One weight, deliberately. It is used only at --text-2xl and above — page
+ * titles and the few large headings where the approved direction's editorial
+ * quality actually lives — so additional weights would be payload nothing
+ * renders ([[Design System]] §5.1a, ADR-003 §5).
+ */
+const instrumentSerif = Instrument_Serif({
+  subsets: ["latin"],
+  weight: "400",
+  display: "swap",
+  variable: "--font-instrument-serif",
+});
+
 export const metadata: Metadata = {
   title: "ProjectOne",
   description: "An AI Operating System for content businesses.",
@@ -28,7 +43,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${inter.variable} h-full antialiased`}>
+    <html lang="en" className={`${inter.variable} ${instrumentSerif.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
   );

@@ -2,8 +2,8 @@
 title: Design System
 category: Design
 status: stable
-version: "1.4"
-last_updated: 2026-08-03
+version: "2.1"
+last_updated: 2026-08-15
 tags: [design, documentation, feature]
 aliases: ["Design System & Visual Language", "Visual Language"]
 source_pdf: "[[12 Assets/PDF/ProjectOne_Design_System_Visual_Language_v1.0.pdf|ProjectOne_Design_System_Visual_Language_v1.0.pdf]]"
@@ -14,6 +14,29 @@ source_pdf: "[[12 Assets/PDF/ProjectOne_Design_System_Visual_Language_v1.0.pdf|P
 ## Purpose
 
 This document defines the visual identity and user experience principles of ProjectOne. Its objective is to ensure that every screen feels intentionally designed, premium, consistent and timeless regardless of whether it is created by a human designer or an AI assistant.
+
+## 0. Visual Language
+
+> [!important] Owner-approved direction and owner-approved values
+> The direction below was approved on 2026-08-14; the token values expressing it (§4–6) were approved on **2026-08-15** through [[ADR-003 Product Visual Language and Token Semantics]] (`Accepted`), written by [[STEP-26 Product Design System Foundation]]. **Both are binding.**
+>
+> Concept reference: `ProjectOne_Product_Design_Direction_v1.0.png` in `12 Assets/Images`. **It is direction, not a screen specification.** It illustrates surfaces that do not exist today; the rules below are what is binding, not the pixels in that image.
+
+ProjectOne looks like a **production studio's workspace**, not a SaaS dashboard. The identity in one line:
+
+> **An ivory canvas the interface sits on, a matte-black rail it hangs from, and a single vermilion accent used sparingly enough to still mean something.**
+
+Stated as rules, so they can be checked rather than admired:
+
+1. **The canvas is warm ivory, never white and never grey.** Grey is the default every framework ships; the cream cast is the identity. No neutral-grey value exists in the palette (§6.1).
+2. **Navigation is matte black in both themes.** It is a fixed dark plane the product hangs from — the one element that does not change with the theme, and the reason `nav-*` is its own token family (§6.2).
+3. **One accent, used sparingly.** Vermilion marks the primary action, the active location, and state that needs attention. **A screen with vermilion in five places has none** — if everything is accented, nothing is.
+4. **Typography carries the personality; decoration does not.** The editorial serif at display sizes is where the character lives (§5.1a). Everything else is Inter, quiet and legible.
+5. **Depth comes from surface and spacing, not shadow.** Three restrained elevation levels exist and signal what floats above what (§4.3). Ivory surfaces separate by tone, not by drop shadow.
+6. **Cinematic cues are structural, never skeuomorphic.** Duration badges on media, filmstrip rhythm in galleries, generous margins around content. **No paper textures, no tape, no torn edges, no film-grain overlays** — the concept reference uses them as illustration; the product does not.
+7. **Nothing that reads as generic AI.** No blue/purple gradients, no glassmorphism, no glow, no KPI-card grid as a default layout (§13).
+
+**What this is not:** a dark interface, a Linear/Vercel clone, or a template aesthetic. §13's anti-patterns apply with full force, and "it looked good in the reference" is not an argument against them.
 
 ## 1. Design Philosophy
 
@@ -119,6 +142,22 @@ Chosen for legibility at small sizes and a neutral, professional tone that carri
 
 The fallback stack is not decoration: it is what renders during load and on failure, and a stack ending in bare `sans-serif` produces a visibly different page. `--font-mono` exists for one reason — ids, tokens and code fragments, where proportional digits actively mislead.
 
+### 5.1a Display face (v2)
+
+**Instrument Serif**, one weight (400), self-hosted via `next/font` on the same terms as Inter.
+
+```
+--font-display: var(--font-instrument-serif), Georgia, "Times New Roman", serif;
+```
+
+**Bounded deliberately: `--text-2xl` and above, and nothing else.** Page titles and the few large headings where the direction's editorial quality actually lives. **Never** body copy, labels, table cells, controls, captions or metadata.
+
+The boundary is the whole decision. A serif at 14px in a dense table costs real legibility, which §9 makes non-negotiable — the editorial character belongs in display moments, and making every cell a serif is how the concept's *feel* becomes the product's *problem*. Inter remains the body and UI face, unchanged: it was chosen for legibility at small sizes and a tone that does not date, and nothing in the new direction argues against it.
+
+One weight, because only display sizes use it and additional weights would be payload nothing renders.
+
+**This is the choice most open to owner substitution**, and the cheapest to change — one primitive and one `next/font` import ([[ADR-003 Product Visual Language and Token Semantics]] §5).
+
 ### 5.2 Type scale (v1)
 
 A **1.25 (major third)** ratio, rounded to sensible pixel values:
@@ -147,115 +186,156 @@ A **1.25 (major third)** ratio, rounded to sensible pixel values:
 
 Maintain a restrained palette with one primary accent color and limited semantic colors for success, warning and error states. Avoid excessive gradients and saturated colors.
 
-### 6.1 Primitives (v1)
+### 6.1 Primitives (v2)
 
 Raw values. **No component may reference these.**
 
-A neutral ramp does most of the work in a calm interface, plus one accent and three semantic hues:
+> [!important] These values were **approved by the owner on 2026-08-15**
+> They express the owner-approved visual direction — warm ivory canvas, matte-black navigation, vermilion accent — as concrete numbers, and were accepted through [[ADR-003 Product Visual Language and Token Semantics]]. Changing them is a specification change governed by §6.5, and changing the *semantics* around them requires a superseding ADR.
+>
+> The v1 slate/indigo values this replaces are recorded in [[STEP-14 Design System Tokens]] and in git history.
 
-| Ramp | 50 | 100 | 200 | 400 | 500 | 600 | 700 | 800 | 900 | 950 |
-|---|---|---|---|---|---|---|---|---|---|---|
-| **Neutral** | `#f8fafc` | `#f1f5f9` | `#e2e8f0` | `#94a3b8` | `#64748b` | `#475569` | `#334155` | `#1e293b` | `#0f172a` | `#020617` |
-| **Accent** (indigo) | `#eef2ff` | — | `#c7d2fe` | `#818cf8` | `#6366f1` | `#4f46e5` | `#4338ca` | — | — | — |
-| **Success** (green) | `#f0fdf4` | — | — | — | `#22c55e` | `#16a34a` | `#15803d` | — | — | — |
-| **Warning** (amber) | `#fffbeb` | — | — | — | `#f59e0b` | `#d97706` | `#b45309` | — | — | — |
-| **Danger** (red) | `#fef2f2` | — | — | `#f87171` | `#ef4444` | `#dc2626` | `#b91c1c` | — | — | — |
+The palette is warm throughout. **No value in it is neutral grey**, and that is the single decision the identity rests on: a cream canvas and warm near-blacks are what separate this product from the default admin panel that every framework ships with (§13, §14).
 
-`neutral-800` and `danger-400` were added on 2026-08-02 during STEP-14, when the
-contrast check was extended to cover `--color-surface-raised` — a surface the
-original verification omitted. Neither is a new hue; both are one step within an
-existing ramp. See §6.3.
+| Ramp | 50 | 100 | 200 | 300 | 400 | 450 | 500 | 600 | 700 | 800 | 900 | 950 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **Ivory** — the canvas | `#FFFDF8` | `#FAF6EE` | `#F2ECE1` | `#E4DBCB` | `#CFC4B0` | — | — | — | — | — | — | — |
+| **Ink** — warm near-blacks | — | — | — | — | `#9A9189` | `#8F867E` | `#6E665F` | `#57504A` | `#3A3531` | `#232120` | `#121110` | `#0F0E0D` |
+| **Charcoal** — dark surfaces | — | — | — | — | — | — | — | `#332F2C` | `#242120` | `#1A1816` | — | — |
+| **Vermilion** — the accent | — | — | — | `#F58555` | `#F0663A` | — | `#E2511F` | `#C84016` | `#A83512` | — | — | — |
+| **Green** — success | — | — | — | — | `#5FA971` | — | — | `#2F6B3D` | — | — | — | — |
+| **Amber** — warning | — | — | — | — | `#D9A339` | — | — | — | `#7A5A0C` | — | — | — |
+| **Red** — danger | — | — | — | — | `#EF7A68` | — | — | `#C0341F` | — | — | — | — |
 
-A slate-based neutral rather than pure grey: a slight blue cast reads as more considered than `#808080`, and pure black (`#000`) is deliberately absent — it is harsher on screen than a very dark slate and is the fastest way to make an interface feel cheap.
+**Pure black is deliberately absent**, as it was in v1 and for the same reason: `#000` is harsher on screen than a warm near-black and is the fastest way to make an interface feel cheap. The matte-black navigation is `ink-900` `#121110` — black enough to read as matte, warm enough to belong to the ivory beside it.
 
-Indigo as the v1 accent: distinctive enough to be recognisable (§14), restrained enough not to fight the content (§1). **This is the value most expected to change**, and thanks to §3a it is also among the cheapest.
+**`ink-450` exists because one value could not serve two bars.** Navigation's muted text needs 4.5:1 on a dark plane; an input's edge needs 3:1 on ivory. `ink-400` satisfies the first and fails the second at **2.87**. Splitting them is the same move that produced `--color-border-strong` in v1 — see §6.3.
 
-### 6.2 Semantic tokens (v1)
+**Two vermilion steps carry the accent, not one.** `verm-500` `#E2511F` is the fill hue from the approved direction. Measured as *text* on ivory it is **3.82**, below the 4.5 bar. `verm-600` `#C84016` is the step that survives as text. This is not a compromise on the direction; it is what the direction costs to implement accessibly, and §6.2 names both roles.
+
+**The semantic hues are muted toward the warm palette** rather than taken from the pure spectrum, and all three now clear the **4.5 text bar** in light mode. The v1 values cleared only 3:1 (success `3.15`, warning `3.04`) and were therefore usable for icons and fills but **never for running text** — a limitation §6.3 recorded and this palette removes.
+
+### 6.2 Semantic tokens (v2)
 
 **This is the only layer components may reference.**
 
+#### Canvas tokens
+
+The interface that sits *on* the ivory.
+
 | Token | Light | Dark | Role |
 |---|---|---|---|
-| `--color-background` | `neutral-50` | `neutral-950` | Page canvas |
-| `--color-surface` | `#ffffff` | `neutral-900` | Cards, panels — sits *above* the canvas |
-| `--color-surface-raised` | `#ffffff` | `neutral-800` | Dropdowns, dialogs |
-| `--color-border` | `neutral-200` | `neutral-700` | **Decorative** dividers and separators |
-| `--color-border-strong` | `neutral-500` | `neutral-400` | **Interactive** boundaries — input outlines, control edges |
-| `--color-text` | `neutral-900` | `neutral-100` | Primary content |
-| `--color-text-muted` | `neutral-500` | `neutral-400` | Secondary, captions, placeholders |
-| `--color-accent` | `accent-600` | `accent-400` | Primary actions, active state, focus |
-| `--color-accent-hover` | `accent-700` | `accent-200` | Accent hover/press |
-| `--color-accent-contrast` | `#ffffff` | `neutral-950` | Text **on** an accent surface |
-| `--color-success` | `success-600` | `success-500` | Confirmation |
-| `--color-warning` | `warning-600` | `warning-500` | Caution |
-| `--color-danger` | `danger-600` | `danger-400` | Errors, destructive actions |
-| `--color-danger-contrast` | `#ffffff` | `neutral-950` | Text **on** a danger surface |
-| `--color-skeleton` | `neutral-200` | `neutral-700` | Loading placeholder fill (§10) |
-| `--color-focus-ring` | `accent-500` | `accent-400` | Focus indicator (§9) |
+| `--color-background` | `ivory-100` | `ink-950` | Page canvas |
+| `--color-surface` | `ivory-50` | `char-800` | Cards, panels — sits *above* the canvas |
+| `--color-surface-raised` | `#ffffff` | `char-700` | Dropdowns, dialogs |
+| `--color-border` | `ivory-300` | `char-600` | **Decorative** dividers and separators |
+| `--color-border-strong` | `ink-450` | `ink-400` | **Interactive** boundaries — input outlines, control edges |
+| `--color-text` | `ink-900` | `ivory-200` | Primary content |
+| `--color-text-muted` | `ink-500` | `ink-400` | Secondary, captions, placeholders |
+| `--color-accent` | `verm-600` | `verm-400` | The accent **as text or as a border** |
+| `--color-accent-hover` | `verm-700` | `verm-300` | Accent hover/press |
+| `--color-accent-fill` | `verm-600` | `verm-500` | The accent **as a background** carrying text on top |
+| `--color-accent-contrast` | `#ffffff` | `ink-950` | Text **on** `--color-accent-fill` |
+| `--color-success` | `green-600` | `green-400` | Confirmation |
+| `--color-warning` | `amber-700` | `amber-400` | Caution |
+| `--color-danger` | `red-600` | `red-400` | Errors, destructive actions |
+| `--color-danger-contrast` | `#ffffff` | `ink-950` | Text **on** a danger surface |
+| `--color-skeleton` | `ivory-300` | `char-600` | Loading placeholder fill (§10) |
+| `--color-focus-ring` | `verm-600` | `verm-400` | Focus indicator (§9) |
 
-**Accent and semantic colors shift one step lighter in dark mode.** A hue tuned for contrast against white is too dark against near-black; reusing it produces the muddy, low-contrast dark mode that looks like an afterthought because it is one.
+#### Navigation tokens
 
-**`*-contrast` tokens exist so no component ever guesses what text color survives on a colored background.** That guess is where contrast failures come from, and it is a solved problem if the pairing is named once.
+**Navigation is its own surface family, not a styled sidebar.** The rail is dark in the *light* theme, which no canvas token can describe: every pairing above assumes foreground and background move together with the theme, and navigation breaks that assumption.
 
-Note that `--color-danger-contrast` is **not** white in both themes. White on the lighter dark-mode red fails the 4.5 bar outright; near-black reaches 7.29:1. A `*-contrast` token that is "always white" is an assumption, not a pairing — which is precisely why it is a token rather than a convention.
+| Token | Light | Dark | Role |
+|---|---|---|---|
+| `--color-nav-surface` | `ink-900` | `ink-950` | The navigation plane |
+| `--color-nav-surface-raised` | `ink-800` | `char-800` | Active / hovered navigation item |
+| `--color-text-on-nav` | `ivory-100` | `ivory-200` | Navigation labels |
+| `--color-text-on-nav-muted` | `ink-400` | `ink-400` | Secondary navigation text, section labels |
+| `--color-accent-on-nav` | `verm-400` | `verm-400` | The accent **on** the navigation plane |
 
-**`--color-skeleton` is not `--color-surface-raised`, and the difference is why it exists.** Added during STEP-15, when the first loading skeleton was built against `surface-raised` and turned out to be invisible: in light mode that token is `#ffffff` against a `#f8fafc` canvas, a ratio of **1.05**. A skeleton is informational — it says "content is coming" — so it must be *distinguishable*, even though it is not operable and so not subject to the 3:1 non-text bar (§6.3). Reusing a surface token for a fill that needs to be seen against that same surface is the mistake this token prevents.
+**The binding rule:** *a component rendering inside the navigation plane references the `nav-*` family; a component rendering on the canvas never does.* Painting navigation with canvas tokens plus overrides is how components become theme-aware, which §6.4 forbids.
 
-**Two border tokens, deliberately.** They have genuinely different requirements and collapsing them fails one of the two:
+`--color-accent-on-nav` is **identical in both themes**, because the plane it sits on is dark in both. The light-mode `--color-accent` measures **3.99** on `nav-surface` and fails AA outright — this is the same one-step-lighter rule §6.2 has always stated for dark mode, applied to a dark region that happens to live inside the light theme.
 
-- `--color-border` is decorative — dividers, table rules, card edges. It carries no information a user must perceive, so it is tuned to be quiet.
-- `--color-border-strong` marks an **interactive** boundary: where an input begins and ends. WCAG's 3:1 non-text contrast requirement applies here, because a control whose edge is invisible is a control some users cannot find. `neutral-200` on a light background is 1.18:1 and fails outright.
+#### Two accent roles, and this is the one most likely to be got wrong
 
-Using the decorative token on an input is the most likely way to break accessibility while the interface still looks fine to whoever built it.
+`--color-accent` and `--color-accent-fill` are **two separate semantic roles**, which **currently resolve to the same value in light mode (`#C84016`) and diverge in dark mode** (`#F0663A` as a foreground, `#E2511F` as a fill).
+
+**Separate because the roles are genuinely different, not because the values must always be.** They answer different questions and carry different accessibility bars:
+
+- **`--color-accent`** is the accent *as a foreground* — link text, an active label, an icon, a border. Bar: **4.5:1** against every surface it appears on.
+- **`--color-accent-fill`** is the accent *as a background* — a primary button, a filled badge, a progress bar. Bar: **3:1** against the surface behind it, and 4.5:1 for `--color-accent-contrast` on top of it.
+
+The approved vermilion is a fill colour: as text it is 3.82 on ivory. Collapsing the two would mean either failing AA or darkening the brand until it is no longer the approved accent.
+
+**The matching light-mode value is a fact about today's palette, not a property of the design.** Naming both roles is what lets either be retuned — for a theme, for a contrast correction, for a rebrand — without dragging the other with it. Dark mode already exercises that independence. A token that exists only while two numbers differ would have to be reintroduced the moment they do, which is why `--color-border` / `--color-border-strong` and `--color-skeleton` are separate roles on the same reasoning.
+
+> [!warning] The quiet failure mode
+> Reaching for `bg-accent` where `bg-accent-fill` belongs produces a *slightly dark fill* — it looks fine, so nothing catches it in review. It is recorded here, and in [[ADR-003 Product Visual Language and Token Semantics]], as the known sharp edge of this system rather than glossed over.
+
+**`*-contrast` tokens exist so no component ever guesses what text colour survives on a coloured background.** That guess is where contrast failures come from, and it is a solved problem once the pairing is named. Note `--color-danger-contrast` is **not** white in both themes: white on the lighter dark-mode red fails outright.
+
+**Two border tokens, deliberately.** They have genuinely different requirements and collapsing them fails one of the two: `--color-border` is decorative and tuned to be quiet, while `--color-border-strong` marks an **interactive** boundary and must clear WCAG's 3:1 non-text bar. Using the decorative token on an input is the most likely way to break accessibility while the interface still looks fine to whoever built it.
+
+**`--color-skeleton` is not `--color-surface-raised`.** In light mode that token is `#ffffff` against a near-white canvas — a ratio of **1.05**, invisible. A skeleton is informational, so it must be *distinguishable* even though it is not operable (§6.3).
 
 ### 6.3 Contrast is a constraint on the palette, not a review step
 
-Every pairing above targets **WCAG 2.1 AA** — 4.5:1 for body text, 3:1 for non-text and interactive boundaries (§9). A palette that fails contrast is not a style disagreement; it is a broken interface for a substantial number of users.
+Every pairing above targets **WCAG 2.1 AA** — 4.5:1 for text, 3:1 for non-text and interactive boundaries (§9). A palette that fails contrast is not a style disagreement; it is a broken interface for a substantial number of users.
 
-**All 58 pairings are computed and verified across both themes**, against **all three** surfaces — `--color-background`, `--color-surface` and `--color-surface-raised` — plus the two text-on-fill pairings (`*-contrast` on their fill).
-
-> [!warning] The original check omitted `--color-surface-raised`, and that omission produced two live failures
-> The first pass (2026-08-02, 28 pairings) verified against `--color-background` and `--color-surface` only. `--color-surface-raised` is a genuinely different surface — in dark mode it is several ramp steps lighter than either — so every foreground appearing on a dropdown or dialog was unverified.
+> [!important] This is now an executable check, not an instruction someone must remember
+> `scripts/check-contrast.py` enumerates **every** foreground against **every** surface it can appear on, in both themes — **90 pairings** — and runs in the `web` CI job. A token change that breaks a pairing now **fails the build** instead of reaching review.
 >
-> Implementing the tokens in STEP-14 surfaced two dark-mode failures as a result: `--color-text-muted` on `--color-surface-raised` at **4.04**, and `--color-accent` on `--color-surface` at **4.00**, both against a 4.5 bar. The second was not a coverage gap but a missed combination — accent *as text* on a dark card, which is the most common way an accent is used.
+> This exists because the rule below previously depended on someone remembering it, and twice it was not remembered: the first check omitted `--color-surface-raised` entirely and shipped two live dark-mode failures, and a loading skeleton was built against a token that rendered it at 1.05:1. Both are recorded below. **A pairing that is not checked is not passing; it is unknown** — so the script checks all of them rather than a hand-picked list.
 >
-> The corrections are recorded in §6.1–6.2 above. **A pairing that is not checked is not passing; it is unknown** — which is why the check now enumerates every foreground against every surface rather than a hand-picked list.
+> Run it locally with `python scripts/check-contrast.py --table` to see every pairing and its margin.
 
-Three corrections came out of checking rather than out of review — `--color-danger-contrast` in dark mode and the split of `--color-border` in the first pass, and the dark-mode surface/accent corrections below in the second.
+**All 90 pairings pass** as of 2026-08-15 (STEP-26). The script also guards against drift between itself and `globals.css`: it parses the stylesheet's primitives and fails if the two disagree, so the check cannot silently verify a palette the product no longer uses.
 
-**The dark-mode corrections (2026-08-02, STEP-14).** All three follow the rule §6.2 already states — semantic colors shift one step lighter in dark mode — applied to the surface that was missed:
+**Four failures were found by measurement during STEP-26 and corrected before anything was committed.** Each one is a case where no existing token could be repointed to fix it, which is why [[ADR-003 Product Visual Language and Token Semantics]] was required:
 
-| Token | Was | Now | Why |
+| Pairing | Measured | Bar | Correction |
 |---|---|---|---|
-| `--color-surface-raised` | `neutral-700` | `neutral-800` | At `700` this surface is light enough that muted text (4.04) and the accent both fall below AA on it. `800` clears every foreground while staying visibly raised above `--color-surface`. |
-| `--color-accent` | `accent-500` | `accent-400` | `accent-500` as text is 4.00 on a dark card — below AA on **every** dark surface, not just the raised one. |
-| `--color-accent-hover` | `accent-400` | `accent-200` | Forced by the row above: hover must stay distinguishable from the resting accent. |
-| `--color-danger` | `danger-500` | `danger-400` | 3.89 as text on `surface-raised`. Passed on the two surfaces originally checked, which is precisely how it was missed. |
+| `accent` as text on the ivory canvas | 4.39 | 4.5 | Accent darkened to `verm-600` `#C84016`; the fill hue kept as its own role |
+| `accent` as text on matte-black navigation | 3.99 | 4.5 | New `--color-accent-on-nav`, the lighter `verm-400` step |
+| Navigation muted text on raised navigation | 4.49 | 4.5 | `ink-400` lightened to `#9A9189` |
+| `border-strong` on the ivory canvas | 2.87 | 3.0 | New `ink-450` primitive, distinct from navigation's `ink-400` |
 
-Nothing here changes a hue — every value is one step within a ramp that already existed, so the slate/indigo identity is unchanged.
+Every one of these looked correct until it was measured. That is the entire argument for the check.
 
-**Any future token change must be re-checked the same way.** Contrast is a property of a *pair*, so changing one token silently changes the compliance of every pairing it appears in — this is not something that can be eyeballed, and "it looks fine" is how it gets missed.
+**Skeletons are checked at a 1.2:1 visibility floor, not 3:1.** A skeleton is informational — it says "content is coming" — so WCAG's non-text bar does not apply to it. But it must be *seen*, which is the defect that created `--color-skeleton` in the first place, and an unchecked skeleton is how that defect returns. The floor is a ProjectOne rule, labelled as such in the script's output rather than presented as a WCAG requirement.
 
 The margins worth knowing, because they are where a change will break first:
 
 | Pairing | Ratio | Bar |
 |---|---|---|
-| `warning` on `background` (light) | 3.04 | 3.0 |
-| `success` on `background` (light) | 3.15 | 3.0 |
-| `warning` on `surface` (light) | 3.19 | 3.0 |
-| `success` on `surface` (light) | 3.30 | 3.0 |
-| `text-muted` on `background` (light) | 4.55 | 4.5 |
-| `danger` on `background` (light) | 4.62 | 4.5 |
-| `text-muted` on `surface` (light) | 4.76 | 4.5 |
-| `accent` on `surface-raised` (dark) | 4.90 | 4.5 |
+| `skeleton` on `surface-raised` (dark) | 1.21 | 1.2 (visibility) |
+| `skeleton` on `background` (light) | 1.27 | 1.2 (visibility) |
+| `border-strong` on `background` (light) | 3.31 | 3.0 |
+| `border-strong` on `surface` (light) | 3.51 | 3.0 |
+| `accent-fill` on `surface-raised` (dark) | 4.13 | 3.0 |
+| `text-on-nav-muted` on `nav-surface-raised` (light) | 4.63 | 4.5 |
+| `accent` on `background` (light) | 4.64 | 4.5 |
+| `text-muted` on `background` (light) | 5.22 | 4.5 |
 
-Light mode now carries the tightest margins, and `--color-surface-raised` is the surface to check first on any change — it is the lightest dark surface and the darkest light one, so it is where both themes run out of room.
+**Skeleton fills carry the tightest margins in the system**, by construction: a placeholder that stands out strongly is a placeholder that looks like content. They are the first thing to re-check on any surface change.
 
-`--color-text-muted` is the token most likely to fail on a future palette, because "muted" pulls toward the background by definition. It is deliberately `neutral-500` rather than anything lighter for exactly that reason — and at 4.55 it has almost no room left.
+`--color-text-muted` now sits at **5.22** on the light canvas, against **4.55** in v1 — the token most likely to fail on a future palette has meaningfully more room than it used to.
 
-The light-mode `warning` and `success` values clear the 3:1 non-text bar but **not** the 4.5:1 text bar. They are for icons, borders and fills; body text stays `--color-text`. A future change putting `success-600` on a light surface as running text would be non-compliant, which is the kind of thing that looks harmless in a mockup.
+**Any future token change must be re-checked the same way.** Contrast is a property of a *pair*, so changing one token silently changes the compliance of every pairing it appears in. This cannot be eyeballed, and "it looks fine" is how it gets missed — which is now enforced rather than requested.
 
-### 6.4 Dark mode is in scope for v1
+<details>
+<summary>Historical: the v1 slate/indigo corrections (2026-08-02, STEP-14)</summary>
+
+The first pass verified against `--color-background` and `--color-surface` only, omitting `--color-surface-raised`. That produced two live dark-mode failures — `--color-text-muted` at 4.04 and `--color-accent` at 4.00 — corrected by moving `--color-surface-raised` to `neutral-800`, `--color-accent` to `accent-400`, `--color-accent-hover` to `accent-200` and `--color-danger` to `danger-400`.
+
+Under v1, light-mode `warning` (3.04) and `success` (3.15) cleared the non-text bar but **not** the 4.5 text bar, so they could not carry running text. The v2 palette removes that limitation.
+
+</details>
+
+### 6.4 Dark mode is in scope
 
 Answered deliberately rather than inherited from the template. The skeleton carries a `prefers-color-scheme` block from `create-next-app`, and the choice is to **implement it properly** — the semantic layer makes it a remapping rather than a second design, so the marginal cost is small and it is far cheaper now than retrofitting once screens exist.
 
@@ -269,7 +349,7 @@ Written down because "the architecture supports it" is worth nothing if the proc
 
 1. Edit the primitives in §6.1, or add a new ramp.
 2. Repoint the affected semantic tokens in §6.2. **This is the only edit that touches behaviour.**
-3. Re-run the contrast check across all pairings, both themes (§6.3). Not optional — see above.
+3. Re-run `python scripts/check-contrast.py`, updating the palette **in both** the script and `globals.css` — the script fails if they disagree. Not optional, and now enforced in CI (§6.3).
 4. Update this document in the same change, so the vault and the stylesheet cannot disagree ([[CLAUDE|CLAUDE.md]] §19).
 5. Rebuild. **No component file is touched at any point.** If one needs to be, the layering has been broken and that is the bug to fix — not the component.
 
@@ -288,7 +368,48 @@ Written down because "the architecture supports it" is worth nothing if the proc
 
 Buttons, cards, tables, forms, dialogs and navigation elements must share identical spacing, radius, elevation and interaction behavior across the application.
 
-See also: [[Frontend Architecture]] · [[React Standards]]
+### 7.1 Shared component contracts
+
+**A contract is the component's public interface plus the states it is required to define.** Recorded here so a screen consumes a component rather than reinventing one, and so a component's async behaviour is decided once instead of per screen (§10).
+
+These are **the components that exist today**, against surfaces that exist today. No contract is written for a domain that has not been built — a contract for an unbuilt screen is a guess, and guesses in a specification read as decisions.
+
+| Component | Public interface | Required states |
+|---|---|---|
+| **`EmptyState`** | `title` (noun phrase), `description` (one sentence), `action?` | Terminal — it *is* the empty state |
+| **`FormField`** | `id`, `name`, `label`, `type`, `autoComplete`, `error?`, `hint?`, `defaultValue?`, `disabled?`, `placeholder?`, `required?`, `inputMode?` | Default · disabled · **error** (`aria-invalid` + `aria-describedby`) · hint |
+| **`SettingsSection`** | `title`, `description`, `aside?`, `children` | Structural — states belong to its children |
+| **`StatusBadge`** | `status` | Resting · archived |
+| **`SidebarNav`** | none — reads the current route | Resting · hover · **active** (`aria-current="page"`) · focus |
+| **`UserMenu`** | `email` | Resting · hover · focus · submitting |
+| **`Transcript`** | message list | Loading · empty · error · populated · streaming |
+| **`SpendSummary`** | spend figures | Loading · empty · error · populated |
+
+**Rules binding on every shared component, current and future:**
+
+1. **Props are explicit, `readonly`, and minimal.** No unrelated data, no prop drilling where composition solves it ([[CLAUDE|CLAUDE.md]] §11).
+2. **Presentation only.** No data fetching and no business logic inside a shared component.
+3. **Server Component by default.** `"use client"` requires a stated reason in the component's own docstring — `SidebarNav` needs the pathname, `FormField` needs form context. Both say so where they are defined.
+4. **Semantic tokens only.** No hex, no primitive, no Tailwind default palette class, no `dark:` variant (§3a, §11).
+5. **Every state in the table above is implemented, not assumed.** A component whose error state was never built has an undefined error state, not an absent one.
+6. **Accessibility is part of the contract, not a review finding** (§9).
+
+### 7.2 Navigation conventions
+
+**Structure.** A persistent left rail on the matte-black plane, holding top-level product sections. Workspace identity sits at the top, the signed-in user at the bottom. Section order is stable and does not reorder by recency — a navigation that moves is a navigation users must re-read.
+
+**States.** Every navigation item defines four, and all four are required:
+
+| State | Treatment |
+|---|---|
+| Resting | `--color-text-on-nav-muted` |
+| Hover | `--color-text-on-nav` on `--color-nav-surface-raised` |
+| **Active** | `--color-accent-on-nav`, on `--color-nav-surface-raised`, **plus `aria-current="page"`** |
+| Focus | The standard focus ring (§9), never suppressed |
+
+**`aria-current` is mandatory on the active item, and colour alone never conveys "you are here."** Colour is invisible to assistive technology and to anyone who cannot distinguish the two states — this is WCAG 1.4.1 (use of colour) and it is the single most common navigation accessibility defect.
+
+**Depth is capped at two levels.** A third level is a signal the information architecture is wrong, not a licence to nest further.
 
 ## 8. Motion
 
@@ -298,9 +419,70 @@ Animations exist only to improve comprehension. Keep transitions subtle, short a
 
 Support keyboard navigation, screen readers, sufficient color contrast and visible focus states by default.
 
+**These are system-level rules, not per-screen review findings.** Two of them exist because [[Foundation Audit Findings]] recorded live defects — FA-11 (a root error boundary that announced nothing to assistive technology) and FA-04 (a retry control that did not recover). Both were closed in [[STEP-25a Foundation Remediation]]; the rules below are what stops them recurring per screen.
+
+### 9.1 Binding rules
+
+1. **Contrast is enforced, not reviewed.** WCAG 2.1 AA — 4.5:1 text, 3:1 non-text and interactive boundaries — verified across all 90 pairings by `scripts/check-contrast.py` in CI (§6.3).
+2. **Focus is always visible.** A 2px `--color-focus-ring` outline at 2px offset, defined once globally. **`outline: none` without a replacement of equal or better visibility is a defect**, never a style choice.
+3. **Colour never carries meaning alone** (WCAG 1.4.1). Every state distinguished by colour also carries text, an icon, or an ARIA attribute. Active navigation carries `aria-current`; an invalid field carries `aria-invalid` and a message, not just a red border.
+4. **Every interactive element is keyboard reachable and operable**, in a tab order that follows visual order. No positive `tabIndex`.
+5. **Every input has a programmatically associated label** — `htmlFor`/`id`, not placeholder text. A placeholder is not a label: it disappears on focus, exactly when it is needed.
+6. **Errors are announced, not only shown.** `aria-invalid` on the field, `aria-describedby` pointing at the message, and `role="alert"` on any error surface that appears after load — the FA-11 rule, generalised.
+7. **Heading levels never skip.** The page owns its `h1`; sections use `h2`. Screen readers navigate by heading, so a skipped level makes a screen harder to traverse than an unstyled one.
+8. **Regions are labelled.** `aria-label` on `<nav>`, `aria-labelledby` on sections, so assistive technology announces a region by name rather than as anonymous.
+9. **Touch targets are at least 44×44px** on coarse pointers.
+10. **Motion respects `prefers-reduced-motion`** (§8).
+11. **`rem`, never `px`, for spacing and type**, so the interface respects the user's browser font size.
+
+### 9.2 What is checked automatically, and what is not
+
+**Automated:** contrast (CI, all 90 pairings), lint rules for accessibility attributes, `tsc` for required props.
+
+**Not automated, and therefore stated as rules someone must apply:** tab order correctness, whether a label describes its field usefully, whether an error message is actionable, and screen-reader announcement quality. FA-11 was verified through the rendered accessibility tree rather than an automated rule, and that remains the standard for boundary and dialog work.
+
+## 9a. Responsive Behaviour
+
+**Breakpoints, stated once rather than improvised per screen.** Tailwind's defaults, adopted deliberately rather than by inertia — inventing a bespoke set would mean every utility class needs a mental translation:
+
+| Name | Min width | Layout intent |
+|---|---|---|
+| *(base)* | 0 | Single column. Navigation collapses to a drawer. |
+| `sm` | 640px | Single column, wider gutters. |
+| `md` | 768px | **The rail appears.** Two-column content becomes viable. |
+| `lg` | 1024px | Full shell: persistent rail plus multi-column content. |
+| `xl` | 1280px | Content max-width engages; the canvas grows, the content does not. |
+
+**Rules:**
+
+1. **Mobile-first.** Base styles are the narrow case; breakpoints add, never subtract.
+2. **The navigation rail is persistent from `md` and a drawer below it.** The drawer traps focus while open, closes on `Escape`, and returns focus to the control that opened it.
+3. **Content has a maximum width.** Beyond `xl` the canvas widens and the content does not — measure matters more than filling the viewport, and full-width body text at 2560px is unreadable.
+4. **Tables reflow or scroll within their own container; the page never scrolls horizontally.**
+5. **No layout is described as "desktop-only."** Every surface is usable at 375px, whatever its primary context.
+6. **Breakpoints are for layout, not for hiding content.** Content hidden on small screens must be reachable another way.
+
 ## 10. Empty, Loading & Error States
 
 Every feature must define polished loading skeletons, informative empty states and actionable error messages. These states are part of the product experience.
+
+**Four states, defined as a system.** [[CLAUDE|CLAUDE.md]] §11 requires them of every async surface, and a per-screen answer produces per-screen drift — four different versions of "nothing here yet" is how a product stops looking like one product.
+
+| State | When | Treatment | Required |
+|---|---|---|---|
+| **Loading** | Data in flight | `--color-skeleton` fills matching the **shape** of the content they replace | Never a bare spinner where a skeleton fits; never a layout shift on arrival |
+| **Empty** | Request succeeded, nothing to show | `EmptyState` — what is empty, why, and the action that changes it | Distinguished from error; **never** a blank region |
+| **Error** | Request failed | Actionable message, a working retry, `role="alert"` | Never a raw exception, a status code, or a stack trace |
+| **Success** | A state-changing action completed | Confirmation of **what** changed, announced to assistive technology | Never silence after a destructive or irreversible action |
+
+**Binding rules:**
+
+1. **All four are implemented, or the surface is incomplete.** A surface with no error state has an undefined error state, not an absent one — this is a Definition of Done item ([[CLAUDE|CLAUDE.md]] §22), not polish.
+2. **Empty and error are never conflated.** "No projects yet" and "we could not load your projects" require different words and different actions; showing the first when the second is true is a lie about the system.
+3. **Skeletons mirror content shape**, so arrival does not reflow the page. A skeleton that does not match its content is a layout shift with extra steps.
+4. **Errors are recoverable.** A retry that does not actually re-run the failed operation is worse than no retry — it manufactures confidence in a failure. That was FA-04, a live defect, and it is the reason this is a rule.
+5. **Success is stated for anything consequential**, and silence is reserved for the trivially reversible.
+6. **These are designed together with the happy path, never added afterwards.** A feature "done except for its error state" is not done.
 
 ## 11. AI Design Rules
 
@@ -346,9 +528,9 @@ ProjectOne should develop a recognizable visual identity. A screenshot should be
 
 [[Design Backlog and UI Vision]] elaborated what that identity should eventually look like. It remains **subordinate to this document** — where the two disagree, this one wins — and its dark-interface visual rules were **superseded on 2026-08-14**.
 
-The active visual direction (warm ivory canvas, matte-black navigation, vermilion accent, editorial typography, cinematic production cues) is recorded in [[STEP-26 Product Design System Foundation]], together with the owner-approved concept reference `ProjectOne_Product_Design_Direction_v1.0.png`. That step writes the direction into *this* note as tokens and rules.
+The active visual direction (warm ivory canvas, matte-black navigation, vermilion accent, editorial typography, cinematic production cues) is stated as binding rules in **§0** and expressed as token values in §4–6, written by [[STEP-26 Product Design System Foundation]] from the owner-approved concept reference `ProjectOne_Product_Design_Direction_v1.0.png`.
 
-**Until it runs, this document's existing tokens remain the only ones a component may be built against.** The new direction is approved but not yet expressed as token values, and a component cannot be built against an adjective.
+**The direction is no longer an adjective, and the values are settled.** [[ADR-003 Product Visual Language and Token Semantics]] was `Accepted` on 2026-08-15, so these tokens are what every later surface is built against ([[CLAUDE|CLAUDE.md]] §7). **No screen has adopted them yet** — [[STEP-80 Product-wide UI Rebuild]] is where that happens, and until then the runtime token layer exists while the screens still render against the roles they already used.
 
 ## Conclusion
 
@@ -361,4 +543,4 @@ The Design System is the single source of truth for every interface decision. Ne
 - **Previous:** —
 - **Next:** —
 - **Parent:** [[Design MOC]]
-- **Related Notes:** [[Frontend Architecture]] · [[React Standards]] · [[Dashboard]] · [[Design Backlog and UI Vision]] · [[STEP-14 Design System Tokens]] · [[Chapter 04 - React Standards]] · [[Chapter 05 - NextJS Architecture]]
+- **Related Notes:** [[Frontend Architecture]] · [[React Standards]] · [[Dashboard]] · [[Design Backlog and UI Vision]] · [[STEP-14 Design System Tokens]] · [[STEP-26 Product Design System Foundation]] · [[ADR-003 Product Visual Language and Token Semantics]] · [[Chapter 04 - React Standards]] · [[Chapter 05 - NextJS Architecture]]

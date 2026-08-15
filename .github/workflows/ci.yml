@@ -83,6 +83,15 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # The design system's contrast rule, enforced rather than remembered.
+      # [[Design System]] §6.3 requires every token change to be re-checked
+      # across every pairing; twice that depended on someone remembering it and
+      # twice a failure shipped. Runs from the repository root, not apps/web,
+      # because it reads globals.css by path and needs no Node dependencies.
+      - name: Verify colour contrast (WCAG AA)
+        working-directory: .
+        run: python scripts/check-contrast.py --table
+
       - name: Type-check
         run: npm run typecheck
 

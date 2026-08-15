@@ -100,7 +100,7 @@ Long-term product evolution across Foundation, Productivity and Scale phases.
 
 ## ADR
 
-Architecture Decision Records. [[ADR-001 Technology Stack]] (`Accepted`) is the first; [[ADR-002 Trusted Proxy and Client Address Resolution]] (`Accepted`) draws the forwarded-header trust boundary. Use [[ADR Template]] to log new decisions.
+Architecture Decision Records. [[ADR-001 Technology Stack]] (`Accepted`) is the first; [[ADR-002 Trusted Proxy and Client Address Resolution]] (`Accepted`) draws the forwarded-header trust boundary; [[ADR-003 Product Visual Language and Token Semantics]] (`Accepted`) settles the product's visual language and token semantics. Use [[ADR Template]] to log new decisions.
 → [[08 ADR]]
 
 ## Research
