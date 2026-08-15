@@ -212,3 +212,45 @@ def test_ci_credentials_are_placeholders_not_real_ones(variable: str) -> None:
         f"{variable} in CI does not look like a placeholder. Every value in a committed "
         "workflow is public."
     )
+
+
+# --------------------------------------------------------------------------
+# Required-check names (FA-08)
+# --------------------------------------------------------------------------
+
+#: The check names the `Protect main` ruleset requires, verified against the
+#: ruleset API on 2026-08-15 during STEP-25a.
+#:
+#: The ruleset matches on the literal string, so these names are part of the
+#: repository's merge protection rather than cosmetic labels. Renaming a job
+#: without updating the ruleset silently removes its gate: the ruleset goes on
+#: requiring a check that no longer reports, and GitHub treats an absent check
+#: as nothing to wait for.
+REQUIRED_CHECK_NAMES = (
+    "governance docs (sync check)",
+    "web (lint, typecheck, test, build)",
+    "api (lint, format, typecheck, test)",
+)
+
+
+@pytest.mark.parametrize("check_name", REQUIRED_CHECK_NAMES)
+def test_a_required_check_keeps_the_name_the_ruleset_requires(check_name: str) -> None:
+    """Each required check's job still declares the name the ruleset matches.
+
+    **FA-08.** The audit found `governance docs (sync check)` reporting drift
+    without blocking it; the owner made it a required check on 2026-08-11. This
+    test guards the half that can regress silently afterwards — a job rename.
+
+    It cannot verify the ruleset itself, which lives in repository settings
+    rather than in the tree. What it can do is fail when the workflow stops
+    offering a name the ruleset was configured against, which is the direction
+    the breakage actually travels.
+    """
+    workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
+
+    assert f"name: {check_name}" in workflow, (
+        f"No job in ci.yml declares `name: {check_name}`, but the `Protect main` "
+        "ruleset requires a check with exactly that name. A required check that "
+        "never reports does not block a merge — it is simply never waited for, "
+        "so this rename would remove the gate rather than fail loudly."
+    )

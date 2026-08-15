@@ -29,11 +29,16 @@ jobs:
   # asserts this (tests/test_governance_docs_sync.py) for contributors who run
   # the suite locally.
   #
-  # NOT YET A MERGE GATE. The `Protect main` ruleset currently requires only
-  # the `web` and `api` checks, so this job can be red while the merge button
-  # stays green. Adding a job to CI and adding it to the ruleset's required
-  # checks are separate actions, and only the project owner can do the second.
-  # Until they do, this reports drift rather than blocking it.
+  # A MERGE GATE since 2026-08-11. The `Protect main` ruleset lists this job's
+  # check name among its required status checks alongside `web` and `api`, so
+  # governance drift now blocks the merge button rather than merely reporting
+  # itself. Verified against the ruleset API during STEP-25a (FA-08).
+  #
+  # The check name below is therefore load-bearing: the ruleset matches on the
+  # literal string, so renaming this job silently removes the gate — the
+  # ruleset would keep requiring a check that no longer reports. If it must be
+  # renamed, the ruleset entry has to be updated in the same change, and only
+  # the project owner can do that.
   governance-docs:
     name: governance docs (sync check)
     runs-on: ubuntu-latest
