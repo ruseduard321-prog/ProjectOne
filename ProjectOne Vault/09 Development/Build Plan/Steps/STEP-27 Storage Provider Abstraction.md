@@ -2,7 +2,7 @@
 title: STEP-27 Storage Provider Abstraction
 category: Development/Build Step
 status: draft
-version: "1.0"
+version: "1.1"
 last_updated: 2026-08-15
 tags: [engineering, workflow, build-step, backend, infrastructure]
 step_id: STEP-27
@@ -14,7 +14,7 @@ phase: "Platform Substrate"
 # STEP-27 — Storage Provider Abstraction
 
 **Status:** Not Started
-**Phase:** Platform Substrate — The absent infrastructure every media, approval and automation capability sits behind: storage, async execution, notifications.
+**Phase:** Platform Substrate — The absent infrastructure every media, approval and automation capability sits behind: storage, async execution, and enough notification to make an asynchronous run visible.
 **Detail level:** outline — goal, scope and dependencies only. Expanded to full detail by the step immediately preceding it, per [[Execution Protocol]].
 
 ## Objective
@@ -58,7 +58,7 @@ A storage provider is reachable through a vendor-neutral interface, tenant-scope
 
 ## Risks and Governance Gates
 
-**Critical** — infrastructure configuration and a new tenant boundary ([[CLAUDE|CLAUDE.md]] §21). A path convention wrong here becomes a cross-tenant leak in every later media step, which is why it is settled before there are callers.
+**Critical** — infrastructure configuration and a new tenant boundary ([[CLAUDE|CLAUDE.md]] 21). A path convention wrong here becomes a cross-tenant leak in every later media step, which is why it is settled before there are callers.
 
 ## Audit Gaps Closed
 

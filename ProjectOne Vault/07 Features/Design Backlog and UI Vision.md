@@ -45,7 +45,7 @@ See also: [[Design System]] §1–§3 · [[Design System#14. Long-Term Vision]]
 ## Foundation Rule
 
 > [!warning] Superseded 2026-08-14 — retained as history
-> Replaced by the sequence [[STEP-25 Foundation Audit and Internal Readiness]] → [[STEP-26 Product Design System Foundation]] → [[STEP-80 Product-wide UI Rebuild]] → [[STEP-88 Full Product Verification and Hardening]]. Design now precedes release consideration, and public release is unscheduled ([[Public Release Draft - Unscheduled]]).
+> Replaced by the sequence [[STEP-25 Foundation Audit and Internal Readiness]] → [[STEP-26 Product Design System Foundation]] → [[STEP-80 Product-wide UI Rebuild]] → [[STEP-85 Full Product Verification and Hardening]]. Design now precedes release consideration, and public release is unscheduled ([[Public Release Draft - Unscheduled]]).
 
 Finish Foundation (STEP-26) first. During Foundation, collect design ideas only. After Foundation, execute one dedicated UI Polish sprint that upgrades every screen consistently.
 

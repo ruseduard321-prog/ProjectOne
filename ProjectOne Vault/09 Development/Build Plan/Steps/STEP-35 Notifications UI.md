@@ -2,7 +2,7 @@
 title: STEP-35 Notifications UI
 category: Development/Build Step
 status: draft
-version: "1.0"
+version: "1.1"
 last_updated: 2026-08-15
 tags: [engineering, workflow, build-step, backend, infrastructure]
 step_id: STEP-35
@@ -14,7 +14,7 @@ phase: "Platform Substrate"
 # STEP-35 — Notifications UI
 
 **Status:** Not Started
-**Phase:** Platform Substrate — The absent infrastructure every media, approval and automation capability sits behind: storage, async execution, notifications.
+**Phase:** Platform Substrate — The absent infrastructure every media, approval and automation capability sits behind: storage, async execution, and enough notification to make an asynchronous run visible.
 **Detail level:** outline — goal, scope and dependencies only. Expanded to full detail by the step immediately preceding it, per [[Execution Protocol]].
 
 ## Objective
@@ -39,7 +39,8 @@ Surface notifications in the product, including the approval prompts that curren
 
 ## Out of Scope
 
-- No preferences UI.
+- No preferences UI — [[STEP-76 Notification Preferences]], which moves later with delivery.
+- No external delivery — [[STEP-75 Notification Delivery Channels]].
 - No real-time push transport — polling is acceptable here.
 
 ## Surfaces Affected
@@ -69,6 +70,6 @@ Closes a genuine UX gap where a paused workflow was invisible. Low architectural
 ## Navigation
 
 - **Previous:** [[STEP-34 Notifications Domain]]
-- **Next:** [[STEP-36 Notification Delivery Channels]]
+- **Next:** [[STEP-36 AI Capability Contract Expansion]]
 - **Parent:** [[Build Plan]]
 - **Related Notes:** [[Product Coverage Audit]] · [[Execution Protocol]]

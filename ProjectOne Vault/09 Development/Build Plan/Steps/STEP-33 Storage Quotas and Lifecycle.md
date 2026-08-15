@@ -2,7 +2,7 @@
 title: STEP-33 Storage Quotas and Lifecycle
 category: Development/Build Step
 status: draft
-version: "1.0"
+version: "1.1"
 last_updated: 2026-08-15
 tags: [engineering, workflow, build-step, backend, infrastructure]
 step_id: STEP-33
@@ -14,7 +14,7 @@ phase: "Platform Substrate"
 # STEP-33 — Storage Quotas and Lifecycle
 
 **Status:** Not Started
-**Phase:** Platform Substrate — The absent infrastructure every media, approval and automation capability sits behind: storage, async execution, notifications.
+**Phase:** Platform Substrate — The absent infrastructure every media, approval and automation capability sits behind: storage, async execution, and enough notification to make an asynchronous run visible.
 **Detail level:** outline — goal, scope and dependencies only. Expanded to full detail by the step immediately preceding it, per [[Execution Protocol]].
 
 ## Objective
@@ -23,7 +23,7 @@ Bound what a workspace can store, and define what happens to stored objects over
 
 ## Why This Step Exists Now
 
-Storage is the second unbounded spend surface after AI. [[CLAUDE|CLAUDE.md]] §15a's reasoning about AI cost applies identically here, and [[Billing]] later needs a usage number that already exists.
+Storage is the second unbounded spend surface after AI. [[CLAUDE|CLAUDE.md]] 15a's reasoning about AI cost applies identically here, and [[Billing]] later needs a usage number that already exists.
 
 ## Dependencies
 
@@ -38,7 +38,7 @@ Storage is the second unbounded spend surface after AI. [[CLAUDE|CLAUDE.md]] §1
 
 ## Out of Scope
 
-- No plan-based limits — that is [[STEP-82 Plan Limits and Quota Enforcement]].
+- No plan-based limits — that is [[STEP-88 Plan Limits and Quota Enforcement]].
 - No billing integration of any kind.
 
 ## Surfaces Affected

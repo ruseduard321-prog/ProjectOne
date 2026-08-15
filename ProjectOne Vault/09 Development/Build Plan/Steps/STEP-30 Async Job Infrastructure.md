@@ -2,7 +2,7 @@
 title: STEP-30 Async Job Infrastructure
 category: Development/Build Step
 status: draft
-version: "1.0"
+version: "1.1"
 last_updated: 2026-08-15
 tags: [engineering, workflow, build-step, backend, infrastructure]
 step_id: STEP-30
@@ -14,7 +14,7 @@ phase: "Platform Substrate"
 # STEP-30 — Async Job Infrastructure
 
 **Status:** Not Started
-**Phase:** Platform Substrate — The absent infrastructure every media, approval and automation capability sits behind: storage, async execution, notifications.
+**Phase:** Platform Substrate — The absent infrastructure every media, approval and automation capability sits behind: storage, async execution, and enough notification to make an asynchronous run visible.
 **Detail level:** outline — goal, scope and dependencies only. Expanded to full detail by the step immediately preceding it, per [[Execution Protocol]].
 
 ## Objective
@@ -34,13 +34,13 @@ The audit's second-largest blocker: workflow runs currently execute synchronousl
 - A queue and a worker process, deployed alongside the API.
 - A job contract — enqueue, execute, record outcome — with at-least-once semantics stated explicitly.
 - Idempotency expectations on handlers, since at-least-once means a handler will eventually run twice.
-- Failure, retry ceiling and dead-letter handling, bounded per [[CLAUDE|CLAUDE.md]] §15a.
+- Failure, retry ceiling and dead-letter handling, bounded per [[CLAUDE|CLAUDE.md]] 15a.
 - Observability: a job's state is inspectable without attaching a debugger.
 
 ## Out of Scope
 
 - No workflow engine integration — [[STEP-31 Workflow Async Execution]].
-- No scheduling or cron — [[STEP-75 Workflow Scheduling and Triggers]].
+- No scheduling or cron — [[STEP-74 Workflow Scheduling and Triggers]].
 - No new product feature.
 
 ## Surfaces Affected

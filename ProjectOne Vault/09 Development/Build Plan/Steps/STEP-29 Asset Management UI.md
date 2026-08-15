@@ -2,7 +2,7 @@
 title: STEP-29 Asset Management UI
 category: Development/Build Step
 status: draft
-version: "1.0"
+version: "1.1"
 last_updated: 2026-08-15
 tags: [engineering, workflow, build-step, backend, infrastructure]
 step_id: STEP-29
@@ -14,7 +14,7 @@ phase: "Platform Substrate"
 # STEP-29 — Asset Management UI
 
 **Status:** Not Started
-**Phase:** Platform Substrate — The absent infrastructure every media, approval and automation capability sits behind: storage, async execution, notifications.
+**Phase:** Platform Substrate — The absent infrastructure every media, approval and automation capability sits behind: storage, async execution, and enough notification to make an asynchronous run visible.
 **Detail level:** outline — goal, scope and dependencies only. Expanded to full detail by the step immediately preceding it, per [[Execution Protocol]].
 
 ## Objective
@@ -36,7 +36,7 @@ Let a user upload, browse, preview and delete a project's assets from the produc
 - Asset list per project, using the [[Design System]] contracts from STEP-26.
 - Preview for the kinds that can be previewed; an honest fallback for those that cannot.
 - Delete with confirmation.
-- Loading, empty, error and success states as [[CLAUDE|CLAUDE.md]] §11 requires.
+- Loading, empty, error and success states as [[CLAUDE|CLAUDE.md]] 11 requires.
 
 ## Out of Scope
 

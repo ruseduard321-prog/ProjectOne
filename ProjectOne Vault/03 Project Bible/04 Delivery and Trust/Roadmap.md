@@ -31,11 +31,11 @@ Team collaboration, enterprise capabilities, marketplace, advanced integrations 
 
 These three phases describe **strategic direction**; they are not the execution sequence. The [[Build Plan]] is the ordered sequence, and its fourteen delivery phases map onto these three:
 
-- **Phase 1 – Foundation** — delivered (STEP-01 to STEP-25a), plus the platform substrate the [[Product Coverage Audit]] found missing from it: storage, async execution and notifications (STEP-26 to STEP-37).
-- **Phase 2 – Productivity** — STEP-38 to STEP-83: AI capability expansion, memory, agent infrastructure, media and video production, publishing, analytics, automation and commercial readiness.
+- **Phase 1 – Foundation** — delivered (STEP-01 to STEP-25a), plus the platform substrate the [[Product Coverage Audit]] found missing from it: storage, async execution and notifications (STEP-26 to STEP-35).
+- **Phase 2 – Productivity** — STEP-36 to STEP-89: AI capability expansion, memory, agent infrastructure, media and video production, publishing, analytics, automation, the private beta and commercial readiness.
 - **Phase 3 – Scale** — beyond the current plan. Team collaboration has its foundation at [[STEP-77 Workspace and Collaboration Foundations]]; enterprise capabilities, marketplace and advanced integrations remain unscheduled by decision.
 
-The plan ends at a **private, invite-only, free beta** ([[STEP-89 Private Beta Release]]) rather than a public launch, by owner decision on 2026-08-15.
+The plan ends at a **private, invite-only, free beta** ([[STEP-86 Private Beta Release]]) rather than a public launch, by owner decision on 2026-08-15.
 
 ## Planning Principles
 

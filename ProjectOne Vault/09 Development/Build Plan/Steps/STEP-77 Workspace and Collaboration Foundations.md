@@ -2,19 +2,19 @@
 title: STEP-77 Workspace and Collaboration Foundations
 category: Development/Build Step
 status: draft
-version: "1.0"
+version: "1.1"
 last_updated: 2026-08-15
 tags: [engineering, workflow, build-step, automation, backend]
 step_id: STEP-77
 step_status: Not Started
 detail_level: outline
-phase: "Automation"
+phase: "Automation and Collaboration"
 ---
 
 # STEP-77 — Workspace and Collaboration Foundations
 
 **Status:** Not Started
-**Phase:** Automation — Scheduled and triggered execution, once there is something worth automating.
+**Phase:** Automation and Collaboration — Scheduled and triggered execution, richer notification delivery, and the workspace collaboration foundations that depend on it.
 **Detail level:** outline — goal, scope and dependencies only. Expanded to full detail by the step immediately preceding it, per [[Execution Protocol]].
 
 ## Objective
@@ -27,8 +27,8 @@ The audit records multiple workspaces as schema-supported but UI-absent, with no
 
 ## Dependencies
 
-- [[STEP-76 Scheduled Publishing]]
-- [[STEP-36 Notification Delivery Channels]]
+- [[STEP-75 Notification Delivery Channels]]
+- [[STEP-76 Notification Preferences]]
 
 ## Scope
 
@@ -70,7 +70,7 @@ Users switch between workspaces, invite members by email and administer roles, w
 
 ## Navigation
 
-- **Previous:** [[STEP-76 Scheduled Publishing]]
-- **Next:** [[STEP-78 Prompt Store and Versioning]]
+- **Previous:** [[STEP-76 Notification Preferences]]
+- **Next:** [[STEP-78 Scheduled Publishing]]
 - **Parent:** [[Build Plan]]
 - **Related Notes:** [[Product Coverage Audit]] · [[Execution Protocol]]

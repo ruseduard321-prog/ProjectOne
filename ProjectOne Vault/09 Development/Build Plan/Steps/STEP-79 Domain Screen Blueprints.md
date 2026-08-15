@@ -2,7 +2,7 @@
 title: STEP-79 Domain Screen Blueprints
 category: Development/Build Step
 status: draft
-version: "1.0"
+version: "1.1"
 last_updated: 2026-08-15
 tags: [engineering, workflow, build-step, design, frontend]
 step_id: STEP-79
@@ -27,7 +27,7 @@ STEP-26 deliberately excluded blueprints for domains that did not exist. They ex
 
 ## Dependencies
 
-- [[STEP-78 Prompt Store and Versioning]]
+- [[STEP-41 Prompt Store and Versioning]]
 
 ## Scope
 
@@ -67,7 +67,7 @@ Deferred design surface from STEP-26's restricted scope
 
 ## Navigation
 
-- **Previous:** [[STEP-78 Prompt Store and Versioning]]
+- **Previous:** [[STEP-78 Scheduled Publishing]]
 - **Next:** [[STEP-80 Product-wide UI Rebuild]]
 - **Parent:** [[Build Plan]]
 - **Related Notes:** [[Product Coverage Audit]] · [[Execution Protocol]]

@@ -2,7 +2,7 @@
 title: STEP-80 Product-wide UI Rebuild
 category: Development/Build Step
 status: draft
-version: "1.0"
+version: "1.1"
 last_updated: 2026-08-15
 tags: [engineering, workflow, build-step, design, frontend]
 step_id: STEP-80
@@ -32,7 +32,7 @@ This is the former STEP-27, moved here by owner decision. Rebuilding before the 
 ## Scope
 
 - Implement the approved design across every page and every state.
-- Cover loading, empty, error and success on every async surface ([[CLAUDE|CLAUDE.md]] §11).
+- Cover loading, empty, error and success on every async surface ([[CLAUDE|CLAUDE.md]] 11).
 - Preserve existing functional behaviour exactly — this is a presentation change.
 - **The design is not revised during implementation**: a wrong blueprint means stopping and updating STEP-79 with owner re-approval, not improvising.
 
@@ -69,6 +69,6 @@ Design system application — completes the [[Design System]] rollout
 ## Navigation
 
 - **Previous:** [[STEP-79 Domain Screen Blueprints]]
-- **Next:** [[STEP-81 Billing Schema and Subscription Management]]
+- **Next:** [[STEP-81 Observability and Alerting]]
 - **Parent:** [[Build Plan]]
 - **Related Notes:** [[Product Coverage Audit]] · [[Execution Protocol]]

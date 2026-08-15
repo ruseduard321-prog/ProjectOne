@@ -7,7 +7,7 @@ last_updated: 2026-08-15
 tags: [engineering, workflow, build-step, superseded, history]
 step_status: Superseded
 detail_level: historical
-superseded_by: "[[STEP-88 Full Product Verification and Hardening]]"
+superseded_by: "[[STEP-85 Full Product Verification and Hardening]]"
 ---
 
 # STEP-28 Full Product Verification, Polish and Hardening (Superseded — renumbered)
@@ -15,11 +15,11 @@ superseded_by: "[[STEP-88 Full Product Verification and Hardening]]"
 > [!warning] Superseded — kept as history, binding on nothing
 > This outline was replaced by owner decision on 2026-08-15, following the [[Product Coverage Audit]]. It is **not** an executable step and holds no status in the [[Build Plan]].
 >
-> **Successor:** [[STEP-88 Full Product Verification and Hardening]]
+> **Successor:** [[STEP-85 Full Product Verification and Hardening]]
 
 ## Why This Was Superseded
 
-This step was not cancelled — it **moved**, by owner decision on 2026-08-15, and is now [[STEP-88 Full Product Verification and Hardening]].
+This step was not cancelled — it **moved**, by owner decision on 2026-08-15, and is now [[STEP-85 Full Product Verification and Hardening]].
 
 **Why it moved.** Its own goal is the reason: *verify the whole product, once, as a product.* At STEP-28 the assembled system was the Foundation loop; verifying there would have answered the question for a fraction of the product and left everything built afterwards unverified as a whole. Moving it to the end of the sequence is what makes its stated purpose achievable.
 
@@ -27,7 +27,7 @@ This step was not cancelled — it **moved**, by owner decision on 2026-08-15, a
 
 **Its defect policy carries forward unchanged** — small, bounded defects may be fixed inside the step; anything requiring new architecture becomes its own step rather than being improvised inside a verification pass.
 
-Two concerns it previously carried are now **separate, earlier steps**, because the audit showed each was large enough to need its own: [[STEP-84 Observability and Alerting]] and [[STEP-85 Staging Environment and Deployment Pipeline]]. A dedicated [[STEP-87 Security Review and Penetration Testing]] now precedes it, so security findings have somewhere to land before final verification.
+Two concerns it previously carried are now **separate, earlier steps**, because the audit showed each was large enough to need its own: [[STEP-81 Observability and Alerting]] and [[STEP-82 Staging Environment and Deployment Pipeline]]. A dedicated [[STEP-84 Security Review and Penetration Testing]] now precedes it, so security findings have somewhere to land before final verification.
 
 ---
 
@@ -123,4 +123,4 @@ Not yet expanded.
 ## Navigation
 
 - **Parent:** [[Build Plan]]
-- **Related Notes:** [[STEP-88 Full Product Verification and Hardening]] · [[Product Coverage Audit]]
+- **Related Notes:** [[STEP-85 Full Product Verification and Hardening]] · [[Product Coverage Audit]]
