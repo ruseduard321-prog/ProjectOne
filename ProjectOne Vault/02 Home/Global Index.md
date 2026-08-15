@@ -113,6 +113,8 @@ Every note in the vault, grouped by folder. This is the exhaustive map — for c
 - [[DOC-01 Align ADR Template with CLAUDE.md]] — documentation task, not a Build Plan step
 - [[DOC-02 Validate the Request-Path Credential at Startup]] — backlog item, not a Build Plan step
 
+**Audit records:** [[Foundation Audit Findings]] (what STEP-25 found across the Foundation build) · [[Product Coverage Audit]] (the intended product measured against what exists on `main`) — records, not plans; neither schedules work
+
 **Build Plan:** [[Build Plan]] (step index) · [[Execution Protocol]] (execution rules) · [[Public Release Draft - Unscheduled]] (deferred, non-binding — not a step)
 
 **Steps:** step notes in `09 Development/Build Plan/Steps/` — the 28 numbered steps plus those inserted by owner decision (STEP-11a, STEP-12a, STEP-16a). Not listed individually here: [[Build Plan]] is their index, and a session reads only the one step it is implementing. Note that steps execute in **table order, not numeric order** — a `Na` step is placed where its dependencies put it, while its number records which step's contract it amends. **Public release is not among them** and is unscheduled by owner decision.
