@@ -279,8 +279,26 @@ jobs:
       # After the test suite, deliberately: both drills rewrite the schema
       # destructively, and running them first would hand the isolation tests a
       # database in a state they do not expect.
+      # Output is teed and echoed into the step summary on failure, for the same
+      # reason the pytest step does it: job logs need admin rights to download,
+      # so without this a red drill tells a contributor *that* the downgrade
+      # path is broken and nothing about where or why.
       - name: Verify migrations reverse (FA-02)
-        run: python scripts/migration_cycle_drill.py
+        shell: bash
+        run: |
+          set -o pipefail
+          python scripts/migration_cycle_drill.py 2>&1 | tee migration-drill.txt
+
+      - name: Report migration drill failure
+        if: failure()
+        shell: bash
+        run: |
+          if [ -f migration-drill.txt ]; then
+            echo '## FA-02 migration cycle' >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            tail -c 30000 migration-drill.txt >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       # STEP-25a, FA-03. The audit recorded restore as the single largest
       # unproven guarantee in the Foundation: a documented strategy, no restore
@@ -298,6 +316,7 @@ jobs:
       # rather than leaving the drill to fail on a version mismatch that has
       # nothing to do with the backup being tested.
       - name: Install PostgreSQL 17 client
+        if: always()
         run: |
           sudo install -d /usr/share/postgresql-common/pgdg
           sudo curl -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
@@ -309,8 +328,27 @@ jobs:
           sudo apt-get install -y postgresql-client-17
           pg_dump --version
 
+      # `if: always()` so a broken downgrade does not also hide whether restore
+      # works. They are separate findings and each deserves its own answer;
+      # skipping this on FA-02's failure would have cost a full CI round trip
+      # to learn something this run could already have told us.
       - name: Verify backup and restore (FA-03)
-        run: python scripts/backup_restore_drill.py
+        if: always()
+        shell: bash
+        run: |
+          set -o pipefail
+          python scripts/backup_restore_drill.py 2>&1 | tee restore-drill.txt
+
+      - name: Report restore drill failure
+        if: failure()
+        shell: bash
+        run: |
+          if [ -f restore-drill.txt ]; then
+            echo '## FA-03 backup and restore' >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            tail -c 30000 restore-drill.txt >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       # Job logs need admin rights on this repository to download, so a
       # contributor without them can see *that* the suite failed but not *why* —

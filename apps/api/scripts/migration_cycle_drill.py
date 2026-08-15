@@ -185,8 +185,29 @@ def main() -> int:
     print(f"    captured {sum(len(rows) for rows in before.values())} schema facts")
 
     print("==> downgrade base")
-    # The direction nothing has ever exercised. A failure here is the finding.
-    command.downgrade(config, "base")
+    # The direction nothing has ever exercised. A failure here is the finding,
+    # so it is reported as one rather than as a raw traceback: job logs on this
+    # repository need admin rights to download, so an unexplained stack trace
+    # is close to no diagnostic at all for whoever has to fix it.
+    try:
+        command.downgrade(config, "base")
+    except Exception as error:
+        with psycopg.connect(url) as connection, connection.cursor() as cursor:
+            cursor.execute("SELECT version_num FROM alembic_version")
+            stuck = [row[0] for row in cursor.fetchall()]
+
+        print("\n" + "=" * 68, file=sys.stderr)
+        print("FA-02: the downgrade path is BROKEN. This is the finding.", file=sys.stderr)
+        print("=" * 68, file=sys.stderr)
+        print(f"  stopped at revision: {stuck or '<none>'}", file=sys.stderr)
+        print(f"  {type(error).__name__}: {error}", file=sys.stderr)
+        print(
+            "\n  A downgrade body can be non-empty and still fail at runtime — "
+            "which is exactly\n  what static inspection could not tell us, and "
+            "why this drill exists.",
+            file=sys.stderr,
+        )
+        return 1
 
     remaining = _capture_schema(url)["tables"]
     # `alembic_version` is Alembic's own bookkeeping table and correctly
