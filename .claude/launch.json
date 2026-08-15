@@ -10,10 +10,9 @@
     },
     {
       "name": "api",
-      "runtimeExecutable": ".venv/Scripts/python",
-      "runtimeArgs": ["-m", "uvicorn", "app.main:app", "--reload", "--port", "8000"],
-      "port": 8000,
-      "cwd": "apps/api"
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["scripts/run-api-dev.mjs"],
+      "port": 8000
     }
   ]
 }
