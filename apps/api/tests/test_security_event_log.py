@@ -33,11 +33,17 @@ table that no tenant policy can classify, which is the failure mode
      non-existent account. That is asserted end-to-end below, because it is a
      property of the endpoint rather than of the table.
 
+The imports below are at module scope deliberately: before the fix they raise
+`ModuleNotFoundError` and the whole module errors, which is the failing-before
+proof FA-06 asks for -- the finding is that none of this exists, not that one
+assertion is wrong.
+
 Tests here that touch the database are skipped without
 `PROJECTONE_TEST_DATABASE_URL`, like every other database-backed test -- and
 fail rather than skip in CI (`PROJECTONE_REQUIRE_DATABASE_TESTS`).
 """
 
+import re
 import uuid
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
@@ -48,15 +54,6 @@ from pydantic import SecretStr
 
 from app.core.config import Environment, Settings
 from app.core.security import CredentialsRejectedError
-from tests.conftest import TEST_BYOK_KEY
-
-# --------------------------------------------------------------------------
-# The import under test.
-#
-# Kept at module scope deliberately: before the fix this raises ImportError and
-# the whole module errors, which is the failing-before proof FA-06 asks for --
-# the finding is that none of this exists, not that one assertion is wrong.
-# --------------------------------------------------------------------------
 from app.repositories.security_events import (
     SecurityEvent,
     SecurityEventRepository,
@@ -66,6 +63,7 @@ from app.services.security_event_service import (
     SecurityEventService,
     SecurityEventType,
 )
+from tests.conftest import TEST_BYOK_KEY
 
 FAKE_PASSWORD = "totally-fake-pw-do-not-use-9Z8Y7X"  # noqa: S105 - fake, never a credential
 FAKE_TOKEN = "fake.access.token-do-not-use-Q4W5E6"  # noqa: S105 - fake, never a credential
@@ -139,11 +137,13 @@ def test_the_event_record_refuses_secret_shaped_values() -> None:
 
     Key-name filtering alone is defeated by `{"note": "<the token>"}`, which is
     exactly the shape a well-meaning debugging change takes.
+
+    `password` is excluded and that exclusion is the honest part: a bare
+    password has no shape. It is asserted separately below, against the control
+    that actually covers it.
     """
     for name, value in FORBIDDEN_VALUES.items():
-        if name == "email":
-            # Addresses are covered by the oracle tests below; a bare address is
-            # not "secret-shaped" and is caught by key name instead.
+        if name == "password":
             continue
 
         with pytest.raises(ValueError, match="not permitted"):
@@ -152,6 +152,35 @@ def test_the_event_record_refuses_secret_shaped_values() -> None:
                 outcome="failed",
                 request_id="req-1",
                 metadata={"note": value},
+            )
+
+
+def test_a_bare_password_is_covered_by_the_api_shape_not_by_the_pattern() -> None:
+    """**The limit, asserted rather than papered over.**
+
+    `totally-fake-pw-do-not-use-9Z8Y7X` is indistinguishable from a failure
+    reason by inspection. No pattern will ever catch it, and a test implying
+    otherwise would teach the next reader something false.
+
+    What actually stops a password reaching this table is the shape of the API:
+    `record_failure` has no parameter that could carry one, and every key a
+    password would plausibly arrive under is refused by name. Both are asserted
+    here so the coverage is real rather than assumed.
+    """
+    import inspect
+
+    # There is no parameter a password could be passed through.
+    parameters = set(inspect.signature(SecurityEventService.record_failure).parameters)
+    assert parameters == {"self", "event_type", "request_id", "reason"}
+
+    # And the keys it would plausibly arrive under are refused by name.
+    for key in ("password", "user_password", "submitted_password"):
+        with pytest.raises(ValueError, match="not permitted"):
+            SecurityEvent(
+                event_type="auth.sign_in",
+                outcome="failed",
+                request_id="req-1",
+                metadata={key: FAKE_PASSWORD},
             )
 
 
@@ -390,23 +419,28 @@ def test_the_table_is_append_only_for_the_request_role(request_database_url, eve
     """
     service_rows_before = len(_rows(events))
 
-    with psycopg.connect(request_database_url, autocommit=True) as connection:
-        with connection.cursor() as cursor:
-            cursor.execute("SET ROLE authenticated")
+    # A fresh connection per statement, deliberately. The first failure aborts
+    # the transaction, and on an autocommit connection a `rollback()` is a
+    # no-op -- so reusing one connection would leave every statement after the
+    # first raising `InFailedSqlTransaction` instead of the privilege error the
+    # test claims to be asserting. Four separate connections is the difference
+    # between proving four controls and proving one.
+    for statement, params in (
+        ("SELECT * FROM public.security_event_log", ()),
+        ("UPDATE public.security_event_log SET outcome = 'succeeded'", ()),
+        ("DELETE FROM public.security_event_log", ()),
+        (
+            "INSERT INTO public.security_event_log "
+            "(event_type, outcome, request_id) VALUES (%s, %s, %s)",
+            ("auth.sign_in", "succeeded", "forged"),
+        ),
+    ):
+        with psycopg.connect(request_database_url, autocommit=True) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("SET ROLE authenticated")
 
-            for statement, params in (
-                ("SELECT * FROM public.security_event_log", ()),
-                ("UPDATE public.security_event_log SET outcome = 'succeeded'", ()),
-                ("DELETE FROM public.security_event_log", ()),
-                (
-                    "INSERT INTO public.security_event_log "
-                    "(event_type, outcome, request_id) VALUES (%s, %s, %s)",
-                    ("auth.sign_in", "succeeded", "forged"),
-                ),
-            ):
                 with pytest.raises(psycopg.errors.InsufficientPrivilege):
                     cursor.execute(statement, params)
-                connection.rollback()
 
     assert len(_rows(events)) == service_rows_before
 
@@ -441,9 +475,11 @@ def test_rows_cannot_be_updated_even_by_the_owner(events, settings_for_events) -
 
     with events.cursor() as cursor:
         with pytest.raises(psycopg.errors.RaiseException):
-            cursor.execute(
-                "UPDATE public.security_event_log SET outcome = 'succeeded'"
-            )
+            cursor.execute("UPDATE public.security_event_log SET outcome = 'succeeded'")
+
+    # And the row is genuinely unchanged -- the trigger refused the write rather
+    # than merely complaining about it.
+    assert [row[3] for row in _rows(events)] == ["failed"]
 
 
 def test_rls_is_enabled_and_forced(events) -> None:
@@ -575,7 +611,9 @@ def test_the_purge_statement_is_a_filtered_delete() -> None:
 # ------------------------------------------------------------- concurrency --
 
 
-def test_concurrent_inserts_remain_independent(migrated_database, events, settings_for_events) -> None:
+def test_concurrent_inserts_remain_independent(
+    migrated_database, events, settings_for_events
+) -> None:
     """Two writers, two rows, neither blocking nor overwriting the other.
 
     Authentication events arrive concurrently by nature. An append that took a
@@ -702,16 +740,16 @@ def test_sign_in_responses_are_identical_for_existing_and_unknown_accounts() -> 
 
     from app.core.dependencies import get_auth_service
 
-    app.dependency_overrides[get_auth_service] = _RejectingAuth
+    app.dependency_overrides[get_auth_service] = lambda: _RejectingAuth()
 
     with TestClient(app) as client:
         existing = client.post(
             "/api/v1/auth/sign-in",
-            json={"email": "real-account@example.test", "password": FAKE_PASSWORD},
+            json={"email": "real-account@example.com", "password": FAKE_PASSWORD},
         )
         unknown = client.post(
             "/api/v1/auth/sign-in",
-            json={"email": "no-such-account@example.test", "password": FAKE_PASSWORD},
+            json={"email": "no-such-account@example.com", "password": FAKE_PASSWORD},
         )
 
     app.dependency_overrides.clear()
@@ -730,3 +768,77 @@ def test_sign_in_responses_are_identical_for_existing_and_unknown_accounts() -> 
     # And both were recorded, with no user attached to either.
     assert len(recorder.calls) == 2
     assert {call[2] for call in recorder.calls} == {None}
+
+
+# ------------------------------------------------------- negative controls --
+#
+# Each asserts that a specific guard is load-bearing, by removing it and
+# checking the leak reappears. A guard whose removal changes nothing is not a
+# guard, and these are the tests that would catch it silently becoming one.
+
+
+def test_the_key_allowlist_is_load_bearing(monkeypatch) -> None:
+    """Without the forbidden-key list, an address under `email` is accepted."""
+    import app.repositories.security_events as module
+
+    monkeypatch.setattr(module, "FORBIDDEN_METADATA_KEYS", ())
+    monkeypatch.setattr(module, "_SECRET_SHAPED_VALUE", re.compile(r"(?!x)x"))
+
+    # Proves the two guards together are what refuse it -- with both removed the
+    # value goes straight through.
+    event = module.SecurityEvent(
+        event_type="auth.sign_in",
+        outcome="failed",
+        request_id="req-1",
+        metadata={"email": "victim@example.com"},
+    )
+
+    assert event.metadata["email"] == "victim@example.com"
+
+
+def test_the_value_pattern_is_load_bearing(monkeypatch) -> None:
+    """Without the value pattern, a token under an innocent key is accepted.
+
+    This is the guard that catches `{"note": "<the token>"}` -- the shape a
+    well-meaning debugging change takes, which the key allowlist alone misses.
+    """
+    import app.repositories.security_events as module
+
+    monkeypatch.setattr(module, "_SECRET_SHAPED_VALUE", re.compile(r"(?!x)x"))
+
+    event = module.SecurityEvent(
+        event_type="auth.sign_in",
+        outcome="failed",
+        request_id="req-1",
+        metadata={"note": FAKE_TOKEN},
+    )
+
+    assert event.metadata["note"] == FAKE_TOKEN
+
+    # And with the real pattern restored it is refused again, so the assertion
+    # above is about the guard rather than about this particular string.
+    monkeypatch.undo()
+
+    with pytest.raises(ValueError, match="not permitted"):
+        module.SecurityEvent(
+            event_type="auth.sign_in",
+            outcome="failed",
+            request_id="req-1",
+            metadata={"note": FAKE_TOKEN},
+        )
+
+
+def test_the_anonymity_rule_is_load_bearing() -> None:
+    """A *succeeded* event may name a user -- so the refusal is about failure.
+
+    Without this the previous test would pass against a type that simply never
+    accepted a user id, which would be a different (and broken) design.
+    """
+    identified = SecurityEvent(
+        event_type="auth.sign_in",
+        outcome="succeeded",
+        request_id="req-1",
+        user_id=uuid.uuid4(),
+    )
+
+    assert identified.user_id is not None

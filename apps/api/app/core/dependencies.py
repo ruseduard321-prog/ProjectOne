@@ -37,6 +37,7 @@ from app.repositories.database import DatabaseRepository
 from app.repositories.memberships import MembershipRepository
 from app.repositories.projects import ProjectRepository
 from app.repositories.provider_credentials import ProviderCredentialRepository
+from app.repositories.security_events import SecurityEventRepository
 from app.repositories.session import RequestSessionFactory
 from app.repositories.supabase_auth import SupabaseAuthRepository
 from app.repositories.users import UserRepository
@@ -52,6 +53,7 @@ from app.services.health_service import HealthService
 from app.services.membership_service import MembershipService
 from app.services.project_service import ProjectService
 from app.services.provider_credential_service import ProviderCredentialService
+from app.services.security_event_service import SecurityEventService
 from app.services.token_service import AuthenticatedUser, TokenService, build_jwk_client
 from app.services.workspace_service import WorkspaceService
 from app.workflows.runner import WorkflowRunner
@@ -232,6 +234,31 @@ def get_audit_service(audit: AuditRepositoryDep) -> AuditService:
 
 
 AuditServiceDep = Annotated[AuditService, Depends(get_audit_service)]
+
+
+def get_security_event_repository(settings: SettingsDep) -> SecurityEventRepository:
+    """Construct the security event repository."""
+    return SecurityEventRepository(settings)
+
+
+SecurityEventRepositoryDep = Annotated[
+    SecurityEventRepository, Depends(get_security_event_repository)
+]
+
+
+def get_security_event_service(
+    events: SecurityEventRepositoryDep,
+) -> SecurityEventService:
+    """Construct the security event service (FA-06).
+
+    Separate from `get_audit_service` rather than folded into it, because the
+    two write to different tables under different rules: an audit entry is
+    tenant-scoped and readable by that tenant, a security event is neither.
+    """
+    return SecurityEventService(events)
+
+
+SecurityEventServiceDep = Annotated[SecurityEventService, Depends(get_security_event_service)]
 
 
 def get_membership_service(
