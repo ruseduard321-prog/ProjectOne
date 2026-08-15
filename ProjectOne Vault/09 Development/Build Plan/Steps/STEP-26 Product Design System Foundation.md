@@ -1,19 +1,19 @@
 ---
 title: STEP-26 Product Design System Foundation
 category: Development/Build Step
-status: draft
-version: "1.1"
+status: stable
+version: "1.2"
 last_updated: 2026-08-15
 tags: [engineering, workflow, build-step, design, frontend]
 step_id: STEP-26
-step_status: Not Started
+step_status: In Progress
 detail_level: full
 phase: "Design Foundation"
 ---
 
 # STEP-26 — Product Design System Foundation
 
-**Status:** Not Started
+**Status:** In Progress — implemented and validated; awaiting owner approval and [[ADR-003 Product Visual Language and Token Semantics]] reaching `Accepted`
 **Phase:** Design Foundation — The shared visual and interaction system, established once against the surfaces that actually exist.
 **Detail level:** full — this is the next step and is written at full detail.
 
@@ -65,6 +65,62 @@ Every screen built from here inherits it. Deciding it once, now, is what stops e
 ## Risks and Governance Gates
 
 **Owner approval gate** — the visual direction is the owner's decision, not Claude's. **ADR checkpoint:** if this changes foundational token values or shared component contracts that other code is built against, an ADR must reach `Accepted` before any step consumes it ([[CLAUDE|CLAUDE.md]] 7/39).
+
+## Outcome — 2026-08-15
+
+**Implemented and validated; awaiting the owner's decision.** The step is `In Progress` and cannot be marked `Done` until the two gates below are satisfied — the ADR reaching `Accepted` and the owner approving the exact values ([[Execution Protocol#Owner Approval Gates]]).
+
+### What was built
+
+| | |
+|---|---|
+| Visual language, as rules | [[Design System]] §0 |
+| Design tokens | [[Design System]] §6.1–6.2, implemented in `apps/web/src/app/globals.css` |
+| Typography | [[Design System]] §5.1a (display face), §5.1–5.3 unchanged |
+| Spacing / radius / elevation | [[Design System]] §4.1–4.3 — **unchanged**, see below |
+| Navigation conventions | [[Design System]] §7.2 |
+| Shared component contracts | [[Design System]] §7.1 |
+| Accessibility rules | [[Design System]] §9.1–9.2 |
+| Responsive rules | [[Design System]] §9a |
+| Loading / empty / error / success | [[Design System]] §10 |
+| Contrast enforcement | `scripts/check-contrast.py`, wired into the `web` CI job |
+
+**The spacing, radius and elevation scales were deliberately not changed.** [[STEP-14 Design System Tokens]] established a 4px scale, four radii and three elevation levels with reasoning that the new direction does not contradict. Changing them would have been a change for its own sake, and §29/§35 forbid exactly that. This step re-states them as the system's scales; it does not re-decide them.
+
+### The ADR checkpoint triggered
+
+The step's checkpoint reads: *if this changes foundational token values or shared component contracts that other code is built against, an ADR must reach `Accepted` before any step consumes it.* **It triggered**, and [[ADR-003 Product Visual Language and Token Semantics]] was raised — currently `Review`.
+
+The reason is specific, and it is **not** merely that the values changed. [[Design System#6.5 How to change a token]] documents a revalue as a routine, supported procedure, and [[STEP-14 Design System Tokens]] proved it with a swap test. A pure repointing would have been operational, not architectural.
+
+**What triggered it is that the semantic layer gained five new roles**, forced by four measured WCAG failures that no existing token could be repointed to fix. Adding a role changes the contract every component is built against, which is architectural under [[CLAUDE|CLAUDE.md]] §7 — and §39's ambiguity rule resolves toward the ADR in any case.
+
+### Validation
+
+All observed, not assumed:
+
+- **Contrast: 90 pairings, 0 failures**, both themes, every foreground against every surface it can appear on. Four failures were found by measurement during the work and corrected before anything was committed — recorded in [[Design System#6.3]].
+- **Two negative controls** confirm the check is not vacuously passing: lightening `ink-500` in the stylesheet alone trips the palette-drift guard; changing it in both the script and the stylesheet produces three genuine contrast failures. Both reverted.
+- **The swap test passes** — reassigning `--color-accent` to green changed the accent everywhere with **no component file edited**, then reverted. The §3a layering survives this palette.
+- **Every new token generates a real utility class**, verified by compiling a probe component and reading the built CSS — `bg-nav-surface`, `bg-nav-surface-raised`, `text-text-on-nav`, `text-text-on-nav-muted`, `text-accent-on-nav`, `bg-accent-fill` and `font-display` all present. Probe removed afterwards.
+- **Zero token-layer leaks in the codebase**: no hex, no primitive reference, no Tailwind default palette class, no `dark:` variant outside a comment.
+- Web lint (zero-warning), `tsc --noEmit`, **261 tests passing**, and the production build all clean. Both fonts self-hosted by `next/font`.
+- Governance docs sync check green; wiki-links in every touched note resolve.
+
+### No application code was restyled
+
+`globals.css` and `layout.tsx` are the only application files changed — the token layer and the font wiring. **No component and no screen was touched**, as this step's Out of Scope requires. The `nav-*` family therefore has no consumer yet: it is defined and verified but unused until [[STEP-80 Product-wide UI Rebuild]], which is deliberate.
+
+## Owner decisions required
+
+The step cannot be `Done` until these are answered. **Silence is not approval** ([[Execution Protocol#Owner Approval Gates]]).
+
+1. **[[ADR-003 Product Visual Language and Token Semantics]] — `Accepted` or `Rejected`?** Everything else depends on it.
+2. **The exact palette values** (§6.1). The direction was approved; these numbers were not.
+3. **The two-role accent split** — `--color-accent` for text and `--color-accent-fill` for backgrounds, diverging in dark mode. The alternative is a single darker accent that is no longer the vermilion from the reference.
+4. **Instrument Serif as the display face**, and its restriction to `--text-2xl` and above. The cheapest decision here to reverse.
+5. **Navigation as its own token family** rather than a locally-scoped remapping.
+6. **That cinematic cues are structural only** — no paper textures, tape or torn edges from the concept reference (§0 rule 6).
 
 ## Audit Gaps Closed
 

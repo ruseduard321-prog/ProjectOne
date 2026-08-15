@@ -71,7 +71,7 @@ Status appears in two places — the step note and the row below — and they mu
 | STEP-25 | [[STEP-25 Foundation Audit and Internal Readiness]] | Done | full |
 | STEP-25a | [[STEP-25a Foundation Remediation]] | Done | full |
 | | **Design Foundation** | | |
-| STEP-26 | [[STEP-26 Product Design System Foundation]] | Not Started | full |
+| STEP-26 | [[STEP-26 Product Design System Foundation]] | In Progress | full |
 | | **Platform Substrate** | | |
 | STEP-27 | [[STEP-27 Storage Provider Abstraction]] | Not Started | outline |
 | STEP-28 | [[STEP-28 Asset Upload and Download]] | Not Started | outline |
@@ -636,7 +636,17 @@ The fix re-throws `ApiUnreachableError` and leaves every other error on the exis
 
 **Two ordering corrections are worth recording.** The first draft placed media processing before the async infrastructure it depends on; the structural check that every step's dependencies carry a lower number caught it, and async execution moved earlier. Owner review then found a subtler one: the plan *said* billing was not required for the free beta while *scheduling* it first, which sequential execution turns into a prerequisite regardless of the wording. Both are the same rule — dependency and intent outrank tidy grouping — and both are recorded rather than quietly fixed.
 
-**Nothing was implemented.** The rebuild is planning documentation: no application code, no migration, no CI change, and the shared Supabase database was never connected to. [[STEP-26 Product Design System Foundation]] is `Not Started` and is the next step.
+**Nothing was implemented.** The rebuild is planning documentation: no application code, no migration, no CI change, and the shared Supabase database was never connected to.
+
+**The product has a visual language, pending the owner's approval of its exact values** ([[STEP-26 Product Design System Foundation]], `In Progress`). The owner-approved direction — warm ivory canvas, matte-black navigation, vermilion accent, editorial typography — is now written as binding rules ([[Design System]] §0) and as token values replacing the v1 slate/indigo palette, alongside navigation conventions, shared component contracts, accessibility rules, responsive breakpoints and the four async states.
+
+**Contrast stopped being a review step and became a build step.** `scripts/check-contrast.py` verifies **90 pairings** — every foreground against every surface it can appear on, in both themes — and runs in the `web` CI job. It found **four genuine WCAG failures** during the work that inspection had missed, each corrected before anything was committed. Two negative controls confirm it fails when it should. [[Design System#6.3]] records why this is enforced rather than requested: the same rule was twice left to memory, and twice a failure shipped.
+
+**The ADR checkpoint triggered**, and [[ADR-003 Product Visual Language and Token Semantics]] is in `Review`. Not because the values changed — §6.5 documents a revalue as routine — but because the semantic layer gained **five new roles** that the measured failures forced, and adding a role changes the contract every component is built against.
+
+**No screen was restyled.** `globals.css` and `layout.tsx` are the only application files touched; the `nav-*` token family is defined and verified but has no consumer until [[STEP-80 Product-wide UI Rebuild]]. The spacing, radius and elevation scales from [[STEP-14 Design System Tokens]] were deliberately left unchanged — the new direction does not contradict them, and changing them would have been change for its own sake.
+
+**STEP-26 is not `Done`.** It awaits the owner's acceptance of ADR-003 and of the exact values, listed in [[STEP-26 Product Design System Foundation#Owner decisions required]].
 
 ---
 
