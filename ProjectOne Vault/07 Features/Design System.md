@@ -346,7 +346,7 @@ ProjectOne should develop a recognizable visual identity. A screenshot should be
 
 [[Design Backlog and UI Vision]] elaborated what that identity should eventually look like. It remains **subordinate to this document** — where the two disagree, this one wins — and its dark-interface visual rules were **superseded on 2026-08-14**.
 
-The active visual direction (warm ivory canvas, matte-black navigation, vermilion accent, editorial typography, cinematic production cues) is recorded in [[STEP-26 Product Design System and Screen Blueprints]], together with the owner-approved concept reference `ProjectOne_Product_Design_Direction_v1.0.png`. That step writes the direction into *this* note as tokens and rules.
+The active visual direction (warm ivory canvas, matte-black navigation, vermilion accent, editorial typography, cinematic production cues) is recorded in [[STEP-26 Product Design System Foundation]], together with the owner-approved concept reference `ProjectOne_Product_Design_Direction_v1.0.png`. That step writes the direction into *this* note as tokens and rules.
 
 **Until it runs, this document's existing tokens remain the only ones a component may be built against.** The new direction is approved but not yet expressed as token values, and a component cannot be built against an adjective.
 

@@ -21,6 +21,9 @@ The complete intended ProjectOne product, compared against the implementation th
 >
 > Where a canonical source and the current [[Build Plan]] disagree, this audit follows the source — [[CLAUDE|CLAUDE.md]]'s source-of-truth hierarchy puts the Project Bible above a planning document.
 
+> [!note] Acted on 2026-08-15
+> The owner decision this audit was written to inform has been taken. The [[Build Plan]] was rebuilt from STEP-26 to **STEP-89** — 64 steps in fourteen phases — and every P0/P1 gap recorded below now has an executable step, or appears in [[Build Plan#Deferred by Decision]] with its reason. **The findings below are unchanged**: this is a record of what was true at `5757f81`, not a live tracker.
+
 ## Summary
 
 | Status | Count |

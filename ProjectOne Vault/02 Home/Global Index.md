@@ -98,7 +98,7 @@ Every note in the vault, grouped by folder. This is the exhaustive map — for c
 - [[Features MOC]]
 - [[Design MOC]]
 - [[Design System]] — the authoritative UI standard
-- [[Design Backlog and UI Vision]] — the earlier long-term UI vision, **partly superseded on 2026-08-14**: its dark-interface visual rules and its deferral of design work until after release are no longer current. The active direction and per-page blueprints are [[STEP-26 Product Design System and Screen Blueprints]].
+- [[Design Backlog and UI Vision]] — the earlier long-term UI vision, **partly superseded on 2026-08-14**: its dark-interface visual rules and its deferral of design work until after release are no longer current. The active direction and per-page blueprints are [[STEP-26 Product Design System Foundation]].
 
 ## 08 ADR
 
@@ -117,7 +117,7 @@ Every note in the vault, grouped by folder. This is the exhaustive map — for c
 
 **Build Plan:** [[Build Plan]] (step index) · [[Execution Protocol]] (execution rules) · [[Public Release Draft - Unscheduled]] (deferred, non-binding — not a step)
 
-**Steps:** step notes in `09 Development/Build Plan/Steps/` — the 28 numbered steps plus those inserted by owner decision (STEP-11a, STEP-12a, STEP-16a). Not listed individually here: [[Build Plan]] is their index, and a session reads only the one step it is implementing. Note that steps execute in **table order, not numeric order** — a `Na` step is placed where its dependencies put it, while its number records which step's contract it amends. **Public release is not among them** and is unscheduled by owner decision.
+**Steps:** step notes in `09 Development/Build Plan/Steps/` — **STEP-01 to STEP-89**, plus those inserted by owner decision (STEP-11a, STEP-12a, STEP-16a, STEP-16b, STEP-25a). STEP-26 onward was rebuilt on 2026-08-15 against the [[Product Coverage Audit]]. Not listed individually here: [[Build Plan]] is their index, and a session reads only the one step it is implementing. Note that steps execute in **table order, not numeric order** — a `Na` step is placed where its dependencies put it, while its number records which step's contract it amends. Three superseded outlines are kept as history and hold no status; see [[Build Plan#Superseded Step Numbering]]. **The plan ends at a private invite-only beta** ([[STEP-86 Private Beta Release]]); a public paid launch remains a separate owner decision.
 
 ## 10 Research
 
@@ -130,7 +130,7 @@ Every note in the vault, grouped by folder. This is the exhaustive map — for c
 ## 12 Assets
 
 - [[12 Assets/PDF|PDF]] — 47 archived source PDFs
-- `12 Assets/Images/` — image assets. Two concept references: `ProjectOne_Dashboard_Concept_Mockup_v1.0.png`, embedded in [[Design Backlog and UI Vision]] and **superseded**, and `ProjectOne_Product_Design_Direction_v1.0.png`, the **active** direction, embedded in [[STEP-26 Product Design System and Screen Blueprints]].
+- `12 Assets/Images/` — image assets. Two concept references: `ProjectOne_Dashboard_Concept_Mockup_v1.0.png`, embedded in [[Design Backlog and UI Vision]] and **superseded**, and `ProjectOne_Product_Design_Direction_v1.0.png`, the **active** direction, embedded in [[STEP-26 Product Design System Foundation]].
 
 ## 13 Templates
 

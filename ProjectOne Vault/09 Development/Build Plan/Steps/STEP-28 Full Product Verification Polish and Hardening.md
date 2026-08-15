@@ -1,14 +1,43 @@
 ---
-title: STEP-28 Full Product Verification, Polish & Hardening
+title: STEP-28 Full Product Verification, Polish and Hardening (Superseded — renumbered)
 category: Development/Build Step
-status: draft
-version: "1.0"
-last_updated: 2026-08-14
-tags: [engineering, workflow, build-step, testing, security, quality]
-step_id: STEP-28
-step_status: Not Started
-detail_level: outline
+status: superseded
+version: "2.0"
+last_updated: 2026-08-15
+tags: [engineering, workflow, build-step, superseded, history]
+step_status: Superseded
+detail_level: historical
+superseded_by: "[[STEP-85 Full Product Verification and Hardening]]"
 ---
+
+# STEP-28 Full Product Verification, Polish and Hardening (Superseded — renumbered)
+
+> [!warning] Superseded — kept as history, binding on nothing
+> This outline was replaced by owner decision on 2026-08-15, following the [[Product Coverage Audit]]. It is **not** an executable step and holds no status in the [[Build Plan]].
+>
+> **Successor:** [[STEP-85 Full Product Verification and Hardening]]
+
+## Why This Was Superseded
+
+This step was not cancelled — it **moved**, by owner decision on 2026-08-15, and is now [[STEP-85 Full Product Verification and Hardening]].
+
+**Why it moved.** Its own goal is the reason: *verify the whole product, once, as a product.* At STEP-28 the assembled system was the Foundation loop; verifying there would have answered the question for a fraction of the product and left everything built afterwards unverified as a whole. Moving it to the end of the sequence is what makes its stated purpose achievable.
+
+**Its scope carries forward and expands** to cover every domain built between: media generation, video assembly, publishing, analytics, memory, automation and billing, alongside the authentication, isolation, AI-governance, performance, accessibility and backup checks it always carried.
+
+**Its defect policy carries forward unchanged** — small, bounded defects may be fixed inside the step; anything requiring new architecture becomes its own step rather than being improvised inside a verification pass.
+
+Two concerns it previously carried are now **separate, earlier steps**, because the audit showed each was large enough to need its own: [[STEP-81 Observability and Alerting]] and [[STEP-82 Staging Environment and Deployment Pipeline]]. A dedicated [[STEP-84 Security Review and Penetration Testing]] now precedes it, so security findings have somewhere to land before final verification.
+
+---
+
+## What the Outline Said
+
+The original outline is preserved below, unedited, so the earlier reasoning stays readable. **Nothing in it binds current work** — where it disagrees with the successor step, the successor wins.
+
+<details>
+<summary>Original outline (2026-08-14)</summary>
+
 
 # STEP-28 — Full Product Verification, Polish & Hardening
 
@@ -86,3 +115,12 @@ Not yet expanded.
 - **Previous:** [[STEP-27 Product-wide UI Rebuild]]
 - **Next:** — (end of plan; public release is unscheduled — see [[Public Release Draft - Unscheduled]])
 - **Parent:** [[Build Plan]]
+
+</details>
+
+---
+
+## Navigation
+
+- **Parent:** [[Build Plan]]
+- **Related Notes:** [[STEP-85 Full Product Verification and Hardening]] · [[Product Coverage Audit]]

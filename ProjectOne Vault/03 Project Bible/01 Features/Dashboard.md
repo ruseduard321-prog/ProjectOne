@@ -44,9 +44,9 @@ A returning user can understand what needs attention and start meaningful work i
 > [!note] Implementation status (2026-08-14)
 > [[STEP-24 Dashboard]] delivers the **functional foundation** of this screen: recent projects, active workflows, a workspace-wide spend glance, a circuit-breaker warning and quick actions, with notifications, cost summary and AI recommendations honestly stubbed until the domains feeding them exist.
 >
-> Its **visual design is deliberately provisional.** The final presentation is designed in [[STEP-26 Product Design System and Screen Blueprints]] and implemented in [[STEP-27 Product-wide UI Rebuild]], so the shipped screen should be read as correct-but-unstyled rather than finished.
+> Its **visual design is deliberately provisional.** The final presentation is designed in [[STEP-26 Product Design System Foundation]] and implemented in [[STEP-80 Product-wide UI Rebuild]], so the shipped screen should be read as correct-but-unstyled rather than finished.
 >
-> The 30-second criterion above is measured against the rebuilt screen, not the provisional one — it is carried as a mandatory gate on [[STEP-26 Product Design System and Screen Blueprints]], because it measures information hierarchy and the hierarchy is what that step decides.
+> The 30-second criterion above is measured against the rebuilt screen, not the provisional one — it is carried as a mandatory gate on [[STEP-26 Product Design System Foundation]], because it measures information hierarchy and the hierarchy is what that step decides.
 
 ---
 
@@ -55,4 +55,4 @@ A returning user can understand what needs attention and start meaningful work i
 - **Previous:** [[Product Bible]]
 - **Next:** [[Projects]]
 - **Parent:** [[Project Bible MOC]]
-- **Related Notes:** [[Projects]] · [[Analytics]] · [[AI Chat]] · [[Design System]] · [[Design Backlog and UI Vision]] · [[STEP-24 Dashboard]] · [[STEP-26 Product Design System and Screen Blueprints]]
+- **Related Notes:** [[Projects]] · [[Analytics]] · [[AI Chat]] · [[Design System]] · [[Design Backlog and UI Vision]] · [[STEP-24 Dashboard]] · [[STEP-26 Product Design System Foundation]]

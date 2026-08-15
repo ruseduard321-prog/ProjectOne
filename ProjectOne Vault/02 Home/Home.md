@@ -90,7 +90,7 @@ Security Architecture, Privacy & Data Protection, Authentication & Authorization
 
 ## Design
 
-Design System & Visual Language — the single source of truth for UI decisions. Alongside it, [[Design Backlog and UI Vision]] records the earlier long-term UI direction, now **partly superseded**: the active visual direction and the screen blueprints are [[STEP-26 Product Design System and Screen Blueprints]], implemented by [[STEP-27 Product-wide UI Rebuild]].
+Design System & Visual Language — the single source of truth for UI decisions. Alongside it, [[Design Backlog and UI Vision]] records the earlier long-term UI direction, now **partly superseded**: the active visual direction and the screen blueprints are [[STEP-26 Product Design System Foundation]], implemented by [[STEP-80 Product-wide UI Rebuild]].
 → [[Design MOC]]
 
 ## Roadmap

@@ -1,14 +1,46 @@
 ---
-title: STEP-26 Product Design System & Screen Blueprints
+title: STEP-26 Product Design System and Screen Blueprints (Superseded)
 category: Development/Build Step
-status: draft
-version: "1.0"
-last_updated: 2026-08-14
-tags: [engineering, workflow, build-step, design, frontend]
-step_id: STEP-26
-step_status: Not Started
-detail_level: outline
+status: superseded
+version: "2.0"
+last_updated: 2026-08-15
+tags: [engineering, workflow, build-step, superseded, history]
+step_status: Superseded
+detail_level: historical
+superseded_by: "[[STEP-26 Product Design System Foundation]]"
 ---
+
+# STEP-26 Product Design System and Screen Blueprints (Superseded)
+
+> [!warning] Superseded — kept as history, binding on nothing
+> This outline was replaced by owner decision on 2026-08-15, following the [[Product Coverage Audit]]. It is **not** an executable step and holds no status in the [[Build Plan]].
+>
+> **Successor:** [[STEP-26 Product Design System Foundation]]
+
+## Why This Was Superseded
+
+This outline planned a single step covering **both** the shared design system **and** an approved screen blueprint for every existing application page.
+
+**What changed.** The [[Product Coverage Audit]] established that most of the product does not exist yet: 24 capabilities Missing, whole domains — Video Generation, Analytics, Publishing, Billing — with no implementation at all. Blueprinting those surfaces now would design against a specification rather than a product.
+
+**The owner's decision on 2026-08-15** split this outline in two:
+
+- **[[STEP-26 Product Design System Foundation]]** keeps the number and the design-system half — tokens, typography, spacing, navigation, shared component contracts, accessibility, responsive rules, the four async states and the approved visual direction. It is restricted to the common foundation and the surfaces that genuinely exist today.
+- **[[STEP-79 Domain Screen Blueprints]]** takes the blueprint half, and runs once the domains it would design actually exist.
+
+**What did not change.** The approved visual direction — ivory canvas, matte-black navigation, vermilion accent, editorial typography, cinematic production cues, no generic blue/purple AI gradients — carries forward unchanged into [[STEP-26 Product Design System Foundation]], along with the owner-approved reference image and the caution that where image and written direction disagree, the written direction wins.
+
+The ADR checkpoint carries forward too: changing foundational token values or shared component contracts requires an ADR reaching `Accepted` before any step consumes them.
+
+---
+
+## What the Outline Said
+
+The original outline is preserved below, unedited, so the earlier reasoning stays readable. **Nothing in it binds current work** — where it disagrees with the successor step, the successor wins.
+
+<details>
+<summary>Original outline (2026-08-14)</summary>
+
 
 # STEP-26 — Product Design System & Screen Blueprints
 
@@ -108,3 +140,12 @@ Not yet expanded.
 - **Previous:** [[STEP-25a Foundation Remediation]]
 - **Next:** [[STEP-27 Product-wide UI Rebuild]]
 - **Parent:** [[Build Plan]]
+
+</details>
+
+---
+
+## Navigation
+
+- **Parent:** [[Build Plan]]
+- **Related Notes:** [[STEP-26 Product Design System Foundation]] · [[Product Coverage Audit]]
