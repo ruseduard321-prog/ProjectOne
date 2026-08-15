@@ -29,6 +29,7 @@ What actually exists in the database, as opposed to the intended model above.
 - [[Table - workspaces]] — the tenant boundary
 - [[Table - workspace_members]] — user ↔ workspace membership and role
 - [[Table - audit_log]] — who changed what, append-only
+- [[Table - security_event_log]] — authentication events, append-only, no tenant read path
 - [[Table - provider_credentials]] — workspace AI provider keys (BYOK), encrypted at rest
 - [[Table - ai_spend_records]] — the AI spend ledger, append-only
 - [[Table - ai_budgets]] — spend ceilings, running totals and the spend breaker

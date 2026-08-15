@@ -2,8 +2,8 @@
 title: "Table - audit_log"
 category: Database Table
 status: stable
-version: "1.1"
-last_updated: 2026-08-04
+version: "1.2"
+last_updated: 2026-08-15
 tags: [database, schema, security, multi-tenancy]
 table_name: "audit_log"
 ---
@@ -96,7 +96,7 @@ Otherwise anyone holding `DELETE_WORKSPACE` could destroy the evidence of what t
 This is the **bounded** legal exception to erasure that §16 requires, rather than the unbounded one it was.
 
 ## Known Gaps
-- **Coverage is the STEP-13 mutations only.** Authentication events (sign-in, sign-out, failed attempts) are not recorded here. They are arguably the most security-relevant events of all, and adding them is a deliberate extension rather than an oversight to fix silently.
+- **Coverage is the STEP-13 mutations plus the three AI settings actions**, and that is now the whole intended scope. Authentication events are recorded in [[Table - security_event_log]] instead ([[STEP-25a Foundation Remediation]], FA-06) — deliberately a separate table, because this one's `workspace_id` is `NOT NULL` by design and a failed sign-in has no tenant to attribute.
 - **Writes are best-effort.** `AuditService.record` never raises: an audit-write failure must not turn a successful removal into a 500 the caller retries, because the retry performs the action twice. Failures are logged at `exception` level. An action whose audit record must be atomic with it needs a different mechanism.
 
 ---
@@ -104,6 +104,6 @@ This is the **bounded** legal exception to erasure that §16 requires, rather th
 ## Navigation
 
 - **Previous:** [[Table - workspace_members]]
-- **Next:** —
+- **Next:** [[Table - security_event_log]]
 - **Parent:** [[Database MOC]]
-- **Related Notes:** [[Schema Overview]] · [[Table Conventions]] · [[RLS Policy Pattern]] · [[API Endpoints]] · [[Table - workspaces]]
+- **Related Notes:** [[Schema Overview]] · [[Table Conventions]] · [[RLS Policy Pattern]] · [[API Endpoints]] · [[Table - workspaces]] · [[Table - security_event_log]]

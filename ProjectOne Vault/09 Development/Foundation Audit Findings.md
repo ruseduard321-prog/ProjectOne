@@ -120,7 +120,22 @@ The findings record produced by [[STEP-25 Foundation Audit and Internal Readines
 - **Consequence:** The most security-relevant events in the product leave no audit trail. A credential-stuffing attempt or a suspicious session would be unreconstructable after the fact.
 - **Recommended disposition:** Own numbered step, or fold into whichever step next touches authentication.
 - **Owner decision:** **Accepted 2026-08-15 — Medium.** Scheduled in [[STEP-25a Foundation Remediation]] (task 7), with the constraint that a failed attempt must not become an account-existence oracle.
-- **Status:** **Open — BLOCKED on an owner decision.** [[STEP-25a Foundation Remediation]] could not close this without inventing a schema, which [[CLAUDE|CLAUDE.md]] §34 forbids. `audit_log` is deliberately tenant-scoped: `workspace_id` is `NOT NULL` with a `RESTRICT` foreign key, `actor_id` is `NOT NULL`, and the RLS policy filters on `workspace_id IN app_current_user_workspaces()`. Migration `a3c07d5e91f4` states the reasoning outright — *a nullable tenant column on a tenant-scoped table is a row that no policy can classify*. **Authentication events have neither column.** `sign_in` receives only an email and a password; there is no workspace until one is selected, and a *failed* attempt has no authenticated actor and may name no existing account at all. Storing them therefore requires one of: **(a)** making `workspace_id` nullable, reversing a documented multi-tenancy decision; **(b)** a separate `security_event_log` table with its own RLS model; or **(c)** structured application logs only, with no new table. Each is a schema or multi-tenancy change and therefore **Critical** under §21, requiring the owner's decision before implementation. See [[STEP-25a Foundation Remediation#FA-06 owner decision required]].
+- **Owner decision (implementation):** **Option B, 2026-08-15.** A separate `security_event_log` table, completed inside [[STEP-25a Foundation Remediation]] rather than carried forward. Ten requirements set with it: append-only; no required `workspace_id` or `user_id`; an allowlisted event type with minimum diagnostic metadata; a named list of values that must never be stored; identical public responses for existing and nonexistent accounts; RLS with default-deny and no tenant-facing read path; minimum privileges; immutability after insertion except by the retention mechanism; the approved 90-day window; and disposable PostgreSQL only.
+- **Status:** **Closed 2026-08-15** — **Closed** by [[STEP-25a Foundation Remediation]] (commits `b56c6bb` test-first, `9fa41bc` implementation). Migration `b2e94c17a5d3` creates `public.security_event_log`; `SecurityEventRepository` and `SecurityEventService` write to it; `app/routers/auth.py` records all four authentication events.
+
+  **Failing-before proof.** The test module was written first and failed at import — `ModuleNotFoundError: No module named 'app.repositories.security_events'`. That is the honest shape of this finding: nothing was subtly wrong, the mechanism did not exist.
+
+  **The oracle, closed in four independent places.** The requirement is harder than "do not store the email", so it is enforced more than once:
+  1. **No column can hold an identifier.** No `email`, no `username`, and deliberately **no `email_hash`** — a hash is an oracle to anyone who can compute it over a guess. A test names the forbidden columns, so adding one in good faith fails rather than passes review.
+  2. **`user_id` is null on every failure**, enforced by `ck_security_event_log_failure_is_anonymous` *and* by `SecurityEvent.__post_init__`. A row reading "sign-in failed for user X" answers *does X exist?* from its own contents.
+  3. **`record_failure` has no parameter for an identity.** Not "takes one and discards it" — the parameter does not exist, so a future edit must change the signature and confront why it is shaped this way.
+  4. **The public response is unchanged.** `sign_in` and `refresh` record and then **re-raise**, leaving the status mapping with `app.core.errors`. Asserted end-to-end: an existing and an unknown account produce identical status and body.
+
+  **Append-only, enforced four ways.** RLS `ENABLE` + `FORCE` with **no policies at all** (default-deny *is* the control, and is stricter than `audit_log`, which has a SELECT policy because a workspace's own actions are its own business); **no grants** to `anon` or `authenticated`, `TRUNCATE` included since it bypasses RLS entirely; a `BEFORE UPDATE` trigger that raises, closing the one path grants do not — the privileged connection the application itself writes over; and writes confined to that connection inside the service.
+
+  **Retention** reuses the approved 90-day window from the same setting as FA-07, so the disclosure users are shown cannot become true of only one of the two tables.
+
+  **One limit, recorded rather than papered over.** A bare password has no shape — `hunter2` is indistinguishable from a failure reason by inspection, and no regex will ever catch it. The value pattern is a backstop; what actually covers a password is the key allowlist and an API with nowhere to put one. A test asserts exactly that, because a test implying the regex covered it would teach the next reader something false.
 
 ### FA-07
 - **Area:** Security / data retention
@@ -272,7 +287,7 @@ No HTTP journey timings were taken: that would require running the application a
 
 ## Remediation outcome — STEP-25a, 2026-08-15
 
-**Eight of the nine scheduled findings are closed and proven by execution. One (FA-06) is blocked on an owner decision.**
+**All nine scheduled findings are closed and proven by execution.**
 
 | ID | Severity | Outcome | Proof |
 |---|---|---|---|
@@ -282,7 +297,7 @@ No HTTP journey timings were taken: that would require running the application a
 | FA-11 | Medium | **Closed** | Observed `alert` node in the accessibility tree |
 | FA-02 | High | **Closed** | Cycle executes and passes in CI |
 | FA-01 | Medium | **Closed** | Observed banner, 306 named |
-| **FA-06** | Medium | **BLOCKED** | Owner decision required — see the finding |
+| **FA-06** | Medium | **Closed** | Failed at import first; oracle closed four ways |
 | FA-07 | Medium | **Closed** | 15 tests, boundary pinned both directions |
 | FA-08 | Medium | **Closed** | Ruleset verified via API |
 
@@ -301,6 +316,9 @@ No HTTP journey timings were taken: that would require running the application a
 - **FA-02 and FA-03 execute in CI only.** The remediation environment has no Docker, no WSL distribution, no PostgreSQL server and no `pg_dump`, so neither drill could run locally; provisioning one would have meant installing software, which the execution rules make a stop-and-ask. Both run in the `api` job against the disposable `postgres:17` container and **both pass there**, on every pull request. That is a real and repeating proof — but it is CI's, not a local reproduction, and is recorded as such rather than rounded up.
 - **FA-04's observation used an injected fault**, not a genuine API outage: reaching the authenticated routes needs credentials this environment does not hold. The injected fault exercises the same code path — a Server Component throwing, caught by the root boundary — and the fault injection was fully reverted, with the working tree confirmed byte-identical to the commit.
 - **FA-11 was verified through the rendered accessibility tree**, which is what a screen reader consumes, rather than with a screen reader itself.
+- **FA-06's database-backed proof executes in CI only**, for the same reason as FA-02 and FA-03: no local PostgreSQL. The schema, RLS default-deny, grant absence, immutability trigger, retention boundary and concurrency assertions all run in the `api` job against the disposable `postgres:17` container. The offline half — the oracle rules, the forbidden-key and value guards, their negative controls and the endpoint-response equivalence — runs everywhere, including locally.
+- **FA-06 records the four authentication events the API exposes**, which is its whole surface today. Events belonging to endpoints that do not exist yet — password reset, email change, MFA — are not covered because there is nothing to cover; each will need its own event type and a widened CHECK constraint when built.
+- **FA-06's `record` swallows write failures**, deliberately and for the same reason `AuditService.record` does: a security-event write failing must not turn a successful sign-in into a 500 the caller retries. The trade-off is sharper here, because the events most likely to coincide with a write failure are the ones during an incident. Failures log at `exception` level and are alertable; an event needing atomicity with its action would need a different mechanism, and none of these do.
 - **FA-07's purge is implemented and tested, but nothing schedules it yet.** The mechanism, its configuration and its boundary behaviour are proven; wiring it to a scheduler is deployment work that belongs with the infrastructure it runs on.
 
 ## Approved remediation order
