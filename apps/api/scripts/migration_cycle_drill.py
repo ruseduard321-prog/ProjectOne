@@ -65,9 +65,20 @@ _SCHEMA_QUERIES: dict[str, str] = {
         SELECT tc.table_name, tc.constraint_name, tc.constraint_type
         FROM information_schema.table_constraints AS tc
         WHERE tc.table_schema = 'public'
-          -- Names generated per-run would differ between the two passes without
-          -- indicating a real difference; every constraint this schema declares
-          -- is explicitly named.
+          -- Exclude PostgreSQL's *system-generated* NOT NULL constraint names.
+          --
+          -- They are formed as `2200_<table oid>_<column number>_not_null`, so
+          -- they embed the table's OID -- which necessarily changes when a
+          -- downgrade drops the table and an upgrade recreates it. Comparing
+          -- them reports every recreated table as a difference while the schema
+          -- is in fact identical, which is exactly the false positive that
+          -- makes a drill get ignored.
+          --
+          -- Nothing is lost by excluding them: a column's nullability is
+          -- already compared in `columns` via `is_nullable`, which is the
+          -- property that actually matters. Every constraint this schema
+          -- declares deliberately is explicitly named and still compared.
+          AND tc.constraint_name !~ '^[0-9]+_[0-9]+_[0-9]+_not_null$'
         ORDER BY tc.table_name, tc.constraint_name, tc.constraint_type
     """,
     "indexes": """

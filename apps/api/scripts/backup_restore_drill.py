@@ -116,9 +116,12 @@ def _seed(url: str) -> dict[str, Any]:
             # Per-workspace project rows, with distinct counts so a restore that
             # mixes tenants shows up as a count mismatch rather than passing.
             for project_index in range(index + 1):
+                # `created_by` is NOT NULL and has no default -- deliberately,
+                # so a project always records who made it (migration
+                # e5a91c34d7f2). Seeded explicitly rather than omitted.
                 cursor.execute(
-                    "INSERT INTO projects (workspace_id, name) VALUES (%s, %s)",
-                    (workspace_id, f"Workspace {index} Project {project_index}"),
+                    "INSERT INTO projects (workspace_id, name, created_by) VALUES (%s, %s, %s)",
+                    (workspace_id, f"Workspace {index} Project {project_index}", user_id),
                 )
 
             seeded["workspaces"].append(
@@ -151,9 +154,27 @@ def _capture_verification(url: str) -> dict[str, Any]:
         )
         captured["tables"] = [row[0] for row in cursor.fetchall()]
 
+        # Columns, including `is_nullable`. This is what keeps the exclusion
+        # below honest: system-generated NOT NULL constraint names cannot be
+        # compared across a restore, but the nullability they express can be,
+        # and it is the property that actually matters.
+        cursor.execute(
+            "SELECT table_name, column_name, data_type, is_nullable, column_default "
+            "FROM information_schema.columns WHERE table_schema = 'public' "
+            "ORDER BY table_name, column_name"
+        )
+        captured["columns"] = [tuple(row) for row in cursor.fetchall()]
+
+        # System-generated NOT NULL constraint names embed the table OID
+        # (`2200_<oid>_<attnum>_not_null`), which necessarily differs in a
+        # restored database because the tables are new objects. Excluded for
+        # the same reason as in the migration drill: comparing them reports
+        # every table as changed while the schema is identical. Nullability is
+        # still compared through the column data itself.
         cursor.execute(
             "SELECT table_name, constraint_name, constraint_type "
             "FROM information_schema.table_constraints WHERE table_schema = 'public' "
+            "AND constraint_name !~ '^[0-9]+_[0-9]+_[0-9]+_not_null$' "
             "ORDER BY table_name, constraint_name, constraint_type"
         )
         captured["constraints"] = [tuple(row) for row in cursor.fetchall()]
@@ -305,6 +326,7 @@ def main() -> int:  # noqa: C901 - a linear drill; splitting it would obscure th
             failures: list[str] = []
             for key in (
                 "tables",
+                "columns",
                 "constraints",
                 "rls",
                 "policies",
@@ -313,8 +335,23 @@ def main() -> int:  # noqa: C901 - a linear drill; splitting it would obscure th
                 "user_rows",
                 "project_rows",
             ):
-                if before[key] != after[key]:
-                    failures.append(f"  {key}: source={before[key]!r} restored={after[key]!r}")
+                if before[key] == after[key]:
+                    continue
+
+                # Report the differing rows, not both whole lists. A schema
+                # comparison prints thousands of identical entries otherwise,
+                # which buries the difference and overruns the annotation.
+                source = before[key]
+                restored = after[key]
+                missing = [row for row in source if row not in restored][:10]
+                added = [row for row in restored if row not in source][:10]
+
+                for row in missing:
+                    failures.append(f"  {key}: MISSING after restore: {row}")
+                for row in added:
+                    failures.append(f"  {key}: UNEXPECTED after restore: {row}")
+                if not missing and not added:
+                    failures.append(f"  {key}: differs in order or count only")
 
             if failures:
                 print("the restored database does NOT match the source:", file=sys.stderr)
