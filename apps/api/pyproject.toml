@@ -8,6 +8,11 @@ requires-python = ">=3.12"
 # machines is not a reproducible baseline (Environment Setup).
 dependencies = [
     "alembic==1.18.5",
+    # Cloudflare R2 is reached through its S3-compatible API (ADR-004), and
+    # Cloudflare's own documentation lists boto3 as a supported client for it.
+    # Confined to app/storage/providers/ -- tests/test_storage_boundary.py
+    # asserts it cannot be imported above the adapter boundary.
+    "boto3==1.43.72",
     "fastapi==0.121.2",
     # Supabase signs access tokens with ES256, so verification needs asymmetric
     # crypto — the [crypto] extra pulls in `cryptography` for that. PyJWT rather
@@ -81,6 +86,19 @@ warn_unreachable = true
 # error on every model's class declaration -- code we do not own and cannot
 # fix. It would make every schema in the codebase permanently unclean, which
 # trains people to ignore mypy output rather than to avoid Any.
+
+# boto3 ships no type stubs and no py.typed marker, so `strict` reports its
+# import as untyped. Scoped to this one module rather than relaxed globally: the
+# untyped surface is confined to `app/storage/factory.py`, which is the only
+# place the SDK is imported at all, and the client it returns is immediately
+# held behind the vendor-neutral StorageProvider boundary (ADR-004 3).
+#
+# The alternative -- adding `boto3-stubs` -- is a second dependency carrying its
+# own version coupling to boto3, for a single `client()` call whose result is
+# deliberately typed `Any` at the adapter edge anyway.
+[[tool.mypy.overrides]]
+module = ["boto3", "boto3.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

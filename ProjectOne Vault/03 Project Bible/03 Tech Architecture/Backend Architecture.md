@@ -35,6 +35,17 @@ flowchart TB
 
 API Layer, [[Authentication and Authorization|Authentication]], Business Logic, AI Services, [[Workflow Engine]], Database Access, File Storage, Billing Services and Background Workers.
 
+### File Storage
+
+Reached through a **vendor-neutral `StorageProvider` boundary** (`app/storage/`), established by [[STEP-27 Storage Provider Abstraction]] under [[ADR-004 Object Storage Provider and Tenant-Safe Key Construction]]. Cloudflare R2 is the initial adapter, via its S3-compatible API; no code above `app/storage/providers/` knows which vendor is in use, and an executable test (`tests/test_storage_boundary.py`) fails the build if a vendor SDK is imported above that line.
+
+Four operations only — put, get, signed URL, delete. No listing, no multipart upload, no copy/move: the same restraint the [[AI Providers|AI provider interface]] was built with, for the same reason.
+
+> [!warning] Object storage has no Row Level Security
+> Everywhere else the workspace boundary is enforced by the database, so a repository that forgot to filter is still safe. **Object storage has no equivalent.** The object-key convention *is* the tenant boundary.
+>
+> Two rules follow, and neither is optional: **callers never supply a path** (every operation takes a workspace id and a logical name, and `app/storage/keys.py` is the only key constructor), and the workspace prefix is **delimiter-terminated** (`ws/<uuid>/`) so one workspace's namespace can never textually prefix another's.
+
 ## Architecture Principles
 
 Modular services, stateless APIs where possible, event-driven processing, fault tolerance, observability and horizontal scalability.

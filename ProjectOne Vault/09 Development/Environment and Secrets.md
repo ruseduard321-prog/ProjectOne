@@ -82,6 +82,25 @@ git check-ignore -v apps/<name>/.env.example
 
 No output means trackable. Output naming a rule means it is being ignored and the app needs its own negation.
 
+### Object storage credentials (Cloudflare R2)
+
+Four variables configure the storage adapter, added by [[STEP-27 Storage Provider Abstraction]] under [[ADR-004 Object Storage Provider and Tenant-Safe Key Construction]]:
+
+| Variable | Secret | Notes |
+|---|---|---|
+| `PROJECTONE_R2_ACCOUNT_ID` | No | The S3 endpoint is **derived** from it |
+| `PROJECTONE_R2_BUCKET` | No | One private bucket for every workspace |
+| `PROJECTONE_R2_ACCESS_KEY_ID` | **Yes** | `SecretStr` |
+| `PROJECTONE_R2_SECRET_ACCESS_KEY` | **Yes** | `SecretStr` |
+
+Three properties are deliberate:
+
+- **Optional until the first caller exists.** STEP-27 built the abstraction before anything uses it (uploads arrive in [[STEP-28 Asset Upload and Download]]), so the API starts without them. Requesting storage while unset raises `StorageNotConfiguredError` at the point of use, naming what is missing — rather than refusing to start for a subsystem nothing calls. They become **required** in the step introducing the first real caller.
+- **All four or none.** A partially configured backend starts, looks healthy, and fails on the first upload with an error pointing at the credential instead of at the missing configuration. `Settings.storage_is_configured` is what makes that check one decision rather than four.
+- **The endpoint is derived, never configured.** `https://<ACCOUNT_ID>.r2.cloudflarestorage.com` is a pure function of the account id; accepting it separately would create two values that can disagree, and a deployment pointed at another account's endpoint is a tenant-isolation failure rather than a typo.
+
+**Backend only.** These never appear in `apps/web` in any form — see the `NEXT_PUBLIC_` trap above. A browser that could read them could read every workspace's objects.
+
 ## Configuration Changes Behavior, Not Code Paths
 
 There is **no environment-conditional business logic** in either app. No `if (environment === 'production')` branching what the code does.

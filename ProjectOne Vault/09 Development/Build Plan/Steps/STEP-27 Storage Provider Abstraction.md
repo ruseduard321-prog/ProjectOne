@@ -6,14 +6,14 @@ version: "2.0"
 last_updated: 2026-08-15
 tags: [engineering, workflow, build-step, backend, infrastructure]
 step_id: STEP-27
-step_status: Not Started
+step_status: In Progress
 detail_level: full
 phase: "Platform Substrate"
 ---
 
 # STEP-27 — Storage Provider Abstraction
 
-**Status:** Not Started
+**Status:** In Progress
 **Phase:** Platform Substrate — The absent infrastructure every media, approval and automation capability sits behind: storage, async execution, and enough notification to make an asynchronous run visible.
 **Detail level:** full — expanded by [[STEP-26 Product Design System Foundation]], per [[Execution Protocol#Progressive Detail]].
 
@@ -92,6 +92,47 @@ A storage provider is reachable through a vendor-neutral interface, tenant-scope
 
 **Owner approval gate** — Critical, so the owner reviews before merge.
 
+## Provider Decision (resolved)
+
+**This step was `Blocked` and is now unblocked.** The block is retained as history rather than deleted, because *why* the provider was chosen is the part a future reader needs.
+
+**Blocked because (2026-08-15):** ProjectOne had no canonical, owner-approved object-storage provider decision, while this step's Definition of Done requires a real adapter. Verified against `main` @ `6f8f50f`: `08 ADR/` held ADR-001/002/003 only, none deciding storage; [[ADR-001 Technology Stack]]'s two "storage" mentions were incidental (a rejected option's prose and a stated consequence), so **Supabase Postgres did not imply Supabase Storage**; [[Infrastructure]] listed "Object Storage" as an unnamed box; no vendor name appeared in any vault markdown; and `apps/api/pyproject.toml` pinned no object-storage SDK.
+
+**Resolved by owner decision on 2026-08-15:** **Cloudflare R2 (Standard)** is ProjectOne's initial production object-storage provider, accessed through the vendor-neutral `StorageProvider` boundary via R2's **S3-compatible API**. Recorded as [[ADR-004 Object Storage Provider and Tenant-Safe Key Construction]], status `Accepted`.
+
+The decision is an **adapter choice, not an architectural surrender**: the canonical architecture is the vendor-neutral boundary, and R2-specific SDK types, configuration and errors stay strictly below it. Changing the primary provider is itself an ADR-level decision.
+
+**Bearing on this step's security requirements: none — they are unchanged.** R2 has no Row Level Security equivalent, so the path convention still carries the entire isolation burden, exactly as the warning callout below states. The owner's rationale notes that even Supabase Storage would not have removed this obligation, because server-side S3 access keys bypass its RLS. The hostile-identifier and prefix-confusion proofs remain mandatory.
+
+## What Was Built
+
+| Concern | Where |
+|---|---|
+| Contract (`StorageProvider` ABC, `StoredObject`) | `app/storage/provider.py` |
+| Tenant-safe key construction | `app/storage/keys.py` |
+| Error hierarchy | `app/storage/errors.py` |
+| R2 adapter (S3-compatible) | `app/storage/providers/r2.py` |
+| Client assembly, credential unwrapping | `app/storage/factory.py` |
+| Configuration | `app/core/config.py`, `apps/api/.env.example` |
+
+**Object key convention:** `ws/<workspace-uuid>/<logical-name>`.
+
+The workspace segment is typed `uuid.UUID` rather than `str`, which removes hostile workspace identifiers by construction rather than by filtering — a UUID cannot hold `/`, `..`, `%2f` or a null byte. The logical name is validated against an **allowlist** (`[A-Za-z0-9._-]+`, NFKC-normalised, percent-encoding rejected), because a denylist has to anticipate every encoding of every separator and fails open on the one nobody thought of.
+
+The prefix is **delimiter-terminated** (`ws/<uuid>/`), which is what makes containment exact. Without the trailing slash, prefix comparison is wrong by construction — the `ws-1` / `ws-10` case.
+
+**Proofs (95 storage tests, all passing):**
+
+- `tests/test_storage_keys.py` — traversal, absolute paths, encoded separators (`%2f`, `%252f`), backslashes, null bytes, control characters, Unicode fullwidth solidus, non-normalised forms, over-length names, empty names; hostile workspace identifiers; the `ws-1`/`ws-10` case; containment across 52 identifiers; and that a rejection never echoes the rejected value back into an error message.
+- `tests/test_storage_r2.py` — cross-workspace read, overwrite and **delete** all fail closed; traversal aimed at another workspace refused on all four operations with the backend never contacted; vendor error translation; no bucket or workspace id in user-facing error text.
+- `tests/test_storage_boundary.py` — the architectural guard.
+
+**Signed-URL expiry is proven by use, not by inspection.** A URL is issued with a one-second lifetime, fetched successfully, then fetched again after the window has passed and refused. The stand-in client enforces the expiry embedded in the URL exactly as a backend would; asserting on the `ExpiresIn` argument would only have proven the adapter forwarded a number.
+
+**Architectural vendor-boundary test.** `tests/test_storage_boundary.py` parses every module above `app/storage/providers/` and fails if any imports `boto3`, `botocore`, `s3transfer` or `supabase` at module scope; it also asserts no contract method accepts a `key`/`path`/`prefix`/`bucket` parameter, and that the factory is annotated to return the abstraction rather than the concrete adapter. **Verified non-vacuous**: temporarily adding `import boto3` to `app/services/project_service.py` made it fail, and it passed again once removed.
+
+**No shared infrastructure was touched.** No Cloudflare account, bucket, credential or API call, and no access to the shared Supabase project. Every proof runs in-process against a stand-in S3 client, which is what makes them runnable in CI.
+
 ## Audit Gaps Closed
 
 **File storage backend** — *Missing, P0, no step* — the audit's largest single blocker
@@ -103,4 +144,4 @@ A storage provider is reachable through a vendor-neutral interface, tenant-scope
 - **Previous:** [[STEP-26 Product Design System Foundation]]
 - **Next:** [[STEP-28 Asset Upload and Download]]
 - **Parent:** [[Build Plan]]
-- **Related Notes:** [[Product Coverage Audit]] · [[Execution Protocol]] · [[Environment and Secrets]] · [[Backend Architecture]]
+- **Related Notes:** [[ADR-004 Object Storage Provider and Tenant-Safe Key Construction]] · [[Product Coverage Audit]] · [[Execution Protocol]] · [[Environment and Secrets]] · [[Backend Architecture]]

@@ -175,6 +175,68 @@ class Settings(BaseSettings):
     # failure this bound exists to prevent (CLAUDE.md §24).
     audit_retention_days: int = Field(default=90, ge=0)
 
+    # --- Object storage (Cloudflare R2, via the S3-compatible API) -----------
+    #
+    # ADR-004: R2 is the initial production adapter behind the vendor-neutral
+    # StorageProvider boundary. These four variables are what that adapter needs
+    # and nothing more; no other part of the codebase reads them.
+    #
+    # **Optional, deliberately.** STEP-27 builds the abstraction before any
+    # caller exists (no upload endpoint until STEP-28), so an API that refused to
+    # start without R2 credentials would break every existing deployment and
+    # every test run to configure a subsystem nothing calls yet. The safety this
+    # gives up is nil: `build_storage_provider()` fails loudly when storage is
+    # actually requested but unconfigured, so the error arrives at the point of
+    # use with an accurate message instead of at startup with a misleading one.
+    #
+    # Made required in the step that introduces the first real caller — that is
+    # the point at which a missing value genuinely is a broken deployment.
+    #
+    # SecretStr on the credentials keeps them out of logs, tracebacks and repr()
+    # output (CLAUDE.md §16, §25). The account id and bucket are not secrets and
+    # are plain strings, so an operator can read them back to confirm which
+    # bucket a deployment is pointed at.
+    r2_account_id: str | None = None
+    r2_bucket: str | None = None
+    r2_access_key_id: SecretStr | None = None
+    r2_secret_access_key: SecretStr | None = None
+
+    @property
+    def r2_endpoint_url(self) -> str | None:
+        """Return R2's S3-compatible endpoint for the configured account.
+
+        Derived rather than configured. The endpoint is a pure function of the
+        account id (`https://<ACCOUNT_ID>.r2.cloudflarestorage.com`, per
+        Cloudflare's documentation), so accepting it as its own variable would
+        create two values that can disagree — and a deployment pointed at
+        another account's endpoint is a tenant-isolation failure, not a typo.
+
+        Returns:
+            The endpoint URL, or None when no account is configured.
+        """
+        if self.r2_account_id is None:
+            return None
+        return f"https://{self.r2_account_id}.r2.cloudflarestorage.com"
+
+    @property
+    def storage_is_configured(self) -> bool:
+        """Return whether every value the storage adapter needs is present.
+
+        All four or none. A partially configured backend is the failure mode
+        worth naming explicitly: it starts, looks healthy, and fails on the
+        first upload with an error pointing at the credential rather than at the
+        missing configuration.
+        """
+        return all(
+            value is not None
+            for value in (
+                self.r2_account_id,
+                self.r2_bucket,
+                self.r2_access_key_id,
+                self.r2_secret_access_key,
+            )
+        )
+
     @property
     def trusted_proxy_networks(self) -> tuple[IPv4Network | IPv6Network, ...]:
         """Return the parsed trusted-proxy allowlist.
