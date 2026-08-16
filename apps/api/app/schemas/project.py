@@ -183,13 +183,18 @@ class AssetResponse(BaseModel):
     name: str
     kind: AssetKind
 
-    #: An opaque locator, and currently always null.
+    #: An opaque locator, populated once bytes are attached.
     #:
-    #: **No storage backend exists** -- nothing writes this and no route serves
-    #: bytes. The field is present rather than hidden because the column is real
-    #: and a client that renders "no file attached" honestly is better than one
-    #: that cannot tell an unbuilt feature from an empty one. Choosing a backend
-    #: is an ADR (CLAUDE.md §10/§28), not a detail of this step.
+    #: **Null is an ordinary value, not an error.** Two routes create assets: the
+    #: upload route stores bytes and fills this in, while the metadata-only route
+    #: records an asset that has none. A failed upload also leaves it null (see
+    #: `AssetStorageService`), so a client renders "no file attached" rather than
+    #: assuming every asset is downloadable.
+    #:
+    #: **Opaque to clients, and must stay that way.** It is a logical name the
+    #: storage layer produced; it is not a URL, not a path, and not something to
+    #: parse, split or prefix. Bytes are reached through the download route,
+    #: which exchanges it for a signed URL (ADR-004).
     storage_path: str | None
 
     created_by: str
@@ -209,3 +214,21 @@ class AssetCreateRequest(BaseModel):
 
     name: AssetName
     kind: AssetKind
+
+
+class AssetDownloadResponse(BaseModel):
+    """A time-limited URL for one asset's bytes.
+
+    **A capability, not a location.** Anyone holding `url` can read the object
+    until it expires, with no further authentication — which is precisely why it
+    is short-lived and why the API never returns a durable bucket path
+    ([[STEP-28 Asset Upload and Download#Decisions]] D3).
+
+    `expires_in_seconds` is restated rather than left for the client to extract
+    from the URL's own signature parameters: those are provider-specific, and a
+    client parsing them would be depending on the storage vendor through a field
+    designed to hide it.
+    """
+
+    url: str
+    expires_in_seconds: int

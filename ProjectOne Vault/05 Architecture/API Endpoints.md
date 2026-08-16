@@ -2,8 +2,8 @@
 title: API Endpoints
 category: Architecture
 status: stable
-version: "1.3"
-last_updated: 2026-08-08
+version: "1.4"
+last_updated: 2026-08-16
 tags: [backend, api, standards, documentation]
 aliases: ["Endpoint Reference", "API Reference"]
 ---
@@ -139,7 +139,7 @@ Routes raise; they do not map. A ceiling or execution limit reaches the client a
 
 ## Projects and assets
 
-Added by [[STEP-21 Projects UI]], over the schema and lifecycle [[STEP-20 Projects Schema and Lifecycle]] built. **The first routes reaching a workspace's actual work** rather than its configuration, and the first where every live member writes.
+Added by [[STEP-21 Projects UI]], over the schema and lifecycle [[STEP-20 Projects Schema and Lifecycle]] built. **The first routes reaching a workspace's actual work** rather than its configuration, and the first where every live member writes. [[STEP-28 Asset Upload and Download]] added the two routes that move bytes.
 
 | Endpoint | Auth | Permission | Notes |
 |---|---|---|---|
@@ -150,8 +150,33 @@ Added by [[STEP-21 Projects UI]], over the schema and lifecycle [[STEP-20 Projec
 | `POST /api/v1/workspaces/{id}/projects/{project_id}/transitions` | Bearer | `VIEW_WORKSPACE` | Body: `{"status"}`. **409** when the lifecycle refuses the move, **422** when the value is not a state at all. Returns the updated project, whose `legal_transitions` now describe the new state. |
 | `DELETE /api/v1/workspaces/{id}/projects/{project_id}` | Bearer | `VIEW_WORKSPACE` | **204.** Soft-deletes. **Not the same as archiving.** **404** on a second call — a false confirmation would claim something happened that did not. |
 | `GET /api/v1/workspaces/{id}/projects/{project_id}/assets` | Bearer | `VIEW_WORKSPACE` | Live assets, **oldest first** — creation order is the order the work happened in. |
-| `POST /api/v1/workspaces/{id}/projects/{project_id}/assets` | Bearer | `VIEW_WORKSPACE` | **201.** Body: `{"name", "kind"}`. `kind` is a closed vocabulary: `document`, `image`, `video`, `audio`. **Records an asset; uploads nothing.** Rate limited **60/min** per user. |
+| `POST /api/v1/workspaces/{id}/projects/{project_id}/assets` | Bearer | `VIEW_WORKSPACE` | **201.** Body: `{"name", "kind"}`. `kind` is a closed vocabulary: `document`, `image`, `video`, `audio`. **Records an asset; uploads nothing** — `storage_path` stays null. Rate limited **60/min** per user. |
+| `POST /api/v1/workspaces/{id}/projects/{project_id}/assets/upload` | Bearer | `VIEW_WORKSPACE` | **201.** `multipart/form-data`: `file`, `name`, `kind`. **The only route that stores bytes.** Returns the asset with `storage_path` populated. Rate limited **60/min** per user. See [[#Uploads are validated four ways]]. |
+| `GET /api/v1/workspaces/{id}/projects/{project_id}/assets/{asset_id}/download` | Bearer | `VIEW_WORKSPACE` | Returns `{"url", "expires_in_seconds"}` — a **signed URL valid 15 minutes**, never the bytes and never a bucket path. **404** when the asset holds no file. |
 | `DELETE /api/v1/workspaces/{id}/projects/{project_id}/assets/{asset_id}` | Bearer | `VIEW_WORKSPACE` | **204.** **404** when the asset is not attached to *that* project — every path segment is enforced, not just the ones the query uses. |
+
+### Uploads are validated four ways
+
+Added by [[STEP-28 Asset Upload and Download]]. An upload endpoint is a classic injection surface, so validation is the feature rather than a detail of it. Four **independent** checks, cheapest first — none is load-bearing alone:
+
+1. **Size**, against a **100 MB per-asset ceiling**, enforced while the body streams rather than after it lands. **413** when exceeded.
+2. **Declared MIME type**, against an allowlist derived from `kind`. A type valid for another kind is refused, so an `image` row cannot hold a PDF. **415**.
+3. **Extension**, against the same allowlist entry. Absent is permitted; wrong is **415**.
+4. **Content sniffing** — the file's leading bytes must agree with what was declared. **A `.png` whose content is a Windows executable is refused**, and this is the check that gives the other three meaning: a type and an extension are strings the client chose.
+
+An empty upload is **400**. No refusal message ever echoes the filename back — a caller-controlled string reflected into a response is how one injection becomes two.
+
+**The size ceiling and the absence of resumable upload are one decision.** `StorageProvider.put` takes bytes, so an accepted upload is held in memory in full; raising the ceiling without changing the transport raises what a single request can consume. Larger media is a reason to revisit the transport, not the number.
+
+### A download is a capability, not a location
+
+The download route returns a **signed URL**, never proxied bytes and never a public path. Proxying would put every megabyte through an API worker; a durable path would be a permanent grant issued for a momentary need.
+
+**15 minutes**, chosen at the call site rather than defaulted in the backend — `signed_url` deliberately has no default, because the right lifetime depends on what is being handed out. A signed URL is a **bearer capability**: anyone holding the string can read the object with no further authentication, so the window is long enough for a browser to fetch an asset it is about to display and short enough that a URL leaked through a referrer header or a screenshot stops working before it is useful.
+
+**Cross-tenant access fails at the route, before anything is signed.** The membership gate refuses a non-member, and the asset row is then resolved through the tenant connection where RLS refuses another workspace's row — so no URL is generated for a caller who should not have one. A route that signed first and checked afterwards would already have produced the capability it was about to refuse.
+
+`storage_path` is **opaque to clients**: a logical name, not a URL and not a path. Bytes are reached only by exchanging it here — see [[Table - assets#`storage_path` holds a logical name, not a path]].
 
 ### Every live member writes here
 

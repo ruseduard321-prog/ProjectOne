@@ -452,6 +452,56 @@ class ProjectService:
 
         return self._repository.list_assets(workspace_id, project_id)
 
+    def get_asset(self, workspace_id: uuid.UUID, asset_id: uuid.UUID) -> Asset:
+        """Return one live asset by id.
+
+        Keyed on the workspace rather than on the project, deliberately: a
+        caller holding an asset id and a workspace id has already passed the
+        membership gate for that workspace, and requiring the project id too
+        would make the lookup depend on the caller knowing a second identifier
+        that adds no authority.
+
+        Raises:
+            ProjectNotFoundError: no live asset matched, or RLS hid it. Reusing
+                the project error rather than adding one identical in every
+                respect -- both mean "the thing you named is not reachable", and
+                both answer 404.
+        """
+        asset = self._repository.get_asset(workspace_id, asset_id)
+
+        if asset is None:
+            raise ProjectNotFoundError("Asset not found")
+
+        return asset
+
+    def attach_storage_path(
+        self,
+        workspace_id: uuid.UUID,
+        asset_id: uuid.UUID,
+        storage_path: str,
+    ) -> Asset:
+        """Record where an asset's bytes were stored.
+
+        Called only after the bytes are actually in the backend
+        ([[STEP-28 Asset Upload and Download]] Task 5). Writing this before the
+        upload would leave the row pointing at an object that may never exist,
+        which is the one inconsistency the ordering there exists to prevent.
+
+        **No validation of `storage_path` here.** It is a locator the storage
+        layer produced and returned, never a caller-supplied string, so
+        inspecting it would be re-checking the storage layer's own output --
+        and the shape of a locator is deliberately not this layer's business.
+
+        Raises:
+            ProjectNotFoundError: no live asset matched.
+        """
+        updated = self._repository.set_asset_storage_path(workspace_id, asset_id, storage_path)
+
+        if updated is None:
+            raise ProjectNotFoundError("Asset not found")
+
+        return updated
+
     def delete_asset(self, workspace_id: uuid.UUID, asset_id: uuid.UUID) -> None:
         """Soft-delete one asset.
 

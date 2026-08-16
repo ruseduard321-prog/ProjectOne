@@ -1,18 +1,18 @@
 ---
 title: STEP-28 Asset Upload and Download
 category: Development/Build Step
-version: "2.1"
+version: "2.2"
 last_updated: 2026-08-16
 tags: [engineering, workflow, build-step, backend, infrastructure]
 step_id: STEP-28
-step_status: Not Started
+step_status: In Progress
 detail_level: full
 phase: "Platform Substrate"
 ---
 
 # STEP-28 — Asset Upload and Download
 
-**Status:** Not Started
+**Status:** In Progress
 **Phase:** Platform Substrate — The absent infrastructure every media, approval and automation capability sits behind: storage, async execution, and enough notification to make an asynchronous run visible.
 **Detail level:** full — expanded 2026-08-16 against `main` @ `115aeea`, with [[STEP-27 Storage Provider Abstraction]] merged and its contract readable in code.
 
@@ -66,7 +66,12 @@ Three facts came out of reading the merged code rather than the plan. They chang
 - No image transformation, thumbnailing or transcoding — [[STEP-32 Media Processing Pipeline]].
 - No quota enforcement — [[STEP-33 Storage Quotas and Lifecycle]].
 - No upload UI — [[STEP-29 Asset Management UI]].
-- **No multipart or resumable upload.** The contract takes `data: bytes`. A single-request upload bounded by the size ceiling is this step; resumable transport is a later step if a real file size demands it.
+- **No chunked or resumable upload.** The contract takes `data: bytes`. A single-request upload bounded by the size ceiling is this step; resumable transport is a later step if a real file size demands it.
+
+  > [!warning] Not to be confused with `multipart/form-data`
+  > This exclusion is about **S3-style multipart / resumable transfer** — splitting one large object across several requests that can be retried independently. That is out of scope.
+  >
+  > The endpoint *does* accept `multipart/form-data` ([[#D4 — What wire format does the upload endpoint use? — Resolved]]), which is an unrelated thing wearing a confusingly similar name: one request, one body, several labelled parts. The two are compatible, and the wire format is not what the ceiling constrains.
 - **No hard removal of rows.** Erasure stays a soft delete of the row (`deleted_at`), exactly as `data_ownership_service.py` already documents. Only the *object* is removed for good.
 
 ## Surfaces Affected
@@ -158,7 +163,7 @@ Every proof in [[#Required Tests and Proofs]], plus:
 
 ## Decisions
 
-Three decisions this step could not take alone. **All three were resolved by the project owner on 2026-08-16**, before implementation began. Recorded here rather than guessed at ([[CLAUDE|CLAUDE.md]] §34), and recorded with the reasoning so a later session sees why the rule exists rather than only that it does.
+Four decisions this step could not take alone. **D1, D2 and D3 were resolved by the project owner on 2026-08-16**, before implementation began; **D4 surfaced during implementation** and was resolved by the owner the same day, before the endpoint it governs was written. Recorded here rather than guessed at ([[CLAUDE|CLAUDE.md]] §34), and recorded with the reasoning so a later session sees why the rule exists rather than only that it does.
 
 ### D1 — How does erasure reach a storage provider? — **Resolved**
 
@@ -189,6 +194,16 @@ No source document set one, and it is not derivable from the schema. 100 MB comf
 The backend bounds expiry at 7 days and supplies no default, deliberately — the choice belongs at the call site where the sensitivity of the object is known. 15 minutes is long enough for a browser to fetch an asset it is about to display, and short enough that a URL leaked through a referrer header, a shared screenshot or a log stops working before it is useful.
 
 A signed URL is a bearer capability: anyone holding it can read the object, with no further authentication. Minutes rather than days is what keeps that exposure bounded.
+
+### D4 — What wire format does the upload endpoint use? — **Resolved**
+
+**Decision: `multipart/form-data`, adding `python-multipart` as a dependency.**
+
+Not anticipated by expansion. It surfaced during implementation because FastAPI's `UploadFile` and `Form` require `python-multipart`, which is not in the [[CLAUDE|CLAUDE.md]] §10 stack table — so the transport choice and a new dependency turned out to be the same question. **Resolved by the project owner on 2026-08-16**, before the endpoint was written.
+
+The alternative was a raw request body with the metadata in query parameters, which needs no dependency at all. It was rejected on the client side of the contract: a browser's file input posts `multipart/form-data` natively, so [[STEP-29 Asset Management UI]] sends a `FormData` and nothing else, while a raw body would force every client — the UI included — to hand-build a request. Paying one small, framework-native dependency to keep the public API conventional was judged the better trade.
+
+**No ADR.** `python-multipart` is FastAPI's own documented prerequisite for uploads and ships inside `fastapi[standard]`; adopting it is using the chosen framework rather than adding to the stack ([[CLAUDE|CLAUDE.md]] §28). The dependency line records the reasoning where a reader meets it.
 
 ## Required Tests and Proofs
 
@@ -226,7 +241,7 @@ A user can upload a file to a project and retrieve it, with validation enforced,
 
 Additionally, per [[Execution Protocol#Step Completion]]:
 
-- [x] Every decision resolved and recorded in this note — D1, D2 and D3 settled by the owner on 2026-08-16, before implementation.
+- [x] Every decision resolved and recorded in this note — D1, D2 and D3 settled by the owner on 2026-08-16 before implementation; D4 settled the same day, during it.
 - [ ] Required CI green; manual checklist complete; review conversations resolved.
 - [ ] **Owner approval obtained** — this step is Critical (below).
 - [ ] Status synchronized between this note and the [[Build Plan]] index.

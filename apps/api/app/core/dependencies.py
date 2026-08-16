@@ -44,6 +44,7 @@ from app.repositories.users import UserRepository
 from app.repositories.workflows import WorkflowRepository
 from app.services.ai_service import AIService
 from app.services.ai_spend_service import AISpendService
+from app.services.asset_storage_service import AssetStorageService
 from app.services.audit_service import AuditService
 from app.services.auth_service import AuthService
 from app.services.authorization_service import AuthorizationService
@@ -56,6 +57,8 @@ from app.services.provider_credential_service import ProviderCredentialService
 from app.services.security_event_service import SecurityEventService
 from app.services.token_service import AuthenticatedUser, TokenService, build_jwk_client
 from app.services.workspace_service import WorkspaceService
+from app.storage.factory import build_storage_provider
+from app.storage.provider import StorageProvider
 from app.workflows.runner import WorkflowRunner
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
@@ -300,9 +303,43 @@ def get_workspace_service(
 WorkspaceServiceDep = Annotated[WorkspaceService, Depends(get_workspace_service)]
 
 
+@lru_cache
+def _cached_storage_provider() -> StorageProvider:
+    """Build the storage provider once per process.
+
+    Cached because constructing one builds an S3 client, which resolves
+    configuration and sets up a connection pool — per-request construction would
+    pay that cost on every upload and download for no benefit, since the client
+    is stateless with respect to the caller.
+
+    Zero-argument so `lru_cache` has something hashable to key on: `Settings` is
+    a pydantic model and is not hashable, and `get_settings()` is itself cached,
+    so reading it inside is equivalent to receiving it.
+    """
+    return build_storage_provider(get_settings())
+
+
+def get_storage_provider() -> StorageProvider:
+    """Return the configured object-storage backend.
+
+    Exposed through the dependency system rather than imported directly so a
+    test can substitute a fake without touching module state — the same reason
+    every other collaborator here is a dependency (CLAUDE.md §12).
+
+    Never raises `StorageNotConfiguredError` in a running API: `get_settings()`
+    refuses to start without storage configuration (STEP-28 Task 1), so by the
+    time a request reaches this the values are present.
+    """
+    return _cached_storage_provider()
+
+
+StorageProviderDep = Annotated[StorageProvider, Depends(get_storage_provider)]
+
+
 def get_data_ownership_service(
     connection: TenantConnectionDep,
     authorization: AuthorizationServiceDep,
+    storage: StorageProviderDep,
 ) -> DataOwnershipService:
     """Construct the export/erasure service over the request's tenant connection.
 
@@ -310,8 +347,12 @@ def get_data_ownership_service(
     a test can substitute a store registry without monkey-patching a module
     global — and so the registry's contents are visible at the wiring layer,
     where an omission is noticeable.
+
+    `storage` is passed for the same reason: erasure has to reach the objects an
+    asset row points at, and a service that constructed its own backend would be
+    one a test cannot isolate from a real bucket (STEP-28 D1).
     """
-    return DataOwnershipService(connection, authorization, REGISTERED_STORES)
+    return DataOwnershipService(connection, authorization, REGISTERED_STORES, storage)
 
 
 DataOwnershipServiceDep = Annotated[DataOwnershipService, Depends(get_data_ownership_service)]
@@ -488,6 +529,22 @@ def get_project_service(repository: ProjectRepositoryDep) -> ProjectService:
 
 
 ProjectServiceDep = Annotated[ProjectService, Depends(get_project_service)]
+
+
+def get_asset_storage_service(
+    projects: ProjectServiceDep,
+    storage: StorageProviderDep,
+) -> AssetStorageService:
+    """Construct the asset upload/download service.
+
+    Composed of two collaborators it does not own: the lifecycle service holds
+    the asset rows, the provider holds the bytes, and the service between them
+    owns only the ordering (STEP-28 Task 5).
+    """
+    return AssetStorageService(projects, storage)
+
+
+AssetStorageServiceDep = Annotated[AssetStorageService, Depends(get_asset_storage_service)]
 
 
 def get_ai_spend_repository(settings: SettingsDep) -> AISpendRepository:
