@@ -26,7 +26,7 @@ Key entry points inside the vault:
 | `03 Project Bible/` | Product specification: vision, principles, features |
 | `04 Engineering Handbook/` | Binding engineering standards, Chapters 1–11 |
 | `08 ADR/` | Architecture Decision Records |
-| `09 Development/Build Plan/` | The 26-step execution plan from empty repo to first release |
+| `09 Development/Build Plan/` | The step-by-step execution plan, from empty repo to private beta and commercial readiness — authoritative for what is done and what comes next |
 
 Two root files tell coding agents how to work in this codebase, one per agent:
 
@@ -68,6 +68,15 @@ depend on applications. Circular dependencies are prohibited. See
 
 ## Status
 
-Pre-alpha. No application code exists yet — the repository skeleton and documentation are in place
-and the build is executing STEP-01 onward of
-[`Build Plan`](ProjectOne%20Vault/09%20Development/Build%20Plan/Build%20Plan.md).
+Pre-alpha — no release has shipped yet. The first will be a private, invite-only beta.
+
+The foundation is built and running. Both applications exist and build clean: authentication,
+workspace multi-tenancy enforced by Row Level Security, role-based authorization, a
+provider-agnostic AI router with cost governance, AI Chat, Projects, a Dashboard, a minimum
+workflow engine and a vendor-neutral storage abstraction. Every change runs through CI — lint,
+type-check, tests and build for both apps, plus colour-contrast, migration-reversal and
+backup-restore verification.
+
+Progress is tracked step by step in
+[`Build Plan`](ProjectOne%20Vault/09%20Development/Build%20Plan/Build%20Plan.md), which is the
+source of truth for what is complete and what comes next.
