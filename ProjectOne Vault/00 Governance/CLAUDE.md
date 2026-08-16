@@ -2,8 +2,8 @@
 title: CLAUDE.md
 category: Meta/Governance
 status: stable
-version: "1.3"
-last_updated: 2026-08-01
+version: "1.4"
+last_updated: 2026-08-16
 tags: [documentation, engineering, governance, ai]
 aliases: ["ProjectOne Constitution", "AI Operating Manual"]
 canonical: true
@@ -341,6 +341,31 @@ Documentation is part of the product, not an afterthought:
 - Every schema change is version controlled — no manual, undocumented migrations (Section 13).
 - Commits should be atomic and explain *why*, not just *what* — the diff already shows what changed.
 - Never rewrite published history without explicit, scoped authorization.
+
+## 20a. Task Delivery Workflow
+
+Section 20 governs how work reaches `main`. **This section governs what Claude does at the end of a single approved task**, in order, every time. It is operational policy under Section 39 — it constrains how work is executed, not how the system is built, so it needs no ADR — and it *raises* the delivery bar rather than relaxing any part of Sections 18–22.
+
+**What "task" means here, and what it does not.** This section governs **standalone deliverables** — a fix, a chore, a documentation change, a piece of work requested and approved on its own. For those, task and unit of delivery are the same thing, and the sequence below is the whole protocol.
+
+**Build Plan steps are not standalone tasks and do not follow this section's delivery unit.** They continue to follow Section 30a and [[Execution Protocol]]: **one step, one branch, one Pull Request, one merge into `main`** — however many internal tasks that step contains. A step with eight tasks still produces exactly one Pull Request and exactly one commit on `main`, and splitting one across several commits on `main` still requires the project owner's explicit request.
+
+The rest of this section still applies inside a build-plan step — tests before committing, focused commits, no bypassing CI, no unapproved architectural decisions, and the same reporting. What changes is only *when* the push, the Pull Request and the merge wait happen: once per step, at its end, not once per task within it.
+
+**The sequence, in order:**
+
+1. **Run the required tests first, and read the result.** Before any commit. A task whose tests have not been observed passing is not ready to commit, and a green total is not the same as the specific proof having run (Sections 18, 22).
+2. **Create one focused conventional commit.** Scoped to the approved task and nothing beside it — no opportunistic cleanup, no adjacent fix (Section 29). Conventional Commits format, explaining *why* (Section 20).
+3. **Push the branch to `origin`.**
+4. **Open a Pull Request targeting `main`.**
+5. **Never merge a Pull Request.** Claude opens them; the project owner merges them. This holds even when CI is green, no review is outstanding, and the change looks trivial (Section 22).
+6. **Report the commit hash, the Pull Request number, the CI status, and the files changed.** These four, explicitly — not "pushed and opened". They are what lets the owner act without reconstructing the session. This is the delivery record; the portable status block in Section 32a is separate and both are produced.
+7. **Do not start the next task until the current Pull Request is merged.** The merge is a real stop, not a formality to work around. Because the owner merges, delivery cadence is owner-paced by design: when the wait blocks progress, Claude says so and waits rather than finding adjacent work to fill the gap. **Within a build-plan step this gate falls between steps, not between tasks** — see the scoping note above; the next *step* waits for the current step's Pull Request to merge.
+
+**Two boundaries that are never traded away, whatever the sequence above would otherwise permit:**
+
+- **Never bypass CI or branch protection.** Not with `--no-verify`, not by disabling a check, not by an administrative override, not by rerunning until a flake passes. A rejected push or a red pipeline is the rule functioning (Section 20).
+- **Never make an architectural decision without the owner's approval.** Claude drafts, recommends and implements; the owner decides. An architectural choice reached mid-task is a stop and an ADR (Sections 7, 21, 35).
 
 ## 21. Code Review Rules
 
