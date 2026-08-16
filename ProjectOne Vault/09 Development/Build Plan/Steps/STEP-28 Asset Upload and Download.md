@@ -1,18 +1,18 @@
 ---
 title: STEP-28 Asset Upload and Download
 category: Development/Build Step
-version: "2.3"
+version: "2.4"
 last_updated: 2026-08-16
 tags: [engineering, workflow, build-step, backend, infrastructure]
 step_id: STEP-28
-step_status: In Progress
+step_status: Done
 detail_level: full
 phase: "Platform Substrate"
 ---
 
 # STEP-28 — Asset Upload and Download
 
-**Status:** In Progress — merged to `main` as `2eeff40`; one Validation item outstanding, see [[#Step Completion Record]]
+**Status:** Done — merged to `main` as `2eeff40`; every Validation item satisfied, see [[#Step Completion Record]]
 **Phase:** Platform Substrate — The absent infrastructure every media, approval and automation capability sits behind: storage, async execution, and enough notification to make an asynchronous run visible.
 **Detail level:** full — expanded 2026-08-16 against `main` @ `115aeea`, with [[STEP-27 Storage Provider Abstraction]] merged and its contract readable in code.
 
@@ -221,8 +221,8 @@ Observed, not assumed ([[Execution Protocol#The Loop]] item 8).
 1. **Done.** `ruff`, `ruff format --check` and `mypy` clean on `apps/api`, locally and in CI.
 2. **Done.** Full API suite green locally: `695 passed, 338 skipped`, against a `618 / 321` baseline. Every skip is a database-backed test, as expected; no new skips beyond them.
 3. **Done.** Each proof in [[#Required Tests and Proofs]] exists as a named test and was read individually — see the [[#Manual Test Checklist]], which ties each one to the test establishing it.
-4. **Not done.** The upload and download paths were **never driven against real storage.** Every proof runs through `RecordingStorageProvider`, an in-memory double. See the completion record below.
-5. **Partly done.** Erasure is proven to delete the *object* rather than only the row (`test_erasing_a_workspace_removes_its_objects_not_only_its_rows`), but against the double — not by observing a real object become unreachable.
+4. **Done.** The upload and download paths were driven end to end against the real `projectone-dev` bucket by `tests/test_asset_storage_live.py`, with nothing doubled: the route stores the bytes, the derived locator round-trips through `assets.storage_path`, and the signed URL is fetched over plain HTTP carrying no credentials. **Run by the project owner on 2026-08-16 and reported passing** — see the attestation in the completion record below.
+5. **Done.** Erasure proven against a real object: `test_erasing_the_workspace_makes_the_object_unreachable` confirms the object exists, runs the real `AssetStore.erase` with a live provider, and asserts the object is then unreadable. Same run, same attestation.
 6. **Done.** CI green on PR #19 and again on the merge commit: `1032 passed, 1 skipped`, with the `api` job's disposable `postgres:17` container running every database-backed test.
 
 ## Step Completion Record
@@ -238,9 +238,33 @@ Merged to `main` as **`2eeff40`** via **PR #19**, squash-merged by the project o
 
 **What is verified:** everything in [[#Required Tests and Proofs]], each against a real PostgreSQL database in CI. The collision proof, both orphan directions, the route-layer cross-tenant refusal, the extension-lies refusal and the object-level erasure all pass.
 
-**What is not verified, and this is the honest gap:** no byte in this step has ever reached Cloudflare. `RecordingStorageProvider` stands in for the backend everywhere, which is correct for CI — live vendor credentials must not become a routine pipeline dependency — but it means the step's own Validation items 4 and 5 are unmet, and signed-URL expiry is unproven at this call site.
+**The live gap, and how it was closed.** Everything above runs through
+`RecordingStorageProvider`, an in-memory double — correct for CI, since live
+vendor credentials must never become a routine pipeline dependency, but it left
+Validation items 4 and 5 unmet: no byte in this step had reached Cloudflare.
 
-**What would close it:** one bounded live run against the `projectone-dev` bucket with `PROJECTONE_RUN_R2_INTEGRATION_TESTS=1`, in the same shape STEP-27 used — disposable objects, removed afterwards, removal confirmed, shared Supabase never a target.
+`tests/test_asset_storage_live.py` closes that. Three opt-in tests behind three
+gates (`PROJECTONE_RUN_R2_INTEGRATION_TESTS=1`, R2 configured, a real
+PostgreSQL), refusing to run against any bucket but `projectone-dev`, with
+teardown that deletes every object created and verifies the deletion.
+
+> [!important] This result is attested by the project owner, not observed by Claude
+> **The project owner ran the module on 2026-08-16 and reported all three tests
+> passing.** Claude did not observe the run: the machine it works on has no
+> container runtime and no PostgreSQL, so the tests skip there — verified
+> directly rather than assumed.
+>
+> Recorded this way deliberately. Items 4 and 5 are marked `Done` on the
+> owner's report, which is a different kind of evidence from the CI totals cited
+> above, and a later reader should be able to tell which is which. Re-running
+> the module is what turns the attestation back into an observation.
+
+**What the live run establishes that CI cannot:** the logical name derived from
+a database-issued UUID is one R2 actually accepts; the locator survives the
+round trip through `assets.storage_path` unaltered; the workspace id reaches the
+provider from the right source; the signed URL works for a client holding no
+credentials; and `AssetStore.erase` removes real bytes rather than only rows.
+Each of those would pass every doubled test while failing in production.
 
 ## Manual Test Checklist
 
@@ -250,16 +274,19 @@ Four of the five are now established by **automated proofs against a real databa
 
 - [x] Upload a real file to a project; the response carries a populated `storage_path`. — `test_an_upload_populates_the_storage_path`
 - [x] Retrieve it; the signed URL returns the same bytes. — `test_a_download_returns_a_signed_url` with `test_the_uploaded_bytes_are_what_was_stored`
-- [ ] **Let a signed URL pass its 15-minute expiry; it stops working.** — **Not established.** See the note below.
+- [x] **Let a signed URL pass its 15-minute expiry; it stops working.** — Established in two halves; see the note below.
 - [x] Upload a file whose extension disagrees with its content; it is refused with a usable message that does not echo the filename. — `test_a_file_whose_extension_lies_about_its_content_is_refused` and `test_a_refusal_never_echoes_the_filename`
 - [x] Attempt a download as a member of a different workspace; refused at the route. — `test_a_cross_tenant_download_fails_at_the_route`, which also asserts no URL was signed
 
-> [!warning] Expiry is the one behaviour nothing here proves
-> `RecordingStorageProvider` issues the URLs these tests read, and it does not implement expiry — so a test asserting one had expired would be the double agreeing with itself. This is the same structural limit [[STEP-27 Storage Provider Abstraction]] recorded, and it is why the live proof exists.
+> [!note] Expiry is proven in two halves, and deliberately not in one
+> No single test establishes this, because the honest version of "one test" would sleep fifteen minutes to re-derive something already known. Two tests compose instead:
 >
-> The only thing that can establish it is `tests/test_storage_r2_integration.py`, where boto3 signs the URL and Cloudflare refuses it. That module is gated twice — storage configured **and** `PROJECTONE_RUN_R2_INTEGRATION_TESTS=1` — and CI sets neither, so it is the single skip in the pipeline's `1032 passed, 1 skipped`.
+> - **The value reaches the signature.** `test_the_signed_url_carries_the_fifteen_minute_lifetime` asserts the response advertises 900 seconds *and* that R2 signed the URL for 900 seconds — so a client cannot be told one lifetime while the URL carries another.
+> - **R2 enforces a lifetime.** [[STEP-27 Storage Provider Abstraction]]'s `test_storage_r2_integration.py` issues a one-second URL, uses it, waits, and is refused by Cloudflare.
 >
-> **What is proven** is that this step passes 15 minutes to the provider (`test_the_ttl_is_fifteen_minutes`) and that the adapter signs with what it is given (STEP-27). What is unproven is the last link: that Cloudflare enforces it. That link was proven for STEP-27's own signing and has not been re-run for this step's call site.
+> Together: this step hands R2 fifteen minutes, and R2 enforces what it is handed. Stated as a composition rather than a single claim, because a reader is entitled to know that no test has watched *this* URL expire — and that the alternative is a quarter-hour sleep in the suite.
+>
+> `RecordingStorageProvider` cannot help here at all: it issues these URLs and does not implement expiry, so a test asserting one had expired would be the double agreeing with itself.
 
 ## Definition of Done
 
@@ -271,7 +298,8 @@ Additionally, per [[Execution Protocol#Step Completion]]:
 - [x] Required CI green — `1032 passed, 1 skipped` on the merge commit, with every database-backed test running against the disposable `postgres:17` container. No review conversations were opened.
 - [x] **Owner approval obtained** — the project owner merged PR #19 themselves on 2026-08-16. `main` is protected, so the merge *is* the approval act for a Critical change.
 - [x] Status synchronized between this note and the [[Build Plan]] index.
-- [ ] **Manual checklist complete** — four of five items are established by automated proof; signed-URL expiry is not. This is the only outstanding item, and it is why the step is not yet `Done`.
+- [x] **Manual checklist complete** — four items established by automated proof against a real database, the fifth by the two-test composition described above.
+- [x] **Live storage proof executed** — `tests/test_asset_storage_live.py`, run against `projectone-dev` and reported passing by the project owner on 2026-08-16. Attested rather than observed; see [[#Step Completion Record]].
 
 ## Risks and Governance Gates
 

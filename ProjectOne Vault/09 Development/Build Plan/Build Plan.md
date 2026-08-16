@@ -2,7 +2,7 @@
 title: Build Plan
 category: Development
 status: stable
-version: "4.2"
+version: "4.3"
 last_updated: 2026-08-16
 tags: [engineering, documentation, workflow]
 aliases: ["Implementation Plan", "Build Roadmap", "Step Index"]
@@ -10,7 +10,7 @@ aliases: ["Implementation Plan", "Build Roadmap", "Step Index"]
 
 # ProjectOne Build Plan
 
-The ordered execution index taking ProjectOne from an empty repository to a verified product in the hands of real users. **94 sequential steps** — 32 delivered (27 numbered plus five inserted by owner decision: STEP-11a, STEP-16a, STEP-12a, STEP-16b, STEP-25a), and **62 future steps, STEP-28 through STEP-89**, each sized for a single Claude Code session. Three further step notes are **superseded and carry no status**, so they are deliberately not part of that 94 — they are kept as history in [[#Superseded Step Numbering]].
+The ordered execution index taking ProjectOne from an empty repository to a verified product in the hands of real users. **94 sequential steps** — 33 delivered (28 numbered plus five inserted by owner decision: STEP-11a, STEP-16a, STEP-12a, STEP-16b, STEP-25a), and **61 future steps, STEP-29 through STEP-89**, each sized for a single Claude Code session. Three further step notes are **superseded and carry no status**, so they are deliberately not part of that 94 — they are kept as history in [[#Superseded Step Numbering]].
 
 **The future half of this plan was rebuilt on 2026-08-15**, by owner decision, against the [[Product Coverage Audit]]. That audit measured the complete intended product against what `main` actually implements and found 24 capabilities Missing, 14 Foundation/Partial and — the finding that forced the rebuild — several P0 prerequisites with **no executable step anywhere**: file storage, async execution, the AI capability model beyond chat completion, and the Memory System. A three-step tail could not carry them.
 
@@ -74,7 +74,7 @@ Status appears in two places — the step note and the row below — and they mu
 | STEP-26 | [[STEP-26 Product Design System Foundation]] | Done | full |
 | | **Platform Substrate** | | |
 | STEP-27 | [[STEP-27 Storage Provider Abstraction]] | Done | full |
-| STEP-28 | [[STEP-28 Asset Upload and Download]] | In Progress | full |
+| STEP-28 | [[STEP-28 Asset Upload and Download]] | Done | full |
 | STEP-29 | [[STEP-29 Asset Management UI]] | Not Started | outline |
 | STEP-30 | [[STEP-30 Async Job Infrastructure]] | Not Started | outline |
 | STEP-31 | [[STEP-31 Workflow Async Execution]] | Not Started | outline |
