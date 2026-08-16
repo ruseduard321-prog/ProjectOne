@@ -1,21 +1,37 @@
-"""All-or-none validation of the R2 storage configuration.
+"""Validation of the R2 storage configuration, at both levels it is checked.
 
-Zero configured values is valid — STEP-27 ships the abstraction before any
-caller exists, so a deployment that never touches storage must still start. Four
-is valid. **One, two or three is a deployment mistake**, and the point of these
-tests is that it is caught at startup rather than surfacing much later as a
-misleading "storage is not configured" on the first upload.
+**Two questions, deliberately answered in two places** (STEP-28):
+
+- *Is this `Settings` object coherent?* All four values or none. One, two or
+  three is a mistake, caught by `_reject_partial_storage_configuration`, so that
+  three-of-four is never reported as the useless "storage is not configured".
+  **Zero stays valid here** — it is what every test that never touches storage
+  constructs, and what `StorageNotConfiguredError` names.
+- *May this deployment start?* No. Since STEP-28 introduced the first real
+  caller, `get_settings()` refuses to start without all four, because a missing
+  value now means every upload fails in front of a user.
+
+The split is the point. Folding the second question into the first would make a
+storage-free `Settings` unconstructable and break roughly fifteen test modules
+to express a rule that only ever applied to deployments.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
 import pytest
 from pydantic import ValidationError
 
-from app.core.config import Settings, _error_location
+from app.core.config import (
+    STARTUP_REQUIRED_STORAGE_VARIABLES,
+    Settings,
+    _error_location,
+    get_settings,
+)
+from tests.conftest import TEST_BYOK_KEY
 
 
 @pytest.fixture(autouse=True)
@@ -67,10 +83,16 @@ ALL_FOUR: dict[str, Any] = {
 
 
 class TestCompleteAndAbsentConfigurationsAreValid:
-    """The two states a deployment is allowed to be in."""
+    """The two states a `Settings` object is allowed to be in."""
 
-    def test_no_storage_configuration_is_valid(self) -> None:
-        """STEP-27 has no caller, so storage may be entirely unconfigured."""
+    def test_no_storage_configuration_is_valid_at_the_model_level(self) -> None:
+        """A storage-free `Settings` must stay constructable.
+
+        Not a relaxation of the STEP-28 requirement — that one is asserted in
+        `TestStartupRequiresStorage` below, against `get_settings()`. This is the
+        object the rest of the suite builds, and the state
+        `build_storage_provider()` raises `StorageNotConfiguredError` for.
+        """
         settings = Settings(**BASE)
 
         assert settings.storage_is_configured is False
@@ -198,3 +220,98 @@ class TestSecretsStayHidden:
 
         assert settings.r2_secret_access_key is not None
         assert settings.r2_secret_access_key.get_secret_value() == "super-secret-value"
+
+
+class TestStartupRequiresStorage:
+    """STEP-28: a *deployment* may no longer omit object storage.
+
+    Asserted against `get_settings()` rather than `Settings`, because that is
+    where the requirement lives and where a real process meets it.
+    """
+
+    @pytest.fixture(autouse=True)
+    def startup_environment(self, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+        """Supply everything except storage, and keep the cache from leaking.
+
+        `get_settings()` is `lru_cache`d, so a result computed here would
+        otherwise be served to every later test in the session — including ones
+        that expect the developer's real configuration. Cleared on the way in as
+        well as out, since a previous test may already have populated it.
+
+        Storage is *not* set here: the R2 variables are removed by this module's
+        other autouse fixture, which is precisely the state under test.
+        """
+        get_settings.cache_clear()
+
+        monkeypatch.setenv("PROJECTONE_ENVIRONMENT", "development")
+        monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
+        monkeypatch.setenv("SUPABASE_SECRET_KEY", "service-key")
+        monkeypatch.setenv("DATABASE_URL", "postgresql://postgres@localhost/db")
+        monkeypatch.setenv("REQUEST_DATABASE_URL", "postgresql://authenticator@localhost/db")
+        monkeypatch.setenv("PROJECTONE_BYOK_ENCRYPTION_KEY", TEST_BYOK_KEY)
+
+        yield
+
+        get_settings.cache_clear()
+
+    def test_startup_fails_without_storage_configuration(self) -> None:
+        """The proof STEP-28 Task 1 exists to produce.
+
+        Every other required value is present, so a failure here can only be the
+        storage check — not an incidentally broken environment.
+        """
+        with pytest.raises(SystemExit):
+            get_settings()
+
+    def test_the_exit_message_names_every_missing_variable(self) -> None:
+        """An operator must learn which four variables to set.
+
+        `SystemExit` carries the message as its argument, which is what reaches
+        the container log an operator is actually reading.
+        """
+        with pytest.raises(SystemExit) as raised:
+            get_settings()
+
+        message = str(raised.value)
+        for variable in STARTUP_REQUIRED_STORAGE_VARIABLES:
+            assert variable in message, f"{variable} is required but not named in the exit message"
+
+    def test_the_exit_message_carries_no_credential_value(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A partial configuration must not echo the values that *were* set.
+
+        The startup path is exactly where a secret reaches a log (CLAUDE.md §16,
+        §25). Two of the four variables are credentials, so the message names
+        what is absent and never what is present.
+        """
+        monkeypatch.setenv("PROJECTONE_R2_ACCOUNT_ID", "real-account-id")
+        monkeypatch.setenv("PROJECTONE_R2_BUCKET", "real-bucket")
+        monkeypatch.setenv("PROJECTONE_R2_ACCESS_KEY_ID", "real-access-key-id")
+
+        with pytest.raises(SystemExit) as raised:
+            get_settings()
+
+        message = str(raised.value)
+
+        assert "real-access-key-id" not in message
+        assert "real-account-id" not in message
+        # The operator still learns the one thing they have to fix.
+        assert "PROJECTONE_R2_SECRET_ACCESS_KEY" in message
+
+    def test_startup_succeeds_once_all_four_are_present(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The check must gate on absence only, not reject a valid deployment.
+
+        Without this, a check that always exited would pass every assertion
+        above while making the API unstartable.
+        """
+        monkeypatch.setenv("PROJECTONE_R2_ACCOUNT_ID", "account-id")
+        monkeypatch.setenv("PROJECTONE_R2_BUCKET", "projectone-assets")
+        monkeypatch.setenv("PROJECTONE_R2_ACCESS_KEY_ID", "access-key-id")
+        monkeypatch.setenv("PROJECTONE_R2_SECRET_ACCESS_KEY", "secret-value")
+
+        settings = get_settings()
+
+        assert settings.storage_is_configured is True

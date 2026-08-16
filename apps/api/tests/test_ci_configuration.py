@@ -15,9 +15,11 @@ and the pipeline breaks on a push instead of in the change that caused it.
 **The required-field list is derived, never written down.** Hardcoding the
 names here would reproduce the original defect one level up: the next required
 setting would be added to `Settings`, not to the copy, and this test would keep
-passing while CI broke. `_required_setting_names` reads the model, so a new
-required field fails this test the moment it is introduced — and the failure
-names the variable and the file to fix.
+passing while CI broke. `_required_setting_names` reads the model — and, since
+STEP-28, also `STARTUP_REQUIRED_STORAGE_VARIABLES`, because a variable enforced
+by `get_settings()` rather than by a required field is invisible to the model
+alone. Either way a new requirement fails this test the moment it is
+introduced, and the failure names the variable and the file to fix.
 
 Offline and dependency-free: this parses text and inspects a pydantic model.
 """
@@ -29,7 +31,7 @@ from pathlib import Path
 
 import pytest
 
-from app.core.config import Settings
+from app.core.config import STARTUP_REQUIRED_STORAGE_VARIABLES, Settings
 
 #: The workflow, relative to this file: tests/ -> api/ -> apps/ -> repo root.
 WORKFLOW_PATH = Path(__file__).resolve().parents[3] / ".github" / "workflows" / "ci.yml"
@@ -83,19 +85,32 @@ def _api_job_env() -> dict[str, str]:
 
 
 def _required_setting_names() -> set[str]:
-    """Return the environment variable names `Settings` has no default for.
+    """Return every variable the API refuses to start without.
 
-    Derived from the model rather than listed, so this test tracks
-    `app/core/config.py` automatically. A field's alias wins when it has one:
-    `SUPABASE_URL` is read under that exact name, not under the prefix.
+    **Two sources, because the API has two ways of requiring a variable**, and
+    reading only the first would make this test quietly incomplete:
+
+    1. Fields with no default. A field's alias wins when it has one:
+       `SUPABASE_URL` is read under that exact name, not under the prefix.
+    2. `STARTUP_REQUIRED_STORAGE_VARIABLES` — checked by `get_settings()` rather
+       than by pydantic, because a storage-free `Settings` must stay
+       constructable for tests while a storage-free *deployment* must not start
+       (STEP-28).
+
+    Both are derived from `app/core/config.py`; neither is written down here.
+    That is the whole design of this file: a copy of the list is how the next
+    required setting gets added to the model and forgotten here, which is the
+    STEP-17 failure this exists to prevent.
     """
     prefix = Settings.model_config["env_prefix"]
 
-    return {
+    field_required = {
         field.alias or f"{prefix}{name}".upper()
         for name, field in Settings.model_fields.items()
         if field.is_required()
     }
+
+    return field_required | set(STARTUP_REQUIRED_STORAGE_VARIABLES)
 
 
 def test_ci_supplies_every_required_setting() -> None:
@@ -172,6 +187,25 @@ def test_no_required_setting_is_given_a_default_to_satisfy_ci() -> None:
     )
 
 
+def test_the_startup_required_storage_list_is_not_empty() -> None:
+    """Emptying the list must not become the way to silence this file.
+
+    `STARTUP_REQUIRED_STORAGE_VARIABLES` is both the requirement and the thing
+    that reports the requirement, which is efficient and slightly dangerous: a
+    future change that clears it would make `test_ci_supplies_every_required_setting`
+    pass vacuously *and* remove the startup check, with no test objecting.
+
+    The equivalent of `test_no_required_setting_is_given_a_default_to_satisfy_ci`
+    for a requirement that lives outside the model.
+    """
+    assert STARTUP_REQUIRED_STORAGE_VARIABLES, (
+        "STARTUP_REQUIRED_STORAGE_VARIABLES is empty, so the API no longer refuses to "
+        "start without object storage and this file no longer checks that CI supplies "
+        "it. If storage genuinely became optional again, say so in the step note — do "
+        "not clear the list to make a pipeline green."
+    )
+
+
 def test_the_workflow_is_shaped_as_this_parser_assumes() -> None:
     """Guard the regex parser against a workflow restructure.
 
@@ -192,7 +226,18 @@ def test_the_workflow_is_shaped_as_this_parser_assumes() -> None:
 
 @pytest.mark.parametrize(
     "variable",
-    ["SUPABASE_SECRET_KEY", "DATABASE_URL", "REQUEST_DATABASE_URL"],
+    [
+        "SUPABASE_SECRET_KEY",
+        "DATABASE_URL",
+        "REQUEST_DATABASE_URL",
+        # All four storage variables, not only the two secrets. An account id or
+        # a bucket name is not a credential, but a committed workflow pointed at
+        # a *real* bucket is still a real bucket that CI can write to.
+        "PROJECTONE_R2_ACCOUNT_ID",
+        "PROJECTONE_R2_BUCKET",
+        "PROJECTONE_R2_ACCESS_KEY_ID",
+        "PROJECTONE_R2_SECRET_ACCESS_KEY",
+    ],
 )
 def test_ci_credentials_are_placeholders_not_real_ones(variable: str) -> None:
     """No value in the workflow may be a real credential.

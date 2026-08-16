@@ -51,9 +51,12 @@ def build_storage_provider(settings: Settings) -> StorageProvider:
 
     Raises:
         StorageNotConfiguredError: if any required storage variable is missing.
-            Raised at the point of use, with a message naming what is absent,
-            rather than at startup where it would break deployments that never
-            touch storage.
+            **Unreachable for a running API since STEP-28**: `get_settings()`
+            refuses to start without all four, so a deployment never gets this
+            far unconfigured. It stays because `Settings` can still be built
+            directly without storage — in tests, and in any tool that assembles
+            configuration without going through startup — and this is the
+            accurate error for asking such an object for a provider.
     """
     if not settings.storage_is_configured:
         raise StorageNotConfiguredError(
