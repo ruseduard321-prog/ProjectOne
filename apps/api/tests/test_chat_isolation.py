@@ -33,7 +33,7 @@ from app.repositories.conversations import ConversationRepository
 from app.schemas.chat import MessageRole
 from app.services.chat_service import STORED_ROLES
 from app.services.data_ownership_service import ConversationStore, MessageStore
-from tests.conftest import Identity, seed_identity
+from tests.conftest import NO_STORAGE_CALLS, Identity, seed_identity
 
 # Every test in this module needs a database, and skips without one.
 pytestmark = pytest.mark.usefixtures("migrated_database")
@@ -356,8 +356,10 @@ def test_erasure_clears_conversations_and_messages(
     # silent failure mode STEP-19 found on `provider_credentials`.
     alice, _bob, _a, _b = seeded_chat
 
-    erased_conversations = ConversationStore().erase(admin_connection, alice.workspace_id)
-    erased_messages = MessageStore().erase(admin_connection, alice.workspace_id)
+    erased_conversations = ConversationStore().erase(
+        admin_connection, alice.workspace_id, NO_STORAGE_CALLS
+    )
+    erased_messages = MessageStore().erase(admin_connection, alice.workspace_id, NO_STORAGE_CALLS)
 
     assert erased_conversations == 1
     assert erased_messages == 1
@@ -371,8 +373,8 @@ def test_erasure_leaves_the_other_tenant_untouched(
 ) -> None:
     alice, bob, _a, _b = seeded_chat
 
-    ConversationStore().erase(admin_connection, alice.workspace_id)
-    MessageStore().erase(admin_connection, alice.workspace_id)
+    ConversationStore().erase(admin_connection, alice.workspace_id, NO_STORAGE_CALLS)
+    MessageStore().erase(admin_connection, alice.workspace_id, NO_STORAGE_CALLS)
 
     with admin_connection.cursor() as cursor:
         cursor.execute(

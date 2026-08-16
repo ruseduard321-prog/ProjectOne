@@ -30,7 +30,7 @@ import pytest
 
 from app.repositories.projects import ProjectRepository
 from app.services.project_service import ProjectService, ProjectStatus
-from tests.conftest import Identity, seed_identity
+from tests.conftest import NO_STORAGE_CALLS, Identity, seed_identity
 
 # Every test in this module needs a database, and skips without one.
 pytestmark = pytest.mark.usefixtures("migrated_database")
@@ -551,8 +551,8 @@ def test_a_workspace_erasure_reports_both_new_stores(
         assert len(ProjectStore().export(admin_connection, alice.workspace_id)) == 1
         assert len(AssetStore().export(admin_connection, alice.workspace_id)) == 1
 
-        assert AssetStore().erase(admin_connection, alice.workspace_id) == 1
-        assert ProjectStore().erase(admin_connection, alice.workspace_id) == 1
+        assert AssetStore().erase(admin_connection, alice.workspace_id, NO_STORAGE_CALLS) == 1
+        assert ProjectStore().erase(admin_connection, alice.workspace_id, NO_STORAGE_CALLS) == 1
 
         # Erased, and therefore absent from a subsequent export.
         assert ProjectStore().export(admin_connection, alice.workspace_id) == []

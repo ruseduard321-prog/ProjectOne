@@ -44,8 +44,12 @@ from typing import Any, Protocol
 
 import psycopg
 
+from app.core.logging import get_logger, log_context
 from app.core.permissions import WorkspacePermission
 from app.services.authorization_service import AuthorizationService
+from app.storage.provider import StorageProvider
+
+logger = get_logger(__name__)
 
 # One exported record. `Any` for the values because each store defines its own
 # shape, and an export must carry whatever a store actually holds -- narrowing
@@ -73,8 +77,31 @@ class ExportableStore(Protocol):
         """Return every record this store holds for a workspace."""
         ...
 
-    def erase(self, connection: psycopg.Connection, workspace_id: uuid.UUID) -> int:
-        """Soft-delete this store's records for a workspace, returning the count."""
+    def erase(
+        self,
+        connection: psycopg.Connection,
+        workspace_id: uuid.UUID,
+        storage: StorageProvider,
+    ) -> int:
+        """Soft-delete this store's records for a workspace, returning the count.
+
+        `storage` is passed to **every** store, and most of them ignore it —
+        their data lives entirely in PostgreSQL, so they name the parameter
+        `_storage` and never touch it.
+
+        **Widening this signature was a decision, not a convenience**
+        ([[STEP-28 Asset Upload and Download#Decisions]] D1, settled by the
+        project owner on 2026-08-16). A store holding bytes outside the database
+        cannot erase them through a `psycopg.Connection`, and the alternative —
+        deleting objects in `erase_workspace` before delegating to the stores —
+        was explicitly rejected. The registry's whole value is that a store
+        absent from it is *visible*: an erasure result reporting `"assets": 0` is
+        a number a reader can question, while a deletion path living outside the
+        registry is one nobody knows to look for. Nine stores carrying an unused
+        parameter is a small, uniform cost paid once, in exchange for every
+        future store with external bytes having an obvious place to put its
+        deletion.
+        """
         ...
 
 
@@ -132,7 +159,12 @@ class WorkspaceMembersStore:
                 for row in cursor
             ]
 
-    def erase(self, connection: psycopg.Connection, workspace_id: uuid.UUID) -> int:
+    def erase(
+        self,
+        connection: psycopg.Connection,
+        workspace_id: uuid.UUID,
+        _storage: StorageProvider,
+    ) -> int:
         """Soft-delete every membership row of a workspace except the actor's.
 
         Returned 0 unconditionally until STEP-11a: soft-deleting *any*
@@ -217,7 +249,12 @@ class AuditLogStore:
                 for row in cursor
             ]
 
-    def erase(self, _connection: psycopg.Connection, _workspace_id: uuid.UUID) -> int:
+    def erase(
+        self,
+        _connection: psycopg.Connection,
+        _workspace_id: uuid.UUID,
+        _storage: StorageProvider,
+    ) -> int:
         """Erase nothing, and report that plainly.
 
         See the class docstring: this is a documented retention exception, not a
@@ -262,7 +299,12 @@ class ProviderCredentialStore:
                 for row in cursor
             ]
 
-    def erase(self, connection: psycopg.Connection, workspace_id: uuid.UUID) -> int:
+    def erase(
+        self,
+        connection: psycopg.Connection,
+        workspace_id: uuid.UUID,
+        _storage: StorageProvider,
+    ) -> int:
         """Soft-delete every stored provider key for a workspace.
 
         An `UPDATE`, never a `DELETE` -- the table has no DELETE policy and
@@ -335,7 +377,12 @@ class AISpendRecordStore:
                 for row in cursor
             ]
 
-    def erase(self, _connection: psycopg.Connection, _workspace_id: uuid.UUID) -> int:
+    def erase(
+        self,
+        _connection: psycopg.Connection,
+        _workspace_id: uuid.UUID,
+        _storage: StorageProvider,
+    ) -> int:
         """Erase nothing, and report that plainly.
 
         See the class docstring: a documented retention exception for financial
@@ -386,7 +433,12 @@ class ProjectStore:
                 for row in cursor
             ]
 
-    def erase(self, connection: psycopg.Connection, workspace_id: uuid.UUID) -> int:
+    def erase(
+        self,
+        connection: psycopg.Connection,
+        workspace_id: uuid.UUID,
+        _storage: StorageProvider,
+    ) -> int:
         """Soft-delete every project in a workspace.
 
         An `UPDATE`, never a `DELETE` -- the table has no DELETE policy and
@@ -421,10 +473,12 @@ class AssetStore:
     tells the reader less than two honest numbers do.
 
     **The export carries the storage path but not the content.** The bytes live
-    outside PostgreSQL and no storage backend exists yet (STEP-20 Scope); when
-    one does, the step that adds it is responsible for erasing from it too --
-    which is the same end-to-end obligation this registry exists to make
-    visible.
+    outside PostgreSQL, so an export names what exists rather than embedding it.
+
+    **The only store that erases anything outside PostgreSQL.** STEP-28 added the
+    storage backend and, with it, this store's obligation to delete from it --
+    the end-to-end deletion CLAUDE.md §16 requires, and the reason `erase`
+    receives a `StorageProvider` at all.
     """
 
     name = "assets"
@@ -453,8 +507,70 @@ class AssetStore:
                 for row in cursor
             ]
 
-    def erase(self, connection: psycopg.Connection, workspace_id: uuid.UUID) -> int:
-        """Soft-delete every asset in a workspace."""
+    def erase(
+        self,
+        connection: psycopg.Connection,
+        workspace_id: uuid.UUID,
+        storage: StorageProvider,
+    ) -> int:
+        """Delete a workspace's stored objects, then soft-delete its asset rows.
+
+        ## Row-driven, because there is nothing to enumerate
+
+        `StorageProvider` has no listing operation (ADR-004), so there is no way
+        to ask the backend what a workspace owns. **The asset rows are the only
+        index of what exists in storage**, which is why the rows are read first
+        and each non-null `storage_path` deleted individually. A row whose path
+        is null has no object and is skipped.
+
+        ## Objects first, rows second
+
+        The rows are the map. Soft-deleting them first and then failing partway
+        through the objects would destroy the only record of which objects were
+        left behind -- an erasure that reports success while bytes remain, which
+        is the most consequential failure available here precisely because it
+        looks like compliance.
+
+        Deleting objects first inverts that: a failure leaves the rows intact and
+        the whole operation re-runnable. `delete` is idempotent, so objects
+        already removed cost nothing on a second pass.
+
+        ## A storage failure is not swallowed
+
+        It propagates, which aborts `erase_workspace`'s transaction and leaves
+        every row in place. That is the honest outcome: the caller learns the
+        erasure did not complete, rather than receiving a per-store count that
+        implies bytes are gone when they are not.
+
+        **The row soft-delete is unchanged** -- hard removal remains a separate,
+        later concern with its own SLA, exactly as this module's docstring says.
+        Only the objects are removed for good, and they are removed for good
+        because object storage has no `deleted_at` to set.
+        """
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT storage_path FROM public.assets "
+                "WHERE workspace_id = %s AND deleted_at IS NULL "
+                "AND storage_path IS NOT NULL",
+                (workspace_id,),
+            )
+            locators = [str(row[0]) for row in cursor]
+
+        for locator in locators:
+            # Passed exactly as stored, with the workspace id from the query.
+            # Never parsed, split or prefixed -- the locator *is* the logical
+            # name (ADR-004).
+            storage.delete(workspace_id=workspace_id, logical_name=locator)
+
+        if locators:
+            logger.info(
+                log_context(
+                    event="workspace_objects_erased",
+                    workspace_id=workspace_id,
+                    objects=len(locators),
+                )
+            )
+
         with connection.cursor() as cursor:
             cursor.execute(
                 "UPDATE public.assets SET deleted_at = now() "
@@ -514,7 +630,12 @@ class WorkflowRunStore:
                 for row in cursor
             ]
 
-    def erase(self, connection: psycopg.Connection, workspace_id: uuid.UUID) -> int:
+    def erase(
+        self,
+        connection: psycopg.Connection,
+        workspace_id: uuid.UUID,
+        _storage: StorageProvider,
+    ) -> int:
         """Soft-delete every run in a workspace.
 
         An `UPDATE`, never a `DELETE` — the table has no DELETE policy and
@@ -576,7 +697,12 @@ class WorkflowStepRunStore:
                 for row in cursor
             ]
 
-    def erase(self, connection: psycopg.Connection, workspace_id: uuid.UUID) -> int:
+    def erase(
+        self,
+        connection: psycopg.Connection,
+        workspace_id: uuid.UUID,
+        _storage: StorageProvider,
+    ) -> int:
         """Soft-delete every step row in a workspace."""
         with connection.cursor() as cursor:
             cursor.execute(
@@ -627,7 +753,12 @@ class ConversationStore:
                 for row in cursor
             ]
 
-    def erase(self, connection: psycopg.Connection, workspace_id: uuid.UUID) -> int:
+    def erase(
+        self,
+        connection: psycopg.Connection,
+        workspace_id: uuid.UUID,
+        _storage: StorageProvider,
+    ) -> int:
         """Soft-delete every conversation in a workspace.
 
         An `UPDATE`, never a `DELETE`: the table has no DELETE policy and
@@ -693,7 +824,12 @@ class MessageStore:
                 for row in cursor
             ]
 
-    def erase(self, connection: psycopg.Connection, workspace_id: uuid.UUID) -> int:
+    def erase(
+        self,
+        connection: psycopg.Connection,
+        workspace_id: uuid.UUID,
+        _storage: StorageProvider,
+    ) -> int:
         """Soft-delete every message in a workspace."""
         with connection.cursor() as cursor:
             cursor.execute(
@@ -713,11 +849,21 @@ class DataOwnershipService:
         connection: psycopg.Connection,
         authorization: AuthorizationService,
         stores: tuple[ExportableStore, ...],
+        storage: StorageProvider,
     ) -> None:
-        """Store the tenant connection, the authorization gate, and the registry."""
+        """Store the tenant connection, the authorization gate, registry and backend.
+
+        `storage` is held here and handed to every store's `erase`, rather than
+        being constructed inside the one store that needs it. That keeps
+        `REGISTERED_STORES` a tuple of zero-argument instances -- the shape that
+        makes the registry readable as a checklist -- and keeps the backend a
+        thing this service is *given* rather than one it goes and finds
+        (CLAUDE.md §12).
+        """
         self._connection = connection
         self._authorization = authorization
         self._stores = stores
+        self._storage = storage
 
     def export_workspace(self, workspace_id: uuid.UUID, user_id: uuid.UUID) -> WorkspaceExport:
         """Return every record a workspace holds, if the caller may export it.
@@ -753,15 +899,27 @@ class DataOwnershipService:
         others not -- is the worst outcome available here, because it looks like
         a completed deletion to the user while leaving data reachable.
 
+        **The transaction covers the database and nothing else.** `AssetStore`
+        deletes objects from a backend PostgreSQL cannot roll back, so a failure
+        *after* those deletions leaves the rows intact and the objects gone. That
+        asymmetry is deliberate and is the safe direction: a row pointing at a
+        deleted object is a visible, fixable inconsistency, while an object
+        surviving a reported erasure is an undetectable compliance failure. A
+        storage failure propagates rather than being swallowed, so the caller is
+        never told an erasure completed when it did not (CLAUDE.md §16).
+
         Raises:
             AuthorizationError: The caller's role does not permit deletion.
             WorkspaceAccessError: The caller is not a live member.
+            StorageError: An object could not be deleted. The transaction rolls
+                back, so nothing is reported as erased.
         """
         self._authorization.require(workspace_id, user_id, WorkspacePermission.DELETE_WORKSPACE)
 
         with self._connection.transaction():
             erased = {
-                store.name: store.erase(self._connection, workspace_id) for store in self._stores
+                store.name: store.erase(self._connection, workspace_id, self._storage)
+                for store in self._stores
             }
 
         return ErasureResult(workspace_id=workspace_id, erased=erased)

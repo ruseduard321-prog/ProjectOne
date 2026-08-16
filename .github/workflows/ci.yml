@@ -201,6 +201,16 @@ jobs:
       REQUEST_DATABASE_URL: postgresql://postgres:ci-throwaway@127.0.0.1:5432/projectone_test
       PROJECTONE_TEST_DATABASE_URL: postgresql://postgres:ci-throwaway@127.0.0.1:5432/projectone_test
       PROJECTONE_BYOK_ENCRYPTION_KEY: dGVzdC1ieW9rLWtleS0zMi1ieXRlcy1sb25nLXh4eHg=
+      # Object storage, required at startup since STEP-28. Placeholders, not
+      # credentials: nothing in CI reaches Cloudflare. The live R2 proof in
+      # `tests/test_storage_r2_integration.py` is gated twice — on storage being
+      # configured *and* on PROJECTONE_RUN_R2_INTEGRATION_TESTS, which is set
+      # nowhere in this workflow — so these values let the API start and are
+      # never signed with.
+      PROJECTONE_R2_ACCOUNT_ID: ci-throwaway-account-id
+      PROJECTONE_R2_BUCKET: projectone-ci-throwaway
+      PROJECTONE_R2_ACCESS_KEY_ID: ci-throwaway-access-key-id
+      PROJECTONE_R2_SECRET_ACCESS_KEY: ci-throwaway-secret-not-a-real-key
 
     steps:
       - uses: actions/checkout@v4

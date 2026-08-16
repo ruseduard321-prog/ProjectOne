@@ -2,8 +2,8 @@
 title: Table - assets
 category: Architecture/Schema
 status: stable
-version: "1.1"
-last_updated: 2026-08-08
+version: "1.2"
+last_updated: 2026-08-16
 tags: [database, schema, multi-tenancy, projects]
 aliases: ["assets", "Assets Table"]
 ---
@@ -61,11 +61,23 @@ That is evaluated per row, reads a second table under RLS itself, and makes this
 >
 > `test_an_asset_cannot_claim_a_project_from_another_workspace` proves the refusal, and it fails on the foreign key rather than on RLS — which is the point.
 
-## `storage_path` points at nothing yet
+## `storage_path` holds a logical name, not a path
 
-No storage backend is chosen ([[STEP-20 Projects Schema and Lifecycle]]'s Scope excludes Generation), so this is an opaque locator rather than a URL with a format the migration would be guessing at. It is nullable because an asset row can legitimately exist before its content does — a placeholder created when generation is queued is the obvious case.
+**Populated since [[STEP-28 Asset Upload and Download]]**, by the upload route and nothing else. The name predates the design it now describes: what is stored is a *logical name*, never a path, a key or a URL. No migration was needed — the value fits the existing `char_length <= 1024` — and renaming the column was not worth an expand/contract cycle for a cosmetic gain.
 
-**The step that adds a storage backend owes it a deletion path.** Erasure is end-to-end ([[CLAUDE|CLAUDE.md]] §16); soft-deleting this row does not remove the bytes it points at.
+**What goes in it.** `StorageProvider.put` returns `StoredObject.locator`, which *is* the logical name it was given, and that is what is persisted. Retrieval passes the two columns straight back:
+
+```python
+provider.signed_url(asset.workspace_id, asset.storage_path, ttl)
+```
+
+**Never parse, split, strip or prefix it**, and never reconstruct `ws/<uuid>/…` from it. The full object key is internal to `app/storage/keys.py` and is deliberately not what this column holds — see [[ADR-004 Object Storage Provider and Tenant-Safe Key Construction]]. A locator is not a capability: isolation comes from the `workspace_id` supplied alongside it, so two workspaces can legitimately store the identical string.
+
+**The value is derived from the asset's own `id`** (`app/storage/logical_names.py`), which is what makes it unique. `put` overwrites an existing key silently and the contract has no listing operation, so uniqueness is *constructed* rather than checked — two uploads of `photo.png` into one workspace must not resolve to one object.
+
+**Null is ordinary, not broken.** Three cases produce it: an asset recorded through the metadata-only route, a placeholder created before its content exists, and a row whose upload failed after the row was created. The last is deliberate — see [[STEP-28 Asset Upload and Download]] Task 5 — and the download route answers 404 for all three rather than signing a URL to nothing.
+
+**Erasure reaches the bytes.** `AssetStore.erase` reads every non-null `storage_path` and deletes each object before soft-deleting the rows, which is why `ExportableStore.erase` takes a `StorageProvider` at all. Row-driven, because there is nothing to enumerate: **these rows are the only index of what exists in storage.** Soft-deleting a row still does not remove bytes on its own ([[CLAUDE|CLAUDE.md]] §16).
 
 ## Row Level Security
 
@@ -85,6 +97,8 @@ The SELECT policy does not filter `deleted_at` — see [[Table - projects#The SE
 Registered as `AssetStore` in `REGISTERED_STORES`, separately from `ProjectStore` rather than nested inside its export. The registry's per-store counts are what make an erasure auditable: reporting `"projects": 3` while silently having removed forty assets tells the reader less than two honest numbers do.
 
 The export carries `storage_path` but not the content, which lives outside PostgreSQL.
+
+**Erasure removes the objects too, since [[STEP-28 Asset Upload and Download]].** `AssetStore.erase` receives a `StorageProvider` and deletes each non-null locator before marking the rows. Objects first, rows second: the rows are the only record of which objects exist, so destroying them before the bytes would leave nothing able to say what survived.
 
 ---
 

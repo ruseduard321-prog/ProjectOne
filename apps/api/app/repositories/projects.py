@@ -331,6 +331,56 @@ class ProjectRepository:
 
         return tuple(_asset_from_row(row) for row in rows)
 
+    def get_asset(self, workspace_id: uuid.UUID, asset_id: uuid.UUID) -> Asset | None:
+        """Return one live asset by id, or None.
+
+        Keyed on the workspace as well as the id, like every other read here.
+        RLS refuses another tenant's row independently; the filter is what makes
+        that refusal a `None` this code handles rather than a surprise.
+        """
+        with self._connection.cursor() as cursor:
+            cursor.execute(
+                f"""
+                SELECT {_ASSET_COLUMNS}
+                FROM public.assets
+                WHERE id = %s AND workspace_id = %s AND deleted_at IS NULL
+                """,  # noqa: S608 - _ASSET_COLUMNS is a module constant, not input
+                (asset_id, workspace_id),
+            )
+            row = cursor.fetchone()
+
+        return None if row is None else _asset_from_row(row)
+
+    def set_asset_storage_path(
+        self,
+        workspace_id: uuid.UUID,
+        asset_id: uuid.UUID,
+        storage_path: str,
+    ) -> Asset | None:
+        """Point a live asset at the object that now holds its bytes.
+
+        Separate from `add_asset` because the row is created *before* the upload
+        and pointed at the object only once the bytes are stored
+        ([[STEP-28 Asset Upload and Download]] Task 5). A single insert carrying
+        the path would have to name an object that does not exist yet.
+
+        Returns:
+            The updated asset, or None when no live asset matched.
+        """
+        with self._connection.cursor() as cursor:
+            cursor.execute(
+                f"""
+                UPDATE public.assets
+                SET storage_path = %s
+                WHERE id = %s AND workspace_id = %s AND deleted_at IS NULL
+                RETURNING {_ASSET_COLUMNS}
+                """,  # noqa: S608 - _ASSET_COLUMNS is a module constant, not input
+                (storage_path, asset_id, workspace_id),
+            )
+            row = cursor.fetchone()
+
+        return None if row is None else _asset_from_row(row)
+
     def soft_delete_asset(self, workspace_id: uuid.UUID, asset_id: uuid.UUID) -> bool:
         """Soft-delete one asset.
 

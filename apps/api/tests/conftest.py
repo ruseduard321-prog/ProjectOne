@@ -21,9 +21,14 @@ import os
 import urllib.parse
 import uuid
 from collections.abc import Iterator
+from datetime import timedelta
 
 import psycopg
 import pytest
+
+from app.storage.errors import ObjectNotFoundError
+from app.storage.keys import build_object_key
+from app.storage.provider import StorageProvider, StoredObject
 
 
 def pytest_runtest_logreport(report: pytest.TestReport) -> None:
@@ -475,3 +480,104 @@ def seed_identity(connection: psycopg.Connection, label: str) -> Identity:
         )
 
     return Identity(user_id, workspace_id, email)
+
+
+class RecordingStorageProvider(StorageProvider):
+    """An in-memory `StorageProvider` that remembers what it was asked to do.
+
+    Shared from here rather than redefined per module for the reason
+    `TEST_BYOK_KEY` is: the contract has four methods, and four private copies
+    would drift the moment one gains a behaviour.
+
+    **In-memory, so no test touches a real bucket.** The live R2 proof
+    (`test_storage_r2_integration.py`) is the only thing that reaches Cloudflare,
+    and it is gated twice on an explicit opt-in.
+
+    Records rather than merely accepts: erasure and orphan-cleanup are proven by
+    asserting *that a deletion happened*, which a silently-successful double
+    cannot show.
+    """
+
+    def __init__(self) -> None:
+        """Start empty, with no recorded calls."""
+        #: Stored objects, keyed by `(workspace_id, logical_name)`.
+        self.objects: dict[tuple[uuid.UUID, str], bytes] = {}
+        #: Every deletion attempted, in order, including ones that hit nothing.
+        self.deleted: list[tuple[uuid.UUID, str]] = []
+        #: Set to an exception to make the next `put` fail, for the orphan paths.
+        self.put_error: Exception | None = None
+        #: Set to an exception to make `delete` fail, for the same reason.
+        self.delete_error: Exception | None = None
+
+    @property
+    def name(self) -> str:
+        """Return the provider identifier."""
+        return "recording"
+
+    def put(
+        self,
+        workspace_id: uuid.UUID,
+        logical_name: str,
+        data: bytes,
+        content_type: str,
+    ) -> StoredObject:
+        """Store bytes, or raise a pre-armed failure."""
+        if self.put_error is not None:
+            raise self.put_error
+
+        # Validated exactly as a real adapter must, so a logical name this double
+        # accepts is one the boundary would accept too. Without this the fake
+        # would be more permissive than production, and every test using it would
+        # be proving something weaker than it claims.
+        build_object_key(workspace_id, logical_name)
+
+        self.objects[(workspace_id, logical_name)] = data
+
+        return StoredObject(
+            locator=logical_name,
+            size_bytes=len(data),
+            content_type=content_type,
+        )
+
+    def get(self, workspace_id: uuid.UUID, logical_name: str) -> bytes:
+        """Return stored bytes."""
+        build_object_key(workspace_id, logical_name)
+
+        try:
+            return self.objects[(workspace_id, logical_name)]
+        except KeyError:
+            raise ObjectNotFoundError() from None
+
+    def signed_url(
+        self,
+        workspace_id: uuid.UUID,
+        logical_name: str,
+        expires_in: timedelta,
+    ) -> str:
+        """Return a fake but structurally honest signed URL."""
+        build_object_key(workspace_id, logical_name)
+
+        if (workspace_id, logical_name) not in self.objects:
+            raise ObjectNotFoundError()
+
+        seconds = int(expires_in.total_seconds())
+
+        return f"https://storage.test/{workspace_id}/{logical_name}?expires_in={seconds}"
+
+    def delete(self, workspace_id: uuid.UUID, logical_name: str) -> None:
+        """Delete an object, idempotently, recording the attempt."""
+        build_object_key(workspace_id, logical_name)
+
+        if self.delete_error is not None:
+            raise self.delete_error
+
+        self.deleted.append((workspace_id, logical_name))
+        self.objects.pop((workspace_id, logical_name), None)
+
+
+#: A provider for the nine stores whose data lives entirely in PostgreSQL.
+#:
+#: `ExportableStore.erase` takes a provider because one store needs it
+#: (STEP-28 D1). The others ignore the argument, so a test exercising them needs
+#: something to pass and nothing to assert about it.
+NO_STORAGE_CALLS = RecordingStorageProvider()

@@ -50,14 +50,20 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 
-from app.core.dependencies import CurrentUserDep, ProjectServiceDep, requires
+from app.core.dependencies import (
+    AssetStorageServiceDep,
+    CurrentUserDep,
+    ProjectServiceDep,
+    requires,
+)
 from app.core.permissions import WorkspacePermission, WorkspaceRole
 from app.core.user_rate_limit import limit_by_user
 from app.repositories.projects import Asset, Project
 from app.schemas.project import (
     AssetCreateRequest,
+    AssetDownloadResponse,
     AssetKind,
     AssetResponse,
     ProjectCreateRequest,
@@ -65,6 +71,7 @@ from app.schemas.project import (
     ProjectResponse,
     ProjectTransitionRequest,
 )
+from app.services.asset_content import MAX_UPLOAD_BYTES, AssetTooLargeError
 from app.services.project_service import ProjectStatus, legal_transitions_from
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/projects", tags=["projects"])
@@ -126,6 +133,60 @@ def _asset_response(asset: Asset) -> AssetResponse:
         created_by=str(asset.created_by),
         created_at=asset.created_at.isoformat(),
     )
+
+
+#: How much of an upload is read at a time while checking it against the ceiling.
+#:
+#: 1 MiB balances two costs that pull in opposite directions: a smaller chunk
+#: means more iterations of the loop below, a larger one means more bytes read
+#: past the ceiling before the check catches up. At this size an oversized
+#: upload is refused having read at most 1 MiB more than the limit.
+_UPLOAD_CHUNK_BYTES = 1024 * 1024
+
+
+async def _read_within_limit(file: UploadFile) -> bytes:
+    """Read an upload, refusing it the moment it exceeds the ceiling.
+
+    **Streamed rather than read whole**, which is the difference between
+    refusing a 4 GB upload and running out of memory receiving one. `file.read()`
+    with no argument would materialise the entire body first and check the size
+    afterwards -- by which point the damage the check exists to prevent has
+    already happened.
+
+    The `Content-Length` header is deliberately *not* trusted as the sole check.
+    It is a client-supplied number, absent entirely on a chunked request, and
+    believing it would let an attacker declare 1 KB and send a gigabyte. It is
+    consulted first only as a cheap early refusal for honest clients; what
+    actually enforces the limit is counting the bytes as they arrive.
+
+    Args:
+        file: The uploaded file, still unread.
+
+    Returns:
+        The complete body, guaranteed to be within the ceiling.
+
+    Raises:
+        AssetTooLargeError: the body exceeded `MAX_UPLOAD_BYTES`.
+    """
+    if file.size is not None and file.size > MAX_UPLOAD_BYTES:
+        raise AssetTooLargeError()
+
+    chunks: list[bytes] = []
+    total = 0
+
+    while chunk := await file.read(_UPLOAD_CHUNK_BYTES):
+        total += len(chunk)
+
+        if total > MAX_UPLOAD_BYTES:
+            # Refused without keeping what has been read so far. Returning early
+            # also stops the loop consuming the rest of the body, so a
+            # deliberately huge upload costs the server one chunk past the limit
+            # rather than all of it.
+            raise AssetTooLargeError()
+
+        chunks.append(chunk)
+
+    return b"".join(chunks)
 
 
 # ----------------------------------------------------------------------------
@@ -370,6 +431,127 @@ def add_asset(
     )
 
     return _asset_response(asset)
+
+
+@router.post(
+    "/{project_id}/assets/upload",
+    response_model=AssetResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Upload a file and attach it to a project",
+    # The same per-user ceiling the metadata route carries. Not lower despite
+    # this route being far more expensive: a limit tight enough to matter for
+    # bandwidth would refuse a user legitimately attaching a batch of images, and
+    # what actually bounds cost here is the per-asset size ceiling.
+    dependencies=[Depends(limit_by_user("project-asset", limit=60, window_seconds=60))],
+)
+async def upload_asset(
+    workspace_id: uuid.UUID,
+    project_id: uuid.UUID,
+    user: CurrentUserDep,
+    assets: AssetStorageServiceDep,
+    _role: _MemberOfWorkspace,
+    file: Annotated[UploadFile, File(description="The file to store")],
+    name: Annotated[str, Form(description="The asset's display name")],
+    kind: Annotated[AssetKind, Form(description="What the file is")],
+) -> AssetResponse:
+    """Store a file's bytes and record it as an asset.
+
+    **The only route that puts bytes in storage.** The sibling `POST /assets`
+    records an asset with no file, and both remain useful -- an asset can be
+    planned before it exists.
+
+    `async def`, unlike every other handler in this module. Reading a multipart
+    body is genuine I/O, and a synchronous handler would occupy a threadpool
+    worker for the whole upload; the routes around it do no I/O of their own and
+    are correctly synchronous.
+
+    Authorization is `requires(VIEW_WORKSPACE)`, exactly as `add_asset` uses. **No
+    new permission is invented here**: a member who may attach an asset may
+    attach one with contents, and deciding otherwise would be a change to the
+    role model rather than a detail of this step (see this module's rule 3).
+
+    The body is read against a hard ceiling **before** anything is stored, so an
+    oversized upload is refused rather than buffered in full. Validation of the
+    bytes themselves -- declared type, extension, and the file's own magic
+    bytes -- happens in `app.services.asset_content`, which is where the rules
+    are testable without HTTP.
+
+    Raises:
+        AssetContentError: the file was refused. Answered 413, 415 or 400 by the
+            handler table, according to which rule it broke.
+        ProjectNotFoundError: no live project matched. Answered 404.
+        StorageError: the backend refused or was unreachable. Answered by the
+            handler table, never as a 500 naming a bucket.
+    """
+    data = await _read_within_limit(file)
+
+    asset = assets.upload(
+        workspace_id=workspace_id,
+        project_id=project_id,
+        name=name,
+        kind=kind,
+        data=data,
+        declared_content_type=file.content_type,
+        filename=file.filename,
+        created_by=user.id,
+    )
+
+    return _asset_response(asset)
+
+
+@router.get(
+    "/{project_id}/assets/{asset_id}/download",
+    response_model=AssetDownloadResponse,
+    summary="Get a time-limited URL for an asset's bytes",
+)
+def download_asset(
+    workspace_id: uuid.UUID,
+    project_id: uuid.UUID,
+    asset_id: uuid.UUID,
+    projects: ProjectServiceDep,
+    assets: AssetStorageServiceDep,
+    _role: _MemberOfWorkspace,
+) -> AssetDownloadResponse:
+    """Return a signed URL for one asset's bytes.
+
+    **A URL, never the bytes.** Proxying them would put every megabyte through
+    an API worker, and a public bucket path would be a permanent capability
+    handed out for a momentary need. The signed URL is neither: short-lived, and
+    generated per request (`AssetStorageService.DOWNLOAD_URL_TTL`).
+
+    **Cross-tenant access fails here, at the route, before anything is signed.**
+    `requires(VIEW_WORKSPACE)` refuses a caller who is not a live member of the
+    workspace in the path, and the asset row is then resolved through the tenant
+    connection where RLS refuses another workspace's row -- so a caller who
+    should not see this asset receives a 404 and no URL is ever generated. That
+    ordering is the point: a route that signed first and checked afterwards
+    would have produced a working capability before deciding it was not allowed.
+
+    The project is resolved first for the same reason `delete_asset` does it: an
+    asset id from another project would otherwise be reachable through a URL
+    naming a project the caller can see, leaving a path segment decorative.
+
+    Raises:
+        HTTPException: 404 when the asset is not attached to this project.
+        ProjectNotFoundError: no live asset matched. Answered 404.
+        AssetFileNotFoundError: the asset holds no bytes. Answered 404 -- there
+            is nothing to sign, and a URL to a nonexistent object would fail
+            later and less clearly.
+    """
+    attached = projects.list_assets(workspace_id, project_id)
+
+    if not any(asset.id == asset_id for asset in attached):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Asset not found",
+        )
+
+    download = assets.download_url(workspace_id, asset_id)
+
+    return AssetDownloadResponse(
+        url=download.url,
+        expires_in_seconds=download.expires_in_seconds,
+    )
 
 
 @router.delete(

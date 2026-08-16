@@ -14,6 +14,17 @@ dependencies = [
     # asserts it cannot be imported above the adapter boundary.
     "boto3==1.43.72",
     "fastapi==0.121.2",
+    # FastAPI's own prerequisite for `UploadFile` and `Form`: it parses the
+    # multipart body, and without it FastAPI raises at import time on any route
+    # declaring a file. Shipped inside `fastapi[standard]` and documented by
+    # FastAPI as required for uploads, so this is the framework's stack rather
+    # than an addition to it (CLAUDE.md §10, §28).
+    #
+    # Multipart over a raw body was the project owner's decision on 2026-08-16
+    # (STEP-28 Task 3): a browser file input posts it natively, so the upload UI
+    # in STEP-29 needs no hand-built request, and every HTTP client already
+    # speaks it.
+    "python-multipart==0.0.20",
     # Supabase signs access tokens with ES256, so verification needs asymmetric
     # crypto — the [crypto] extra pulls in `cryptography` for that. PyJWT rather
     # than a hand-rolled verifier because signature verification is the kind of

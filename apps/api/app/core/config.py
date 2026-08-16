@@ -11,9 +11,11 @@ in a request handler.
 """
 
 import sys
+from collections.abc import Mapping
 from enum import StrEnum
 from functools import lru_cache
 from ipaddress import IPv4Network, IPv6Network
+from typing import Final
 
 from pydantic import Field, SecretStr, ValidationError, model_validator
 from pydantic_core import ErrorDetails
@@ -33,6 +35,36 @@ class Environment(StrEnum):
     DEVELOPMENT = "development"
     STAGING = "staging"
     PRODUCTION = "production"
+
+
+#: The four R2 variables, mapped to the `Settings` field each one populates.
+#:
+#: One definition serving three readers: the partial-configuration validator, the
+#: startup requirement in `get_settings()`, and the CI guard rail in
+#: `tests/test_ci_configuration.py`. Spelling the names out at each of those
+#: sites is how a fifth variable gets added to two of them and forgotten in the
+#: third -- which is the failure `test_ci_configuration` exists to prevent.
+_STORAGE_VARIABLES: Final[Mapping[str, str]] = {
+    "PROJECTONE_R2_ACCOUNT_ID": "r2_account_id",
+    "PROJECTONE_R2_BUCKET": "r2_bucket",
+    "PROJECTONE_R2_ACCESS_KEY_ID": "r2_access_key_id",
+    "PROJECTONE_R2_SECRET_ACCESS_KEY": "r2_secret_access_key",
+}
+
+#: The storage variables `get_settings()` refuses to start without (STEP-28).
+#:
+#: **Enforced at startup rather than as required model fields, deliberately.**
+#: Making them required on `Settings` would be the more obvious spelling, but it
+#: would also make a storage-free `Settings` unconstructable -- and a
+#: storage-free `Settings` is exactly what the test suite builds, and what
+#: `StorageNotConfiguredError` exists to describe. The requirement belongs to a
+#: *deployment*, so it is checked where a deployment is assembled.
+#:
+#: Exported rather than private because `tests/test_ci_configuration.py` reads
+#: it: a startup requirement invisible to that test would break CI on a push
+#: instead of in the change that caused it, which is the precise defect that
+#: test was written to close after STEP-17.
+STARTUP_REQUIRED_STORAGE_VARIABLES: Final[tuple[str, ...]] = tuple(_STORAGE_VARIABLES)
 
 
 class Settings(BaseSettings):
@@ -182,16 +214,19 @@ class Settings(BaseSettings):
     # StorageProvider boundary. These four variables are what that adapter needs
     # and nothing more; no other part of the codebase reads them.
     #
-    # **Optional, deliberately.** STEP-27 builds the abstraction before any
-    # caller exists (no upload endpoint until STEP-28), so an API that refused to
-    # start without R2 credentials would break every existing deployment and
-    # every test run to configure a subsystem nothing calls yet. The safety this
-    # gives up is nil: `build_storage_provider()` fails loudly when storage is
-    # actually requested but unconfigured, so the error arrives at the point of
-    # use with an accurate message instead of at startup with a misleading one.
+    # **Required of a deployment since STEP-28**, which introduced the first real
+    # caller. Until then an API that refused to start without R2 credentials
+    # would have been demanding configuration for a subsystem nothing invoked;
+    # now a missing value means uploads fail, which is a broken deployment and
+    # belongs at startup rather than in front of the first user to try one.
     #
-    # Made required in the step that introduces the first real caller — that is
-    # the point at which a missing value genuinely is a broken deployment.
+    # **Still typed as optional here, and that is not an oversight.** The
+    # requirement is enforced by `get_settings()` against
+    # `STARTUP_REQUIRED_STORAGE_VARIABLES` above, not by making these fields
+    # required, so a `Settings` with no storage at all remains constructable —
+    # which the test suite depends on, and which is the state
+    # `StorageNotConfiguredError` names. A deployment is held to all four; an
+    # object built in a test is not.
     #
     # SecretStr on the credentials keeps them out of logs, tracebacks and repr()
     # output (CLAUDE.md §16, §25). The account id and bucket are not secrets and
@@ -223,10 +258,21 @@ class Settings(BaseSettings):
     def _reject_partial_storage_configuration(self) -> "Settings":
         """Refuse a storage configuration that is present but incomplete.
 
-        **All four, or none.** Zero is valid — STEP-27 ships the abstraction
-        before any caller exists, so a deployment that never touches storage
-        must still start. Four is valid. One, two or three is a mistake, and
-        this is where it is caught.
+        **All four, or none.** Four is valid. One, two or three is a mistake,
+        and this is where it is caught.
+
+        Zero remains valid *at this level* even though STEP-28 made storage
+        required of a deployment, because the two checks answer different
+        questions. This one asks whether a `Settings` object is coherent, and a
+        storage-free one is — it is what every test that never touches storage
+        builds. Whether a *deployment* may omit storage is asked by
+        `get_settings()`, against `STARTUP_REQUIRED_STORAGE_VARIABLES`.
+
+        Folding the deployment requirement into this validator would have been
+        the shorter change and the wrong one: it would make a storage-free
+        `Settings` unconstructable, which breaks roughly fifteen test modules
+        and leaves `StorageNotConfiguredError` describing a state that can no
+        longer exist.
 
         Without this check, a partial configuration is silently identical to no
         configuration: `storage_is_configured` reads False, the API starts, and
@@ -249,10 +295,8 @@ class Settings(BaseSettings):
                 the kind of place a secret leaks into a log (CLAUDE.md §16, §25).
         """
         present = {
-            "PROJECTONE_R2_ACCOUNT_ID": self.r2_account_id is not None,
-            "PROJECTONE_R2_BUCKET": self.r2_bucket is not None,
-            "PROJECTONE_R2_ACCESS_KEY_ID": self.r2_access_key_id is not None,
-            "PROJECTONE_R2_SECRET_ACCESS_KEY": self.r2_secret_access_key is not None,
+            variable: getattr(self, field) is not None
+            for variable, field in _STORAGE_VARIABLES.items()
         }
 
         if any(present.values()) and not all(present.values()):
@@ -268,19 +312,17 @@ class Settings(BaseSettings):
     def storage_is_configured(self) -> bool:
         """Return whether every value the storage adapter needs is present.
 
-        All four or none — enforced at startup by
-        `_reject_partial_storage_configuration`, so by the time this is read the
-        only reachable states are all-four and none.
+        All four or none — enforced by `_reject_partial_storage_configuration`,
+        so by the time this is read the only reachable states are all-four and
+        none.
+
+        Still meaningful after STEP-28 made storage required of a deployment:
+        `get_settings()` guarantees this reads True for a *running API*, but a
+        `Settings` built directly — in a test, or by a tool that never uploads —
+        can legitimately be storage-free, and `build_storage_provider()` uses
+        this to say so.
         """
-        return all(
-            value is not None
-            for value in (
-                self.r2_account_id,
-                self.r2_bucket,
-                self.r2_access_key_id,
-                self.r2_secret_access_key,
-            )
-        )
+        return all(getattr(self, field) is not None for field in _STORAGE_VARIABLES.values())
 
     @property
     def trusted_proxy_networks(self) -> tuple[IPv4Network | IPv6Network, ...]:
@@ -411,6 +453,31 @@ def get_settings() -> Settings:
             f"ProjectOne API cannot start: {Settings.model_config['env_prefix']}"
             f"BYOK_ENCRYPTION_KEY is invalid.\n  - {error}\n"
             "See apps/api/.env.example for how to generate one."
+        )
+
+    # Object storage became a deployment requirement in STEP-28, the step that
+    # introduced the first caller. Before it, refusing to start would have
+    # demanded credentials for a subsystem nothing invoked; after it, a missing
+    # value means every upload fails.
+    #
+    # Checked here rather than by making the fields required for the reason
+    # recorded on `STARTUP_REQUIRED_STORAGE_VARIABLES`: the requirement belongs
+    # to a deployment, and this function is where a deployment is assembled.
+    #
+    # Reported as a list of *missing* names, never values -- two of the four are
+    # credentials, and a startup message is exactly where one leaks into a
+    # container log (CLAUDE.md §16, §25).
+    missing_storage = [
+        variable
+        for variable in STARTUP_REQUIRED_STORAGE_VARIABLES
+        if getattr(settings, _STORAGE_VARIABLES[variable]) is None
+    ]
+    if missing_storage:
+        sys.exit(
+            "ProjectOne API cannot start: object storage is not configured.\n"
+            + "\n".join(f"  - {variable}: missing" for variable in missing_storage)
+            + "\nUploads and downloads cannot work without it. "
+            "See apps/api/.env.example."
         )
 
     if not trusted:

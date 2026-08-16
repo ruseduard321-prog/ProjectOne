@@ -87,8 +87,16 @@ from app.core.security import (
 # imports only `app.core.logging` and `app.repositories.projects`, so there is
 # no cycle -- asserted by `test_no_import_cycle_reaches_the_error_contract`
 # rather than left to be discovered at startup.
+from app.services.asset_content import AssetContentError
+from app.services.asset_storage_service import AssetFileNotFoundError
 from app.services.chat_service import ConversationNotFoundError, TurnNotClaimableError
 from app.services.project_service import IllegalTransitionError, ProjectNotFoundError
+from app.storage.errors import (
+    ObjectNotFoundError,
+    StorageAccessDeniedError,
+    StorageError,
+    StorageUnavailableError,
+)
 from app.workflows.models import RunNotFoundError, RunNotResumableError, WorkflowError
 
 logger = get_logger(__name__)
@@ -210,6 +218,82 @@ def _resource_not_found(_request: Request, exception: Exception) -> JSONResponse
     message = getattr(exception, "public_message", "Not found")
 
     return error_response(status.HTTP_404_NOT_FOUND, message)
+
+
+def _asset_content_refused(_request: Request, exception: Exception) -> JSONResponse:
+    """Translate a refused upload into the status its rule deserves.
+
+    **One handler, several statuses**, read from the exception rather than
+    branched on its type. `AssetContentError` carries `status_code` precisely so
+    a new refusal rule is one class in `app.services.asset_content` instead of a
+    class plus an entry here plus a branch -- three places to keep in step for a
+    body that is identical apart from a number.
+
+    The statuses each say something a caller can act on:
+
+    - **413** the file is too big. Sending it again will not help; a smaller one
+      will.
+    - **415** the type is not supported, the extension disagrees with it, or the
+      bytes disagree with both. All three mean "this media is not acceptable",
+      which is what 415 says.
+    - **400** the upload was empty. Not 415: there is no media to find fault
+      with, the request is simply malformed.
+
+    422 would be wrong for all of them. The request *did* form a valid
+    operation -- it was well-shaped, authorized, and understood. What refuses it
+    is the content, which is a different question from whether the request
+    parsed.
+    """
+    message = getattr(exception, "public_message", "The uploaded file was refused.")
+    code = getattr(exception, "status_code", status.HTTP_400_BAD_REQUEST)
+
+    return error_response(code, message)
+
+
+def _storage_failed(_request: Request, exception: Exception) -> JSONResponse:
+    """Translate a storage backend failure into a status that tells the truth.
+
+    Registered against the **base** `StorageError`, so a subclass added later in
+    `app.storage.errors` is answered the moment it is raised rather than falling
+    through to `_unhandled` as a 500 -- the same reasoning `ProviderError` uses.
+
+    Three answers, split by what the caller can do:
+
+    - **404** the object does not exist. Reported identically to a missing asset
+      row, because from the caller's side "no such file" is one fact.
+    - **403** the operation was refused. In practice this means an object outside
+      the calling workspace's namespace, which ProjectOne refuses before the
+      backend is asked -- a security-relevant event, and never a 404 that would
+      hint the object exists elsewhere.
+    - **503** the backend failed or was unreachable. **Ours, not the caller's**,
+      so it must not be a 4xx: a client that retries later is doing the right
+      thing, and a 4xx would tell them to change a request that was correct.
+
+    The message is the error's `public_message` throughout, which is why no
+    bucket name, object key or credential can reach a response body from here
+    (CLAUDE.md §16, §24).
+    """
+    if isinstance(exception, ObjectNotFoundError):
+        code = status.HTTP_404_NOT_FOUND
+    elif isinstance(exception, StorageAccessDeniedError):
+        code = status.HTTP_403_FORBIDDEN
+    elif isinstance(exception, StorageUnavailableError):
+        code = status.HTTP_503_SERVICE_UNAVAILABLE
+    else:
+        # The base class raised directly, which its docstring says never happens.
+        # Answered as an outage rather than a caller error: an unclassified
+        # storage failure is far more likely to be ours than theirs.
+        code = status.HTTP_503_SERVICE_UNAVAILABLE
+
+    logger.warning(
+        log_context(
+            event="storage_operation_failed",
+            error=type(exception).__name__,
+            status_code=code,
+        )
+    )
+
+    return error_response(code, getattr(exception, "public_message", "Storage request failed."))
 
 
 def _illegal_transition(_request: Request, exception: Exception) -> JSONResponse:
@@ -461,7 +545,18 @@ EXCEPTION_HANDLERS: tuple[tuple[type[Exception] | int, Any], ...] = (
     (AuthError, _authentication_failed),
     (AuthorizationError, _authorization_denied),
     (ProjectNotFoundError, _resource_not_found),
+    # An asset with no bytes is the same answer as an asset that is not there:
+    # 404, through the handler that already says so. Kept as its own type at the
+    # raise site so the service can log the difference, which is worth counting
+    # -- it is the visible residue of a failed upload (STEP-28 Task 5).
+    (AssetFileNotFoundError, _resource_not_found),
     (IllegalTransitionError, _illegal_transition),
+    # Registered as base classes, like `ProviderError` below: every refusal in
+    # each hierarchy is answered by the branch inside its handler, so a rule or
+    # a backend failure added later is covered when it is raised rather than
+    # falling through to `_unhandled` as a 500.
+    (AssetContentError, _asset_content_refused),
+    (StorageError, _storage_failed),
     # The two subclasses are registered alongside their base and **before** it in
     # reading order, though Starlette's most-specific-match makes the order
     # irrelevant to dispatch. Both reuse the handlers their semantics already
