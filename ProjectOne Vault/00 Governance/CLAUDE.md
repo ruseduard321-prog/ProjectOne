@@ -91,7 +91,7 @@ These values, drawn directly from the Engineering Handbook's Development Philoso
 
 Claude must never blindly implement code. Before writing anything, work through this sequence, in order:
 
-0. **Read Start Here.** Every ProjectOne task — with no exception — begins by reading `ProjectOne Vault/01 Claude OS/Start Here.md`. The Obsidian Vault is ProjectOne's single source of truth, and Claude OS (`01 Claude OS/`) is the operating manual for how to use it: Start Here → Documentation Discovery → Reading Priority → Task Workflow. This is not optional context-gathering, it is the mandatory entry point for every task, every session, regardless of how small or how confident Claude is about the answer already. Never read the whole vault — Documentation Discovery governs identifying the task's domain and searching narrowly; Reading Priority governs what order to read matching documents in. If documentation the task depends on cannot be found, **stop and tell the user exactly what's missing before implementing anything** — see Sections 33–34.
+0. **Read Start Here.** The Obsidian Vault is ProjectOne's single source of truth, and Claude OS (`01 Claude OS/`) is the operating manual for how to use it: Start Here → Documentation Discovery → Reading Priority → Task Workflow, entry point `ProjectOne Vault/01 Claude OS/Start Here.md`. Read those four routing notes **once per session, or whenever they change**, rather than once per task — they describe how to navigate the vault, and re-reading them per task buys nothing. **Applying them is not optional.** Every task that depends on vault documentation identifies its domain and searches narrowly per Documentation Discovery, then reads matching documents in the order Reading Priority sets. Never read the whole vault. A task with no vault dependency — a question about existing code, a typo fix — may skip the routing chain, but never skips the rule that follows. If documentation the task depends on cannot be found, **stop and tell the user exactly what's missing before implementing anything** — see Sections 33–34.
 1. **Understand the objective.** What problem does this solve? What does success look like? (Borrowed directly from the Product Bible's own gate: *what problem does it solve, how much time does it save.*)
 2. **Understand existing architecture.** Following Reading Priority, read the relevant Project Bible and Engineering Handbook sections, and the actual code, before proposing anything. Do not design in a vacuum.
 3. **Identify risks.** What breaks? What's hard to reverse? What does this couple to?
@@ -690,7 +690,7 @@ Operational policy changes still follow the ordinary rules — the project owner
 - Simple beats powerful. Quality beats quantity. One excellent workflow is better than ten average ones.
 - Transparency builds trust — in the product, and in every decision Claude makes while building it.
 - Assume this project will eventually be used by thousands of users. Every design decision should support that vision; every code change should improve the project; every recommendation should move ProjectOne closer to becoming a world-class SaaS platform.
-- When in doubt, re-read this document, then re-read the Project Bible and Engineering Handbook. The answer is almost always already written down.
+- When in doubt, re-read the specific section of this document that governs the decision, then the specific Project Bible or Engineering Handbook document that section cites. The answer is almost always already written down — find it, don't re-read everything to rediscover it.
 
 ---
 
@@ -704,25 +704,6 @@ Claude must follow the ProjectOne Design System (`[[Design System]]`) exactly:
 - Never create interfaces that look AI-generated, generic, or template-based. The product must always feel calm, professional, premium, and trustworthy — never decorated for its own sake.
 - Every screen must define polished loading skeletons, informative empty states, and actionable error messages as part of the feature, not as a follow-up task.
 - Before approving any screen: visual hierarchy is obvious, alignment is pixel-perfect, spacing is consistent, no unnecessary UI elements exist, components match the Design System, accessibility is preserved, performance is not sacrificed for appearance.
-
----
-
-## Appendix: Document Index
-
-This CLAUDE.md summarizes and operationalizes the following canonical sources. When in doubt, the linked source document is more detailed and wins on specifics; this file wins on *behavior*.
-
-- **Claude OS (operating procedure, read first):** [[Start Here]] · [[Documentation Discovery]] · [[Reading Priority]] · [[Task Workflow]]
-- **Collaboration & delivery process:** [[Branch and Pull Request Workflow]] · [[Execution Protocol]] · [[AGENTS|AGENTS.md]] (the Codex adapter for this constitution)
-- **Product & Vision:** [[Philosophy]] · [[Vision]] · [[Product Principles]] · [[Target Audience]] · [[User Personas]] · [[User Journey]] · [[Product Bible]]
-- **Features:** [[Dashboard]] · [[Projects]] · [[AI Chat]] · [[Video Generation]] · [[Analytics]] · [[Billing]] · [[Settings]]
-- **AI Systems:** [[AI Architecture]] · [[Agent Architecture]] · [[Memory System]] · [[AI Providers]] · [[Workflow Engine]]
-- **Tech Architecture:** [[Backend Architecture]] · [[Database Architecture]] · [[API Architecture]] · [[Frontend Architecture]] · [[Infrastructure]]
-- **Delivery & Trust:** [[Roadmap]] · [[Release Strategy]] · [[Testing Strategy]] · [[Deployment Strategy]] · [[Security Architecture]] · [[Privacy and Data Protection]] · [[Authentication and Authorization]] · [[Compliance and Governance]] · [[Backup and Disaster Recovery]]
-- **Engineering Handbook:** Chapters 1–11 (Development Philosophy → Code Review Standards)
-- **Design:** [[Design System]]
-- **Historical (non-authoritative):** [[Technical Documentation Master]]
-
-Full cross-linked source material lives in the ProjectOne Obsidian Vault at `ProjectOne Vault/`. Start from `ProjectOne Vault/01 Claude OS/Start Here.md`, then `ProjectOne Vault/02 Home/Home.md`.
 
 ---
 
