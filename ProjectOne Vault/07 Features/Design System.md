@@ -384,6 +384,16 @@ These are **the components that exist today**, against surfaces that exist today
 | **`UserMenu`** | `email` | Resting · hover · focus · submitting |
 | **`Transcript`** | message list | Loading · empty · error · populated · streaming |
 | **`SpendSummary`** | spend figures | Loading · empty · error · populated |
+| **`ConfirmDialog`** | `triggerLabel`, `title`, `description`, `cancelLabel?`, `children` | Closed (trigger: resting · hover · focus) · **open** (focus trapped, `Escape` closes, focus returns to the trigger) |
+
+> [!note] `ConfirmDialog` was added by [[STEP-29 Asset Management UI]], and why it was missing is worth recording
+> The token layer already named a dialog in three places — `--radius-lg` as "Dialogs, panels" (§4.2), `--shadow-lg` as "Dialogs" (§4.3), `--color-surface-raised` as "Dropdowns, dialogs" (§6.2) — while this table defined none. Not an oversight in either direction: [[STEP-26 Product Design System Foundation]] shipped the tokens and **no components at all**, so the first screen to need a dialog was always going to be the one that wrote its contract.
+>
+> **It is built on a native `<dialog>`.** `showModal()` supplies the focus trap, the `Escape` handler, the inert background and the top-layer stacking that a hand-built modal must otherwise reimplement correctly — and a modal whose focus escapes is one a keyboard user can lose. The behaviour required of it is §9a rule 2's, generalised from the navigation drawer: trap focus, close on `Escape`, return focus to the control that opened it.
+>
+> **Cancel is focused first and confirm is never the default.** A destructive action reached by pressing Enter on a dialog the user has not read is the failure the component exists to prevent. There is deliberately no backdrop-click dismissal — a stray click that dismisses is harmless, and the same gesture landing on a confirm button is not.
+>
+> Verified through the rendered accessibility tree rather than automatically, which §9.2 already names as the standard for dialog work.
 
 **Rules binding on every shared component, current and future:**
 

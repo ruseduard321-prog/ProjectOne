@@ -4,17 +4,18 @@ import { notFound } from "next/navigation";
 
 import { FormField } from "@/components/auth/FormField";
 import { AssetKindField } from "@/components/projects/AssetKindField";
+import { AssetList } from "@/components/projects/AssetList";
+import { AssetUpload } from "@/components/projects/AssetUpload";
 import { StatusBadge } from "@/components/projects/StatusBadge";
 import { TransitionControls } from "@/components/projects/TransitionControls";
 import { SettingsForm } from "@/components/settings/SettingsForm";
 import { SettingsSection } from "@/components/settings/SettingsSection";
-import { EmptyState } from "@/components/shell/EmptyState";
 import { type ApiAsset, type ApiProject, ApiError, listAssets, readProject } from "@/lib/api";
 import { requireProfile, resolveAccessToken } from "@/lib/auth";
-import { assetKindLabel } from "@/lib/projects";
 import { resolveWorkspace } from "@/lib/workspace";
 
 import {
+  assetDownloadUrlAction,
   createAssetAction,
   deleteAssetAction,
   deleteProjectAction,
@@ -148,79 +149,60 @@ export default async function ProjectDetailPage({
         description="The scripts, media and files that belong to this project."
       >
         <div className="flex flex-col gap-6">
-          {assets.length === 0 ? (
-            <EmptyState
-              title="No assets yet"
-              description="Record the scripts, thumbnails and media this project needs. Uploading files is not available yet."
-            />
-          ) : (
-            <ul className="flex flex-col gap-3">
-              {assets.map((asset) => (
-                <li
-                  key={asset.id}
-                  className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border px-4 py-3"
-                >
-                  <div className="flex flex-col gap-1">
-                    <span className="text-sm font-medium text-text">{asset.name}</span>
-                    <span className="text-xs text-text-muted">
-                      {assetKindLabel(asset.kind)}
-                    </span>
-                  </div>
+          <AssetList
+            workspaceId={workspaceId}
+            projectId={project.id}
+            assets={assets}
+            deleteAction={deleteAssetAction}
+            mint={assetDownloadUrlAction}
+          />
 
-                  <SettingsForm
-                    action={deleteAssetAction}
-                    submitLabel="Remove"
-                    pendingLabel="Removing…"
-                    savedLabel="Removed"
-                    intent="danger"
-                    hidden={{
-                      workspace_id: workspaceId,
-                      project_id: project.id,
-                      asset_id: asset.id,
-                    }}
-                  >
-                    {/* No fields: the hidden inputs above carry the whole payload. */}
-                    {null}
-                  </SettingsForm>
-                </li>
-              ))}
-            </ul>
-          )}
+          <div className="flex flex-col gap-4 border-t border-border pt-6">
+            <h3 className="text-sm font-medium text-text">Upload a file</h3>
+            <AssetUpload workspaceId={workspaceId} projectId={project.id} />
+          </div>
 
-          <SettingsForm
-            action={createAssetAction}
-            submitLabel="Add asset"
-            pendingLabel="Adding…"
-            savedLabel="Added"
-            hidden={{ workspace_id: workspaceId, project_id: project.id }}
-          >
-            <div className="flex flex-col gap-4 sm:flex-row sm:gap-4">
-              <div className="flex-1">
-                <FormField
-                  id="asset-name"
-                  name="name"
-                  label="Asset name"
-                  type="text"
-                  autoComplete="off"
-                  placeholder="Opening script"
-                />
+          {/*
+           * The metadata-only form stays alongside the upload ([[STEP-29 Asset
+           * Management UI]] D5). The API's two asset routes are both useful —
+           * an asset can be planned before the file exists — so removing this
+           * would delete a capability this screen already had. The two are
+           * worded to say plainly which is which, because two controls that
+           * look like two ways to do one thing is the real risk of keeping both.
+           */}
+          <div className="flex flex-col gap-4 border-t border-border pt-6">
+            <h3 className="text-sm font-medium text-text">Record an asset without a file</h3>
+
+            <SettingsForm
+              action={createAssetAction}
+              submitLabel="Add asset"
+              pendingLabel="Adding…"
+              savedLabel="Added"
+              hidden={{ workspace_id: workspaceId, project_id: project.id }}
+            >
+              <div className="flex flex-col gap-4 sm:flex-row sm:gap-4">
+                <div className="flex-1">
+                  <FormField
+                    id="asset-name"
+                    name="name"
+                    label="Asset name"
+                    type="text"
+                    autoComplete="off"
+                    placeholder="Opening script"
+                  />
+                </div>
+
+                <div className="flex-1">
+                  <AssetKindField
+                    id="asset-kind"
+                    name="kind"
+                    label="Kind"
+                    hint="Records a placeholder. Add the file later by uploading it."
+                  />
+                </div>
               </div>
-
-              <div className="flex-1">
-                <AssetKindField
-                  id="asset-kind"
-                  name="kind"
-                  label="Kind"
-                  /*
-                   * Stated plainly rather than discovered: this records that an
-                   * asset exists, it does not store a file. No storage backend
-                   * is chosen yet — that needs an ADR (CLAUDE.md §10/§28).
-                   */
-                  hint="Records the asset. File upload is not available yet."
-                />
-              </div>
-            </div>
-          </SettingsForm>
+            </SettingsForm>
+          </div>
         </div>
       </SettingsSection>
 

@@ -22,6 +22,7 @@ import { revalidatePath } from "next/cache";
 import {
   ApiError,
   ApiUnreachableError,
+  assetDownloadUrl,
   createAsset,
   createProject,
   deleteAsset,
@@ -31,7 +32,7 @@ import {
 } from "@/lib/api";
 import { resolveAccessToken } from "@/lib/auth";
 import type { FormState } from "@/lib/form-state";
-import { isAssetKind, isProjectStatus } from "@/lib/projects";
+import { type AssetUrlResult, isAssetKind, isProjectStatus } from "@/lib/projects";
 
 /** Where the project screens live, for cache revalidation after a write. */
 const PROJECTS_PATH = "/projects";
@@ -59,6 +60,13 @@ function field(data: FormData, name: string): string {
  *  - **403** — the caller's role does not permit this. The screen should not
  *    have offered it, so this also signals the UI drifted from the server.
  *  - **429** — rate limited.
+ *
+ * **413 and 415 are deliberately absent from that list.** They are the upload
+ * refusals, and the API's own message already names the rule that was broken —
+ * which file types are accepted, or which limit was exceeded — in wording
+ * written to be shown and chosen never to echo the filename back. Substituting
+ * a generic sentence would replace the only text that tells the user what to do
+ * differently. They fall through to the pass-through below.
  */
 function toFormState(error: unknown): FormState {
   if (error instanceof ApiError) {
@@ -300,6 +308,60 @@ export async function createAssetAction(
   revalidatePath(`${PROJECTS_PATH}/${projectId}`);
 
   return { fieldErrors: {}, saved: true };
+}
+
+/**
+ * Mint a time-limited URL for one asset's bytes.
+ *
+ * **Not a form action.** It takes arguments rather than `FormData` and returns a
+ * result rather than a {@link FormState}, because it is called imperatively from
+ * a preview control the moment a user asks to see a file — there is no form and
+ * nothing is being saved.
+ *
+ * Called **on user action only, never while rendering a list**. The URL is a
+ * bearer capability with a 15-minute life (STEP-28 D3): minting one per asset at
+ * render time would spend that lifetime while the page was merely being read,
+ * issue an API call per row, and place capabilities into markup Next.js may
+ * cache ([[STEP-29 Asset Management UI]] D3).
+ */
+export async function assetDownloadUrlAction(
+  workspaceId: string,
+  projectId: string,
+  assetId: string,
+): Promise<AssetUrlResult> {
+  const accessToken = await resolveAccessToken();
+
+  if (accessToken === undefined) {
+    return { ok: false, error: "Your session has expired. Sign in again to open this file." };
+  }
+
+  try {
+    const download = await assetDownloadUrl(accessToken, workspaceId, projectId, assetId);
+
+    return {
+      ok: true,
+      url: download.url,
+      expiresInSeconds: download.expires_in_seconds,
+    };
+  } catch (error) {
+    if (error instanceof ApiError) {
+      // 404 covers both "this asset has no file" and "this asset is not yours".
+      // The API answers them identically on purpose, so an asset id cannot be
+      // used to probe across workspaces, and this message must not distinguish
+      // them either.
+      if (error.status === 404) {
+        return { ok: false, error: "This file is no longer available." };
+      }
+
+      return { ok: false, error: error.message };
+    }
+
+    if (error instanceof ApiUnreachableError) {
+      return { ok: false, error: error.message };
+    }
+
+    throw error;
+  }
 }
 
 /** Remove an asset from a project. */
