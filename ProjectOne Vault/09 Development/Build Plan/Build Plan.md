@@ -10,7 +10,7 @@ aliases: ["Implementation Plan", "Build Roadmap", "Step Index"]
 
 # ProjectOne Build Plan
 
-The ordered execution index taking ProjectOne from an empty repository to a verified product in the hands of real users. **94 sequential steps** — 33 delivered (28 numbered plus five inserted by owner decision: STEP-11a, STEP-16a, STEP-12a, STEP-16b, STEP-25a), and **61 future steps, STEP-29 through STEP-89**, each sized for a single Claude Code session. Three further step notes are **superseded and carry no status**, so they are deliberately not part of that 94 — they are kept as history in [[#Superseded Step Numbering]].
+The ordered execution index taking ProjectOne from an empty repository to a verified product in the hands of real users. **94 sequential steps** — 34 delivered (29 numbered plus five inserted by owner decision: STEP-11a, STEP-16a, STEP-12a, STEP-16b, STEP-25a), and **60 future steps, STEP-30 through STEP-89**, each sized for a single Claude Code session. Three further step notes are **superseded and carry no status**, so they are deliberately not part of that 94 — they are kept as history in [[#Superseded Step Numbering]].
 
 **The future half of this plan was rebuilt on 2026-08-15**, by owner decision, against the [[Product Coverage Audit]]. That audit measured the complete intended product against what `main` actually implements and found 24 capabilities Missing, 14 Foundation/Partial and — the finding that forced the rebuild — several P0 prerequisites with **no executable step anywhere**: file storage, async execution, the AI capability model beyond chat completion, and the Memory System. A three-step tail could not carry them.
 
@@ -75,7 +75,7 @@ Status appears in two places — the step note and the row below — and they mu
 | | **Platform Substrate** | | |
 | STEP-27 | [[STEP-27 Storage Provider Abstraction]] | Done | full |
 | STEP-28 | [[STEP-28 Asset Upload and Download]] | Done | full |
-| STEP-29 | [[STEP-29 Asset Management UI]] | In Progress | full |
+| STEP-29 | [[STEP-29 Asset Management UI]] | Done | full |
 | STEP-30 | [[STEP-30 Async Job Infrastructure]] | Not Started | full |
 | STEP-31 | [[STEP-31 Workflow Async Execution]] | Not Started | outline |
 | STEP-32 | [[STEP-32 Media Processing Pipeline]] | Not Started | outline |
@@ -647,6 +647,19 @@ The fix re-throws `ApiUnreachableError` and leaves every other error on the exis
 **No screen was restyled.** `globals.css` and `layout.tsx` are the only application files touched; the `nav-*` token family is defined and verified but has no consumer until [[STEP-80 Product-wide UI Rebuild]]. The spacing, radius and elevation scales from [[STEP-14 Design System Tokens]] were deliberately left unchanged — the new direction does not contradict them, and changing them would have been change for its own sake.
 
 **The owner clarified STEP-26's scope at the approval gate**, and it is recorded in the step rather than quietly applied. The step's original wording forbade *any* application code change, which would have prevented the token layer from existing at all — leaving an approved design language no surface could consume. The clarification permits exactly three things: the token definitions in `globals.css`, the global font wiring in `layout.tsx`, and the tooling enforcing them. Restyling a component, rebuilding a screen, changing a layout and any [[STEP-80 Product-wide UI Rebuild]] work remain out of scope. The superseded wording is preserved in the step note beside its correction.
+
+### Platform Substrate — files now move through the product
+
+**A user can put a file into ProjectOne and get it back out** ([[STEP-29 Asset Management UI]], `Done` — merged as `bcee2fa` via PR #23 on 2026-08-17). Upload with determinate progress, a listed and previewable asset per kind, and a confirmed delete now exist on the project screen, built entirely on the routes [[STEP-28 Asset Upload and Download]] had already proven against a real bucket. No backend file, migration or dependency was touched: the whole step is `apps/web`. The web suite went from 261 tests to 324.
+
+**The step closes the largest remaining P0 from the [[Product Coverage Audit]] as far as the product surface goes** — `assets.storage_path` is no longer null on every row a user can create, and the storage → upload → media chain that the audit named the single biggest blocker now has its first two links working end to end.
+
+> [!warning] STEP-29 is `Done` with one Definition of Done condition unmet
+> **Its nine browser manual checks have not been performed by anyone** — confirmed with the project owner on 2026-08-17. `Done` records the owner's merge decision, not a completed checklist, and the step note carries the full list of what stays unproven ([[STEP-29 Asset Management UI#Step Completion Record]]).
+>
+> It is deliberately **not** reassigned to [[STEP-80 Product-wide UI Rebuild]] or [[STEP-85 Full Product Verification and Hardening]]; that was offered and declined, on the grounds that moving an open gap onto a step that has not agreed to it converts a visible debt into an invisible one.
+
+**Two closing records were written late and one is still missing.** STEP-29's status stayed `In Progress` in both places after its merge, and was corrected by a documentation-only Pull Request on 2026-08-17 — the same lag [[STEP-28 Asset Upload and Download]] had. Neither STEP-27 nor STEP-28 has a Current State entry at all; that gap is left standing rather than back-filled here, because writing another step's completion record inside this one is the scope widening [[CLAUDE|CLAUDE.md]] §29 forbids. It is an open item for the owner, not a silent omission.
 
 ---
 
