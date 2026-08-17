@@ -2,18 +2,18 @@
 title: STEP-29 Asset Management UI
 category: Development/Build Step
 status: draft
-version: "2.0"
+version: "2.1"
 last_updated: 2026-08-17
 tags: [engineering, workflow, build-step, frontend, design-system]
 step_id: STEP-29
-step_status: In Progress
+step_status: Done
 detail_level: full
 phase: "Platform Substrate"
 ---
 
 # STEP-29 — Asset Management UI
 
-**Status:** In Progress — implementation began 2026-08-17 on `step-29-asset-management-ui`
+**Status:** Done — merged to `main` as `bcee2fa` via PR #23, with one Definition of Done condition unmet and recorded as such; see [[#Step Completion Record]]
 **Phase:** Platform Substrate — The absent infrastructure every media, approval and automation capability sits behind: storage, async execution, and enough notification to make an asynchronous run visible.
 **Detail level:** full — expanded 2026-08-17 against `main` @ `1a5f1e3`, with [[STEP-28 Asset Upload and Download]] merged and its routes readable in code.
 
@@ -270,7 +270,10 @@ Observed, not assumed ([[Execution Protocol#The Loop]] item 8).
 4. **Done.** Each proof in [[#Required Tests and Proofs]] exists as a named test and was read individually — see the [[#Manual Test Checklist]], which ties each one to the test establishing it.
 5. **Not done — requires a running API and a browser.** The upload path driven end to end with real files of each previewable kind, one over the ceiling, and one whose extension lies about its content. Claude cannot observe this: the machine it works on has no running API. See the [[#Manual Test Checklist]].
 6. **Not done — requires a browser.** Keyboard-only pass over the Assets section, and the dialog verified through the rendered accessibility tree per [[Design System]] §9.2.
-7. **Not done.** Required CI green on the Pull Request — no Pull Request has been opened.
+7. **Done.** Required CI green on PR #23 — `web (lint, typecheck, test, build)`, `api (lint, format, typecheck, test)` and `governance docs (sync check)` all `SUCCESS` on run `32025551764`, 2026-08-17. `Supabase Preview` reported `SKIPPED` and is not a required check.
+
+> [!warning] Items 5 and 6 were never performed, and the step was merged anyway
+> They are the browser half of this step, and neither Claude nor the project owner has run them — confirmed by the owner on 2026-08-17 rather than assumed. The step is `Done` on the owner's merge decision, not on a complete checklist. See [[#Step Completion Record]] for what that leaves open.
 
 ## Manual Test Checklist
 
@@ -288,7 +291,7 @@ The change is entirely user-visible, so this is the load-bearing half of validat
 - [x] An expired preview offers a retry that genuinely re-mints. — the retry calls the same `load` as the first attempt; the failure branch is asserted in `AssetPreview`
 - [x] A lost session during upload answers 401 rather than redirecting into a sign-in page. — `upload-route.test.ts`
 
-**Requires a browser and a running API.** These are the items R1 names, plus the ones that need real bytes. **None has been performed** — Claude cannot reach a browser or a running API from this machine, verified rather than assumed.
+**Requires a browser and a running API.** These are the items R1 names, plus the ones that need real bytes. **None has been performed** — Claude cannot reach a browser or a running API from this machine, verified rather than assumed. **The project owner confirmed on 2026-08-17 that they did not perform them either**, before or after merging, so every box below is still genuinely unticked rather than ticked elsewhere and unrecorded here.
 
 - [ ] Upload a real image; progress advances through determinate percentages and the asset appears without a full page reload.
 - [ ] Upload a real video of tens of megabytes; the percentage moves smoothly rather than jumping from 0 to 100.
@@ -311,12 +314,40 @@ Additionally, per [[Execution Protocol#Step Completion]]:
 - [x] The two false strings on the project screen removed — the `EmptyState` description and the `AssetKindField` hint both now describe what the screen does.
 - [x] [[STEP-30 Async Job Infrastructure]] expanded to full detail.
 - [x] Status synchronized between this note and the [[Build Plan]] index.
-- [ ] **Manual checklist complete** — nine items established by automated proof; nine require a browser and a running API and have not been performed.
-- [ ] **Required CI green on the Pull Request** — no Pull Request has been opened.
+- [ ] **Manual checklist complete — NOT MET, and the step is `Done` regardless.** Nine items are established by automated proof; nine require a browser and a running API, and **none of those nine has been performed by anyone**. This is the one condition [[Execution Protocol#Step Completion]] names that this step does not satisfy. It is recorded as an exception rather than ticked, and the reasoning is in [[#Step Completion Record]].
+- [x] **Required CI green on the Pull Request** — all three required checks `SUCCESS` on PR #23.
+
+## Step Completion Record
+
+Merged to `main` as **`bcee2fa`** via **PR #23**, squash-merged by the project owner on 2026-08-17 at 11:45 UTC from branch `step-29-asset-management-ui`.
+
+**Required CI, on the final run (`32025551764`, 2026-08-17):**
+
+| Check | Result |
+|---|---|
+| `web (lint, typecheck, test, build)` | `SUCCESS` |
+| `api (lint, format, typecheck, test)` | `SUCCESS` |
+| `governance docs (sync check)` | `SUCCESS` |
+| `Supabase Preview` | `SKIPPED` — not a required check |
+
+**What shipped:** six new components (`AssetUpload`, `UploadStatus`, `AssetList`, `AssetRow`, `AssetPreview`, `ConfirmDialog`), one new route handler for the multipart upload, and edits to five existing files. **+63 tests in 4 new files**, taking the web suite from 261 to 324 with no skips added. No backend file, no migration, no dependency, and `AssetResponse` unchanged.
+
+**What is verified:** every proof in [[#Required Tests and Proofs]], each tied to a named test in [[#Manual Test Checklist]], plus a `next build` that registers the upload route as dynamic — run because a production build catches server/client boundary violations that `tsc` accepts.
+
+> [!warning] One Definition of Done condition is unmet, and the step is `Done` anyway
+> **The nine browser items on [[#Manual Test Checklist]] have not been performed by anyone** — not by Claude, which has no browser or running API on this machine, and not by the project owner, who confirmed as much on 2026-08-17.
+>
+> [[Execution Protocol#Step Completion]] makes a complete manual checklist a `Done` condition where a step has user-visible behaviour, and this step is entirely user-visible. **`Done` here therefore records the owner's merge decision, not a satisfied checklist.** Marking it without saying so would make this note claim a verification that did not happen, which is the failure [[CLAUDE|CLAUDE.md]] §22 exists to prevent.
+>
+> **What that leaves unproven:** a real byte reaching Cloudflare through this UI; determinate progress on a large file; the 415 that a lying extension should produce; a freshly-minted preview URL rendering per kind; the 15-minute expiry path; the dialog's focus trap, `Escape` and focus return; whole-section keyboard traversal; a mid-upload network loss; and the absence of a signed URL in real page source. Every one of these is a failure path, and R3 in particular — a bearer URL in a cached document — is the most consequential thing this step could get wrong while looking correct.
+>
+> **This is not assigned to a later step.** Doing so was offered and declined on 2026-08-17: naming [[STEP-80 Product-wide UI Rebuild]] or [[STEP-85 Full Product Verification and Hardening]] as the owner would have converted an open gap into someone else's scheduled work without that step agreeing to it. It stays here, visible, until it is either performed or deliberately assigned.
+>
+> The pattern is the one STEP-23 recorded and [[STEP-25 Foundation Audit and Internal Readiness]] repeated: **green CI proves the assertions that were written, and says nothing about the ones that were not.** Nine of them are still not written.
 
 ## Implementation Record
 
-**Not merged. No Pull Request has been opened, and nothing has been pushed** — the owner asked for review before delivery.
+**Merged to `main` as `bcee2fa` via PR #23** — see [[#Step Completion Record]] above for the merge, CI and gate detail. *(This section was written before delivery, when nothing had been pushed; its original opening line said so and is corrected here rather than left contradicting the record above.)*
 
 **What shipped**, as five new components, one new route, and edits to five existing files:
 
