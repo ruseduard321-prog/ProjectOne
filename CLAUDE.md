@@ -93,6 +93,35 @@ Every feature decision should additionally survive the Product Bible's own filte
 
 If a proposed feature or change fails this filter, say so before building it.
 
+## 6a. Skill Routing
+
+ProjectOne defines ten specialist Skills: canonical specifications in `06 AI/Skills/`, paired with runtime wrappers in `.claude/skills/` that the Claude Code harness loads. [[Skill Contract]] is their shared execution model and [[SKILLS]] is the index. **This section is only the route into that layer** — which skill to consult for which class of work. How a skill performs its checks lives in that skill's own specification and is deliberately not restated here.
+
+Matching skills should be consulted when their trigger conditions apply. If a relevant skill was not used, the reason should be clear from the task context.
+
+| When the work involves | Consult | Class |
+|---|---|---|
+| Schema changes, migrations, indexes, constraints, RLS policies | `database-engineer` | Critical |
+| Auth, secrets, tenant data boundaries, external input, new dependencies | `security-reviewer` | Critical |
+| New modules, cross-package dependencies, ADRs, additions outside the §10 stack | `architecture-reviewer` | Critical |
+| Agents, AI workflows, system prompts, provider integrations, any feature triggering an AI call | `ai-systems-engineer` | Advisory |
+| Implementing a feature, page, component, endpoint, or service end to end | `full-stack-engineer` | Advisory |
+| A non-trivial diff, or any change presented as ready for review | `code-reviewer` | Advisory |
+| New query/fetch/render paths, caching, memoization, scalability questions | `performance-reviewer` | Advisory |
+| A reported defect, an unexplained CI failure, or a proposed fix to verify | `bug-investigator` | Advisory |
+| Any add/move/rename/delete under `ProjectOne Vault/`, or changed wiki-links | `documentation-keeper` | Advisory |
+| Release preparation, version bumps, milestone transitions | `release-manager` | Advisory |
+
+Class is shown for routing only; [[Skill Contract]] is authoritative if the two ever differ. Where two skills both apply, the Contract's No-Overlap Rule governs — each skill's **Related Skills** section already names which leads, decided when the skill was authored and not re-litigated per task.
+
+**Three boundaries this section does not move:**
+
+- **A skill never owns a rule.** Every section of this document binds whether or not the matching skill is consulted, fires, or exists at all. Nothing here relocates a rule out of this document, and no rule is waived because a skill did not run. Skills are how Claude checks its work; this document is what makes the work correct.
+- **A skill's silence is not a pass.** `Critical` skills may block; `Advisory` skills recommend and never block. Neither classification grants a skill authority to *approve* anything. A skill that was never consulted is a gap in Claude's process, reported as one — never evidence that a change is clean.
+- **A skill never replaces a human gate.** Owner approval (Section 21), CI and branch protection (Sections 20, 20a), the ADR lifecycle (Section 7), and Definition of Done (Section 22) are untouched by this section. Automating *how* a check runs is operational policy; automating *away* a gate is forbidden (Sections 30b, 39).
+
+This section is operational policy under Section 39 — it governs how Claude routes work, not how the system is built, so it requires no ADR. It adds a route; it removes nothing.
+
 ## 7. Architecture Principles
 
 Drawn from the Project Bible's architecture documents and held as binding constraints on all future design:
