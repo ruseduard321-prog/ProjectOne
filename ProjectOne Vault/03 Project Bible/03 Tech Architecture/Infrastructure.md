@@ -36,6 +36,17 @@ flowchart TB
 
 Frontend Hosting, Backend Services, Database, Object Storage, CDN, Background Workers, Monitoring, Logging, Secrets Management and CI/CD.
 
+### Background Workers exist as of [[STEP-30 Async Job Infrastructure]]
+
+The component named above is now built, and the shape it took is narrower than "a worker tier": **one image, two processes** — the API under `uvicorn`, the worker under `python -m app.jobs.worker`, from the same package and the same validated configuration ([[ADR-005 Async Job Queue and Worker Execution Model]] §3).
+
+There is **no separate queue service**. The queue is a table in the primary PostgreSQL database, claimed with `SELECT ... FOR UPDATE SKIP LOCKED`, which is why "Background Workers" adds a process to this diagram and not a box beside the database. See [[Async Job Execution]].
+
+The repository's `infrastructure/` directory exists from this step, holding the process model — what each process requires, and how each is started and stopped. **Which platform runs them is deferred to [[STEP-82 Staging Environment and Deployment Pipeline]]** by owner decision on 2026-08-17, along with worker autoscaling. What STEP-30 guarantees is that both processes fail at deploy rather than at a user's first request: they validate the same configuration with the same strictness, object storage included.
+
+> [!warning] Worker liveness is a monitoring requirement, and it is not yet met
+> A worker that is not running logs nothing — a platform where nothing finishes and nothing errors, which is [[CLAUDE|CLAUDE.md]] §26's central case. Its in-process sibling is closed (ten consecutive dispatch failures stop the process loudly), but external liveness monitoring is owed by [[STEP-81 Observability and Alerting]] and is a stated gap until then.
+
 ## Infrastructure Principles
 
 Cloud-first, infrastructure as code, high availability, automated deployments, observability, disaster recovery and cost awareness.

@@ -267,6 +267,10 @@ _WORKSPACE_DEPENDANTS = (
     "ai_spend_records",
     "assets",
     "audit_log",
+    # `jobs` references only `workspaces`, so its position is unconstrained
+    # (STEP-30). Kept alphabetical here for that reason -- the three entries
+    # below are the ones whose order is load-bearing.
+    "jobs",
     # The two workflow tables come **before** `projects`, breaking the
     # alphabetical order deliberately -- see the ordering note above.
     "workflow_step_runs",

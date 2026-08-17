@@ -102,6 +102,7 @@ Written **per command**, never as one `FOR ALL` policy. `FOR ALL` applies a sing
 | `assets` | SELECT / INSERT / UPDATE | Live membership — same shape as `projects` |
 | `workflow_runs` | SELECT / INSERT / UPDATE | Live membership — any role. **Approval is gated at the API, not by a policy** ([[STEP-22 Minimum Workflow Engine]]) |
 | `workflow_step_runs` | SELECT / INSERT / UPDATE | Live membership — same shape |
+| `jobs` | SELECT / INSERT / UPDATE | Live membership — **and the INSERT policy additionally pins `enqueued_by = auth.uid()`**, because that column is the identity a worker later replays ([[STEP-30 Async Job Infrastructure]]) |
 
 ### The role predicate
 
@@ -168,6 +169,25 @@ The fix, in both cases, is the same: the filter **moves out of the policy and in
 > A listing that inherited the filter from the policy and never said so will now show removed members. `test_removed_members_are_excluded_from_listings` guards the shape; `test_the_select_policy_still_blocks_the_other_tenant` guards that the widening stopped at the workspace boundary.
 
 **What genuinely widened:** a live member can read the soft-deleted membership rows of their own workspace — who used to be in a workspace you are in. Never another tenant's data, and information any member list showing "removed" states needs anyway.
+
+### A grant given for erasure is a grant given for everything
+
+[[STEP-30 Async Job Infrastructure]] found this on `jobs`, and it generalizes to every table whose only client write is the soft delete.
+
+Workspace erasure runs over the **tenant** connection, so a table registered in `REGISTERED_STORES` needs `UPDATE` granted to `authenticated`. That grant is not scoped to `deleted_at` — it is the whole row. On `jobs` that would have let a member reset `attempts` and replay a job indefinitely, or set `status` to `succeeded` on work that never ran.
+
+RLS cannot express the fix: a policy sees the candidate row, never the row being replaced, so "only `deleted_at` may change" is a claim about `OLD` and `NEW` together. A `BEFORE UPDATE` trigger with a **whitelist** is what PostgreSQL provides for it, exactly as `app_messages_immutable` does for the transcript.
+
+A whitelist rather than a blacklist, so a column added later is immutable by default and making it mutable becomes a decision someone has to write down.
+
+> [!danger] Such a trigger must be `SECURITY INVOKER`, not `SECURITY DEFINER`
+> Inside a `SECURITY DEFINER` function `current_user` is the function's **owner**, so a guard written as `IF current_user = 'authenticated' THEN ...` reads `postgres` on every call and **never fires**. It passes review, passes a casual reading, and protects nothing.
+>
+> Observed against a real database during STEP-30 before the guard was correct. `SECURITY INVOKER` makes `current_user` the caller's effective role, which is the question being asked — and a guard that only compares `OLD` and `NEW` needs no elevated privilege anyway. Keep `SET search_path = ''` regardless.
+>
+> Note the contrast with `app_current_user_workspaces()`, which **must** be definer: it reads a table the caller's own policy cannot. The rule is not "prefer one" — it is that definer rights are for reaching past RLS, and a role test is the one thing they break.
+
+`test_erasure_is_the_one_client_write_jobs_accepts` asserts both halves: the soft delete succeeds, and four other columns are refused. Note the assertions must use values that genuinely **differ** from the stored row — the guard compares `OLD` and `NEW`, so `SET attempts = 0` on a row already holding 0 changes nothing and is correctly permitted.
 
 ### The last-owner rule is a trigger, not a policy
 

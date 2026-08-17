@@ -37,6 +37,7 @@ What actually exists in the database, as opposed to the intended model above.
 - [[Table - projects]] — a content project and its lifecycle state
 - [[Table - assets]] — a file or document belonging to one project
 - [[Table - workflow_runs]] — a workflow run and its step history
+- [[Table - jobs]] — the asynchronous job queue, written by the API and executed by a worker
 
 ## Cross-References
 

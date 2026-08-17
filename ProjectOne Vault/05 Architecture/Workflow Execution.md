@@ -158,6 +158,6 @@ Stated rather than left to be discovered:
 ## Navigation
 
 - **Previous:** [[Project Lifecycle]]
-- **Next:** [[AI Cost Governance]]
+- **Next:** [[Async Job Execution]]
 - **Parent:** [[Architecture MOC]]
-- **Related Notes:** [[Workflow Engine]] · [[Agent Architecture]] · [[AI Cost Governance]] · [[Project Lifecycle]] · [[Table - workflow_runs]] · [[API Endpoints]]
+- **Related Notes:** [[Workflow Engine]] · [[Agent Architecture]] · [[AI Cost Governance]] · [[Async Job Execution]] · [[Project Lifecycle]] · [[Table - workflow_runs]] · [[API Endpoints]]

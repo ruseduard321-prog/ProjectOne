@@ -70,6 +70,7 @@ Implemented (as opposed to intended model):
 - [[AI Cost Governance]]
 - [[Project Lifecycle]]
 - [[Workflow Execution]]
+- [[Async Job Execution]]
 
 See also: [[Backend MOC]]
 
@@ -96,7 +97,7 @@ Implemented schema (as opposed to intended model):
 - [[Schema Overview]]
 - [[Table Conventions]]
 - [[RLS Policy Pattern]]
-- [[Table - users]] · [[Table - workspaces]] · [[Table - workspace_members]] · [[Table - audit_log]] · [[Table - security_event_log]] · [[Table - provider_credentials]] · [[Table - ai_spend_records]] · [[Table - ai_budgets]] · [[Table - ai_shutdown_switches]] · [[Table - projects]] · [[Table - assets]] · [[Table - workflow_runs]]
+- [[Table - users]] · [[Table - workspaces]] · [[Table - workspace_members]] · [[Table - audit_log]] · [[Table - security_event_log]] · [[Table - provider_credentials]] · [[Table - ai_spend_records]] · [[Table - ai_budgets]] · [[Table - ai_shutdown_switches]] · [[Table - projects]] · [[Table - assets]] · [[Table - workflow_runs]] · [[Table - jobs]]
 
 See also: [[Database MOC]]
 

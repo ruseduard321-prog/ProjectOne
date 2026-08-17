@@ -661,6 +661,18 @@ The fix re-throws `ApiUnreachableError` and leaves every other error on the exis
 
 **Two closing records were written late and one is still missing.** STEP-29's status stayed `In Progress` in both places after its merge, and was corrected by a documentation-only Pull Request on 2026-08-17 — the same lag [[STEP-28 Asset Upload and Download]] had. Neither STEP-27 nor STEP-28 has a Current State entry at all; that gap is left standing rather than back-filled here, because writing another step's completion record inside this one is the scope widening [[CLAUDE|CLAUDE.md]] §29 forbids. It is an open item for the owner, not a silent omission.
 
+**Work can now outlive the request that started it** ([[STEP-30 Async Job Infrastructure]], `In Progress` — implemented 2026-08-17, awaiting CI, review and the owner's approval). The queue is a **table**: `public.jobs`, claimed with `SELECT ... FOR UPDATE SKIP LOCKED`, with no broker, no new dependency and no new credential class. [[ADR-005 Async Job Queue and Worker Execution Model]] chose it for transactional enqueue above all — a job and the row that motivated it commit together, or neither exists, which every external broker breaks and only an outbox repairs.
+
+**The worker is a second process, not a second application.** `python -m app.jobs.worker` runs from the same image, the same package and the same validated `Settings` as the API, so a worker cannot start with configuration the API has never seen — object storage included, which is the STEP-28 defect one layer deeper. `infrastructure/` finally exists, holding the process model; **which platform runs it stays deferred to [[STEP-82 Staging Environment and Deployment Pipeline]]** by owner decision.
+
+**Tenancy reaches the worker as the enqueuing user's identity**, replayed through the existing `RequestSessionFactory.authenticated_as`. A handler never receives a privileged connection, and a job whose actor lost workspace membership **fails terminally before any handler runs**. The one irreducible cross-tenant operation — finding the next job before knowing whose it is — is bounded to the `jobs` table by six constraints, three of which are proven by test rather than by inspection, as ADR-005 §5 requires.
+
+**The composed retry ceiling is 60 upstream provider requests per enqueue** (2 job attempts × 5 chained invocations × 6 requests per completion), computed from its three factors in code rather than written down, and enforced independently by a CHECK constraint — because a job row is what actually costs money.
+
+Two findings are worth carrying forward. A **`SECURITY DEFINER` role guard silently never fires**: `current_user` inside such a function is the function's owner, so a guard testing for `authenticated` read `postgres` and refused nothing. It is now `SECURITY INVOKER`, and the trap is recorded in [[RLS Policy Pattern]] because it will recur on the next table whose only client write is an erasure. And **the ADR needed one reading reconciled** — §5's "identity established before execution" against §4's "short, discrete transactions" — resolved by proving the identity in a short session that closes before the handler is invoked, and reported to the owner rather than settled quietly.
+
+**Workflow runs are still synchronous.** This step ships the substrate and proves it on an infrastructure probe; [[STEP-31 Workflow Async Execution]] writes the first real handler and is now expanded to full detail. The suite grew from 1039 tests to 1120.
+
 ---
 
 ## Navigation

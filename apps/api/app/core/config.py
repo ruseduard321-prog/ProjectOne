@@ -237,6 +237,49 @@ class Settings(BaseSettings):
     r2_access_key_id: SecretStr | None = None
     r2_secret_access_key: SecretStr | None = None
 
+    # --- Asynchronous jobs (ADR-005, STEP-30) --------------------------------
+    #
+    # Both processes read these. The API needs neither today, and that is
+    # deliberate rather than an oversight: one image runs under two commands and
+    # validates one configuration surface, so a worker cannot be started with a
+    # setting the API has never seen (ADR-005 §3).
+    #
+    # Neither is required. A queue that refuses to start without a tuning value
+    # would be demanding configuration for a decision that has a correct default,
+    # and both defaults are the safe end of their trade-off.
+
+    # How long a claimed job's lease runs before it may be taken by another
+    # worker.
+    #
+    # The trade-off is explicit. Too short, and a healthy worker whose job
+    # outlives one heartbeat interval loses its lease and the job runs twice.
+    # Too long, and a job whose worker was killed sits unclaimable for that long
+    # before anyone can recover it.
+    #
+    # 60 seconds with renewal every 20 (a third of the lease, see
+    # `LeaseHeartbeat`) means two consecutive renewals may fail before a lease
+    # actually lapses, while a dead worker's job is recoverable inside a minute.
+    #
+    # `ge=5` so a value that cannot survive a single renewal round trip is
+    # rejected at startup rather than producing a queue that duplicates
+    # everything it runs.
+    job_lease_seconds: int = Field(default=60, ge=5)
+
+    # How long a worker waits before polling an empty queue again.
+    #
+    # ADR-005 §1 chose polling over `LISTEN`/`NOTIFY` deliberately: latency is
+    # bounded by this interval, the interval is configuration rather than code,
+    # and ProjectOne has no measurement showing the difference matters
+    # ([[CLAUDE|CLAUDE.md]] §17 -- measure before optimizing).
+    #
+    # A worker that just finished a job polls again immediately, so this bounds
+    # how long an *idle* queue takes to notice new work, never how fast a backlog
+    # drains.
+    #
+    # `gt=0` because zero is a busy-wait against the primary database, which is
+    # the one way a database-backed queue genuinely does become a load problem.
+    job_poll_interval_seconds: float = Field(default=1.0, gt=0)
+
     @property
     def r2_endpoint_url(self) -> str | None:
         """Return R2's S3-compatible endpoint for the configured account.

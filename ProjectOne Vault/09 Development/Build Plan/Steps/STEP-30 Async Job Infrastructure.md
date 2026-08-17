@@ -14,14 +14,14 @@ phase: "Platform Substrate"
 # STEP-30 — Async Job Infrastructure
 
 **Status:** In Progress
-**Task 1 complete; Tasks 2–8 not started.** [[ADR-005 Async Job Queue and Worker Execution Model]] was `Accepted` by the project owner on 2026-08-17, clearing the §7 gate that blocked this step. Implementation is **paused at the owner's instruction**, not blocked: nothing is outstanding from anyone, and Tasks 2–8 begin when the owner says to start them.
+**Tasks 1–8 implemented; awaiting CI, review and the owner's approval.** [[ADR-005 Async Job Queue and Worker Execution Model]] was `Accepted` by the project owner on 2026-08-17, clearing the §7 gate; Tasks 2–8 were implemented on the owner's instruction the same day. The step stays `In Progress` until its Pull Request's required CI is green and its owner gate is satisfied — [[Execution Protocol#Step Completion]] makes those completion conditions, not formalities.
 **Phase:** Platform Substrate — The absent infrastructure every media, approval and automation capability sits behind: storage, async execution, and enough notification to make an asynchronous run visible.
 **Detail level:** full — expanded 2026-08-17 by [[STEP-29 Asset Management UI]], per [[Execution Protocol#The Loop]] item 11, against `main` @ `1a5f1e3`.
 
-> [!important] Implementation cannot begin until an ADR is `Accepted`
-> This step introduces a **queue technology and a second deployed process**. Both are §10 stack-table decisions, so [[CLAUDE|CLAUDE.md]] §7 and §39 require an ADR before any production code is written — and §7's lifecycle is explicit that code written against a `Draft` or `Review` ADR is a spike, not the step.
+> [!success] The ADR gate is cleared
+> This step introduces a **queue technology and a second deployed process**. Both are §10 stack-table decisions, so [[CLAUDE|CLAUDE.md]] §7 and §39 required an ADR before any production code was written.
 >
-> **The first task below is therefore to write ADR-005, not to write a worker.** The step stops there until the project owner moves it to `Accepted`; that gate is a real stop and silence is not approval.
+> [[ADR-005 Async Job Queue and Worker Execution Model]] reached `Accepted` on 2026-08-17. Everything below was built against it.
 
 ## Objective
 
@@ -175,11 +175,71 @@ A job can be enqueued, executed by a separate worker, retried within a bounded c
 Additionally, per [[Execution Protocol#Step Completion]]:
 
 - [x] **ADR-005 `Accepted` by the project owner** before implementation began — 2026-08-17.
-- [ ] The composed retry ceiling stated as a number, with its arithmetic.
+- [x] The composed retry ceiling stated as a number, with its arithmetic — `MAX_UPSTREAM_REQUESTS_PER_ENQUEUE` = **60**, computed from its three factors rather than written down.
 - [ ] Required CI green, and the manual checklist complete.
 - [ ] Owner approval obtained — this step is Critical.
-- [ ] Status synchronized between this note and the [[Build Plan]] index.
-- [ ] [[STEP-31 Workflow Async Execution]] expanded to full detail.
+- [x] Status synchronized between this note and the [[Build Plan]] index.
+- [x] [[STEP-31 Workflow Async Execution]] expanded to full detail.
+
+## Outcome
+
+Implemented 2026-08-17 on branch `step-30-async-jobs`. **Every decision below was already settled by [[ADR-005 Async Job Queue and Worker Execution Model]]**; what follows is what the implementation added, found or had to reconcile.
+
+### What was built
+
+| Surface | What exists now |
+|---|---|
+| Migration `a1b7c3e94f6d` | `public.jobs` — RLS enabled and forced, three policies, a client write guard, the composed ceiling as a CHECK constraint |
+| `app/jobs/contract.py` | The contract, the two ceilings, `JobStatus`, `JobHandler`, `JobContext`, and the retry classification |
+| `app/jobs/registry.py` | Handler registry; refuses a duplicate type, a blank type, or a ceiling outside `1..2` **at import** |
+| `app/jobs/handlers.py` | `TenantProbeHandler` — the trivial handler the step's scope calls for |
+| `app/jobs/service.py` | Enqueue, on the tenant connection, refusing an unknown type at the request |
+| `app/jobs/worker.py` | The loop, the lease heartbeat, the retry policy, signal handling, and the identity check |
+| `app/repositories/jobs.py` | Tenant-scoped enqueue and read |
+| `app/repositories/job_dispatch.py` | The bounded cross-tenant path: claim, extend lease, record outcome |
+| `infrastructure/` | Created. `README.md` and `process-model.md` — the first thing in the repository to need the directory §9 has always specified |
+
+Documented in [[Async Job Execution]] and [[Table - jobs]].
+
+### Three things found by building it rather than by planning it
+
+**1. A `SECURITY DEFINER` role guard silently never fires.** The client write guard on `jobs` tests `current_user = 'authenticated'`. Written as `SECURITY DEFINER` — copying `app_messages_immutable` — `current_user` is the function's *owner*, so it read `postgres` on every call and refused nothing. It passed a reading and protected nothing; a test caught it against a real database. It is now `SECURITY INVOKER`, and the trap is recorded in [[RLS Policy Pattern#A grant given for erasure is a grant given for everything]] because it will recur on the next table whose only client write is an erasure.
+
+**2. `coalesce` will not unify `json` with `jsonb`.** An INSERT casts on assignment and hides the difference; `coalesce(%s, result)` does not. Fixed with an explicit `::jsonb`. Worth recording only because the failure appears in the one statement that is not an insert.
+
+**3. A rolled-back transaction reverts `SET ROLE`.** In tests, a refused statement followed by `rollback()` left the session as `projectone_api`, which holds no privileges at all — so the *next* assertion failed with "permission denied" and looked like the test under examination breaking. It is the same fail-closed property the request path depends on, surfacing where nobody expects it. `session_as` in `tests/test_job_queue.py` now opens one connection per refused statement.
+
+### Where the ADR needed reconciling, and how
+
+ADR-005 §5 constraint 4 requires the user's RLS context to be established *before execution begins*, stated as an ordering guarantee. ADR-005 §4 separately requires the handler to open **short, discrete** sessions, and rejects holding one transaction across a multi-minute render.
+
+Read literally together, the first suggests a session open at invocation and the second forbids exactly that. The implementation satisfies both: the worker opens an RLS-subject session and **proves** the actor's live membership through the same policies the handler will meet, closes it, and then invokes the handler with a *factory* that opens further short sessions as the same user. Identity is established and verified before the handler's first statement; no transaction is held while the long work runs.
+
+This is recorded here rather than settled quietly because it is the one place the implementation had to choose a reading. **It is reported to the project owner as part of this step's review.** If the intended meaning was a session held open at invocation, that is a change to §4's transaction shape and belongs in a superseding ADR rather than in code.
+
+### Deliberately not built
+
+- **No workflow integration.** The only handler is an infrastructure probe — [[STEP-31 Workflow Async Execution]] writes the first real one.
+- **No HTTP surface for jobs.** Nothing routes to `JobService` yet, because nothing yet has a reason to enqueue.
+- **No system-originated jobs.** Every job carries an enqueuing user; the service-actor question is deferred to [[STEP-74 Workflow Scheduling and Triggers]] with its own ADR (ADR-005 §4).
+- **No hosting decision.** The process model is documented and runnable; which platform runs it is [[STEP-82 Staging Environment and Deployment Pipeline]]'s.
+- **No `LISTEN`/`NOTIFY`.** Available later without a superseding ADR; adopting it now would be optimizing without measurement (§17).
+
+### Known gap, stated rather than left implicit
+
+**A worker that is not running logs nothing.** Its in-process sibling is closed — ten consecutive dispatch failures stop the process with a non-zero exit — but external liveness monitoring is [[STEP-81 Observability and Alerting]]'s, and until then a platform where nothing finishes and nothing errors is possible. Recorded in `infrastructure/process-model.md` and in [[Async Job Execution]].
+
+### Validation
+
+| Check | Result |
+|---|---|
+| `ruff check .` | Passed |
+| `ruff format --check .` | Passed |
+| `mypy app` (strict) | Passed — 93 source files |
+| `pytest` | **1120 passed, 4 skipped** against PostgreSQL 17 |
+| New tests | 4 files, 79 tests: contract and ceilings, the queue against a real database, the worker, and the architectural boundary |
+
+The suite grew from 1039 to 1120. The four skips are the opt-in live-R2 integration tests, unchanged.
 
 ## Risks and Governance Gates
 
