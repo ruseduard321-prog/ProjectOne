@@ -2,8 +2,8 @@
 title: Full Stack Engineer
 category: AI/Skills
 status: stable
-version: "1.0"
-last_updated: 2026-07-31
+version: "1.1"
+last_updated: 2026-08-17
 tags: [ai, engineering, frontend, backend]
 aliases: []
 ---
@@ -20,9 +20,9 @@ Implements end-to-end features spanning frontend, backend, and their integration
 
 ## Scope
 
-**In scope:** Server/Client Component boundary decisions (§11), component composition and props design, custom hooks, routers/services/dependency-injection structure on the backend (§12), API endpoint implementation following REST standards (§14), wiring frontend to backend for a given feature.
+**In scope:** Server/Client Component boundary decisions (§11), component composition and props design, custom hooks, routers/services/dependency-injection structure on the backend (§12), API endpoint implementation and modification following REST standards (§14), the repository, job, storage and workflow code a feature rests on where that code implements or changes feature behavior, and wiring frontend to backend for a given feature — applied both to surfaces being added and surfaces that already ship.
 
-**Out of scope:** deciding whether a feature needs new architecture at all (owned by [[Architecture Reviewer]] — Full Stack Engineer implements against an Accepted ADR, it doesn't approve one), schema/migration design (owned by [[Database Engineer]] — Full Stack Engineer consumes an approved schema, doesn't design it unilaterally), security-sensitive logic review (owned by [[Security Reviewer]]), AI/agent-specific implementation rules (owned by [[AI Systems Engineer]] for the cost-governance and approval-policy layer specifically), final quality gate (owned by [[Code Reviewer]] — Full Stack Engineer self-checks against the same standards while building, but doesn't replace the independent review pass).
+**Out of scope:** a change that alters no feature behavior — a standalone refactor, a rename or file move, a test-only change, a CI or tooling configuration change, a documentation-only change (owned by [[Code Reviewer]] on the finished diff, and [[Documentation Keeper]] for the vault) — deciding whether a feature needs new architecture at all (owned by [[Architecture Reviewer]] — Full Stack Engineer implements against an Accepted ADR, it doesn't approve one), schema/migration design (owned by [[Database Engineer]] — Full Stack Engineer consumes an approved schema, doesn't design it unilaterally), security-sensitive logic review (owned by [[Security Reviewer]]), AI/agent-specific implementation rules (owned by [[AI Systems Engineer]] for the cost-governance and approval-policy layer specifically), final quality gate (owned by [[Code Reviewer]] — Full Stack Engineer self-checks against the same standards while building, but doesn't replace the independent review pass).
 
 ## Governing Standards
 
@@ -33,11 +33,44 @@ Implements end-to-end features spanning frontend, backend, and their integration
 
 ## Trigger Conditions
 
-Activates automatically when a change:
+Activates on implementation work that **adds or changes feature behavior**. The work may land in a single layer or span several; what triggers this skill is behavior being built or altered, never a path being touched.
 
-- Implements a new feature, page, component, endpoint, or service.
-- Wires an existing frontend surface to a new or changed backend endpoint.
-- Is explicitly requested ("build this feature", "implement this endpoint").
+**Feature surface — added or changed**
+
+- A feature, page, component, endpoint, or service that is new.
+- A change to what a shipped endpoint does — request/response shape, status codes, validation, or pagination (`apps/api/app/routers/`, and the schemas backing it in `apps/api/app/schemas/`). §14 requires the contract to stay stable and backward compatible, so this is a contract decision rather than an implementation detail. `API_VERSION` and `API_PREFIX` in `apps/api/app/core/api.py` are the conventions every endpoint inherits; changing either is a public API contract change and **Critical** under §21.
+- A change to business logic in `apps/api/app/services/`, whether or not a router changes alongside it. §12 puts the rules there and keeps them HTTP-independent, so a service-only change is still a change to what the feature does.
+- A change to what a shipped page or component does (`apps/web/src/app/`, `apps/web/src/components/`) — including a Server Component becoming a Client Component or the reverse, which spends a §11 default, and a change to the props or composition of a component other components already consume.
+
+**Frontend/backend wiring**, in either direction — a new page consuming a shipped endpoint, or a shipped page consuming a new one — and the typed client layer carrying the contract between them (`apps/web/src/lib/api.ts` and the `*-api.ts` modules built on it). Drift between that layer and the endpoint is a wiring defect with no compiler to catch it.
+
+**Next.js surfaces carrying feature behavior**
+
+- Server actions and route handlers — `actions.ts` and `route.ts` under `apps/web/src/app/`. These carry logic across the network boundary the way a router does, and inherit §12's and §14's rules rather than §11's alone.
+- The async-state boundaries §11 requires — `loading.tsx`, `error.tsx`, `not-found.tsx`, and the empty states inside a component. Adding, removing, or changing what one of these presents is feature behavior.
+
+**Supporting layers, when they implement or change feature behavior** — `apps/api/app/repositories/`, `apps/api/app/jobs/`, `apps/api/app/storage/`, `apps/api/app/workflows/`. A repository method that changes what data a feature can reach, a job handler that changes what runs unattended, or a storage key scheme that changes where a user's asset lives is feature implementation that never reaches a URL. **The path alone is not the trigger:** a diff confined to these directories that changes no behavior does not activate this skill.
+
+**Explicit request** — "build this feature", "implement this endpoint", "change this feature", "modify this flow", "update this endpoint's / service's / component's behavior".
+
+**Not a trigger.** A standalone refactor, a rename or file move, a test-only change, a CI or tooling configuration change, and a documentation-only change do not activate this skill — none of them changes what a feature does. Each activates only where it forms part of an explicit feature implementation request, and each has its own owner: [[Code Reviewer]] for scope discipline and coverage on a finished diff, [[Documentation Keeper]] for the vault.
+
+**Where another skill leads.** None of these removes implementation work from this skill — Full Stack Engineer still writes the surrounding feature code — but the decision inside each boundary is not this skill's to make:
+
+- **Diagnosis** — [[Bug Investigator]] leads while an unexplained defect is being investigated and hands an established root cause here. This skill implements the fix; it does not decide what the fix is.
+- **Security and authorization** — [[Security Reviewer]] (Critical) leads on the trust boundary: the proxy and session-cookie layer (`apps/web/src/proxy.ts`, `apps/web/src/lib/session-cookies.ts`), auth and permission machinery, and the security posture of anything built here.
+- **Schema and migrations** — [[Database Engineer]] (Critical) owns migration design. This skill implements against an approved schema and does not reshape one to fit a feature.
+- **Architecture not yet approved** — [[Architecture Reviewer]] (Critical) decides whether a new module boundary, dependency, or cross-cutting pattern is permitted (§7's ADR gate). Implementation proceeds only against an `Accepted` ADR.
+- **AI behavior** — [[AI Systems Engineer]] leads on cost governance, retry limits and approval policy where a feature reaches an AI call; this skill implements the application code around it.
+
+**What the check sequence does not cover.** The nine checks below are §11/§12/§14 checks. They say nothing about job retry ceilings, storage key isolation, workflow approval defaults, migration safety, or AI spend limits. Each of those routes to a named owner rather than being treated as cleared because these nine passed:
+
+- AI-related job retry ceilings, and AI spend limits — [[AI Systems Engineer]].
+- Non-AI job retry behavior this checklist does not cover — [[Code Reviewer]], on the finished diff.
+- Storage or tenant isolation — [[Security Reviewer]].
+- Migration safety — [[Database Engineer]].
+- AI/agent workflow approval defaults — [[AI Systems Engineer]].
+- Any remaining finished-diff concern — [[Code Reviewer]].
 
 ## Check Sequence
 
@@ -69,7 +102,8 @@ Stops and asks (per §33–34) when:
 - [[Database Engineer]] — Full Stack Engineer consumes schema Database Engineer has approved; does not design migrations itself.
 - [[Security Reviewer]] — reviews the security-sensitive portions of anything Full Stack Engineer builds; Critical and leads over this skill's self-check.
 - [[AI Systems Engineer]] — leads when the feature triggers an AI call; Full Stack Engineer implements the surrounding application code.
-- [[Code Reviewer]] — provides the independent review pass on Full Stack Engineer's output; the two checklists overlap by design (§11/§12/§14 here, §21/§36 there) but Code Reviewer is the one whose verdict is recorded as the review.
+- [[Bug Investigator]] — leads while an unexplained defect is being diagnosed, then hands the root-cause report here for the fix; Full Stack Engineer implements the fix, it does not decide what the fix is.
+- [[Code Reviewer]] — provides the independent review pass on Full Stack Engineer's output; the two checklists overlap by design (§11/§12/§14 here, §21/§36 there) but Code Reviewer is the one whose verdict is recorded as the review. The two fire at different moments — this skill while the change is being built, Code Reviewer on the finished diff — so both firing on one change is the sequence working, not a routing conflict.
 
 ---
 
