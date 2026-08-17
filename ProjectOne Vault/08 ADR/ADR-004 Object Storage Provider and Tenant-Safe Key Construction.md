@@ -142,6 +142,6 @@ Excellent for tests, and genuinely useful as a future test double. **Rejected as
 ## Navigation
 
 - **Previous:** [[ADR-003 Product Visual Language and Token Semantics]]
-- **Next:** —
+- **Next:** [[ADR-005 Async Job Queue and Worker Execution Model]]
 - **Parent:** [[Home]]
 - **Related Notes:** [[STEP-27 Storage Provider Abstraction]] · [[ADR-001 Technology Stack]] · [[Environment and Secrets]] · [[Backend Architecture]] · [[Infrastructure]]
