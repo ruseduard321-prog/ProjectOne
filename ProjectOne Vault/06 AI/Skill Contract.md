@@ -2,15 +2,15 @@
 title: Skill Contract
 category: AI/Skills
 status: stable
-version: "1.0"
-last_updated: 2026-07-31
+version: "1.1"
+last_updated: 2026-08-17
 tags: [ai, governance, engineering]
 aliases: ["Skill Runtime Contract", "Shared Skill Contract"]
 ---
 
 # Skill Contract
 
-The shared execution model every ProjectOne Skill follows — both the vault specification note (`06 AI/Skills/*.md`) and its `.claude/skills/` runtime wrapper. This exists so five independently-authored skills don't drift into five different behaviors. Any new skill added after these five must conform to this contract before it is considered complete.
+The shared execution model every ProjectOne Skill follows — both the vault specification note (`06 AI/Skills/*.md`) and its `.claude/skills/` runtime wrapper. This exists so independently-authored skills don't drift into inconsistent behaviors. Any skill added later must conform to this contract before it is considered complete.
 
 ## Dual-Layer Architecture
 
@@ -51,7 +51,7 @@ Every `.claude/skills/<skill-slug>/SKILL.md` contains:
 1. **YAML frontmatter** — `name`, `description` (written so Claude Code's auto-trigger matching fires on the right tasks — specific, not generic), and a `classification: critical | advisory` field.
 2. **Pointer line** — one line linking back to the vault spec as the source of truth for reasoning; the wrapper does not re-explain *why*.
 3. **Trigger conditions** — restated in concrete, operational form (file globs, action types) matching the vault spec's Trigger Conditions section exactly.
-4. **Check sequence** — operational steps, matching the vault spec's Check Sequence exactly, written so they can actually be executed against this repository's current state (docs/ADRs today; code once `apps/`/`packages/` exist).
+4. **Check sequence** — operational steps, matching the vault spec's Check Sequence exactly, written so they can actually be executed against the repository as it exists when the skill runs, never against a planned or assumed future shape of it.
 5. **Output format** — for Critical skills: a clearly labeled block/pass verdict with the specific rule violated. For Advisory skills: a findings list ranked by severity, never a block verdict.
 6. **Escalation** — identical trigger logic to the vault spec's Escalation section: when to stop and ask rather than proceed.
 
