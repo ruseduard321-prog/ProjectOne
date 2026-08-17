@@ -6,14 +6,15 @@ version: "2.0"
 last_updated: 2026-08-17
 tags: [engineering, workflow, build-step, backend, infrastructure]
 step_id: STEP-30
-step_status: Not Started
+step_status: In Progress
 detail_level: full
 phase: "Platform Substrate"
 ---
 
 # STEP-30 — Async Job Infrastructure
 
-**Status:** Not Started
+**Status:** In Progress
+**Task 1 complete; Tasks 2–8 not started.** [[ADR-005 Async Job Queue and Worker Execution Model]] was `Accepted` by the project owner on 2026-08-17, clearing the §7 gate that blocked this step. Implementation is **paused at the owner's instruction**, not blocked: nothing is outstanding from anyone, and Tasks 2–8 begin when the owner says to start them.
 **Phase:** Platform Substrate — The absent infrastructure every media, approval and automation capability sits behind: storage, async execution, and enough notification to make an asynchronous run visible.
 **Detail level:** full — expanded 2026-08-17 by [[STEP-29 Asset Management UI]], per [[Execution Protocol#The Loop]] item 11, against `main` @ `1a5f1e3`.
 
@@ -152,7 +153,11 @@ Every proof in [[#Required Tests and Proofs]], plus:
 
 ## Decisions
 
-Everything in [[#Task 1 — ADR-005 — the queue, and the second process]] is a decision this step cannot take alone, and none is resolved. They are deliberately gathered into one ADR rather than listed here as D1–D4, because they are a single coupled choice: the queue, the framework, the tenancy mechanism and the deployment shape each constrain the others.
+Everything in [[#Task 1 — ADR-005 — the queue, and the second process]] is a decision this step cannot take alone. They are deliberately gathered into one ADR rather than listed here as D1–D4, because they are a single coupled choice: the queue, the framework, the tenancy mechanism and the deployment shape each constrain the others.
+
+**Resolved 2026-08-17.** All four are answered in [[ADR-005 Async Job Queue and Worker Execution Model]], which the owner moved to `Accepted` on that date. The decisions are now binding on this step: a PostgreSQL queue claimed with `FOR UPDATE SKIP LOCKED`, no task framework, a worker as a second entrypoint of the API application, tenancy carried as the enqueuing user's identity replayed through `authenticated_as`, and a cross-tenant dispatch path bounded to the `jobs` table by six constraints of which three must be proven by test.
+
+Two numbers this step must honour, set at review: **2 job attempts per enqueue**, giving a composed ceiling of **60 upstream provider requests**; and a job whose actor lost workspace membership **fails terminally**, never reaching its handler.
 
 ## Required Tests and Proofs
 
@@ -169,7 +174,7 @@ A job can be enqueued, executed by a separate worker, retried within a bounded c
 
 Additionally, per [[Execution Protocol#Step Completion]]:
 
-- [ ] **ADR-005 `Accepted` by the project owner** before implementation began.
+- [x] **ADR-005 `Accepted` by the project owner** before implementation began — 2026-08-17.
 - [ ] The composed retry ceiling stated as a number, with its arithmetic.
 - [ ] Required CI green, and the manual checklist complete.
 - [ ] Owner approval obtained — this step is Critical.

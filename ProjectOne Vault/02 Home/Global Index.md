@@ -106,6 +106,7 @@ Every note in the vault, grouped by folder. This is the exhaustive map — for c
 - [[ADR-002 Trusted Proxy and Client Address Resolution]] — `Accepted`
 - [[ADR-003 Product Visual Language and Token Semantics]] — `Accepted`
 - [[ADR-004 Object Storage Provider and Tenant-Safe Key Construction]] — `Accepted`
+- [[ADR-005 Async Job Queue and Worker Execution Model]] — `Accepted`
 
 ## 09 Development
 
