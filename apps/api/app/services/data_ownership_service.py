@@ -714,6 +714,91 @@ class WorkflowStepRunStore:
             return cursor.rowcount
 
 
+class JobStore:
+    """A workspace's asynchronous jobs: exportable and erasable.
+
+    Registered by [[STEP-30 Async Job Infrastructure]] in the same change that
+    creates the table, following the precedent [[STEP-20 Projects Schema and
+    Lifecycle]] set rather than the earlier pattern of registering late and
+    discovering the gap a step afterwards.
+
+    A job is the record of work a workspace asked the platform to do out of band.
+    It is the same class of data as a workflow run -- what they automated and when
+    -- and it carries no retention exception, so it is erased like any other
+    workspace data.
+
+    **The export carries the payload and the result**, both of which are the
+    workspace's own content, and deliberately **not** `claimed_by`: which worker
+    process held a job is platform operations detail, not the user's data, and it
+    names an internal host.
+    """
+
+    name = "jobs"
+
+    def export(
+        self, connection: psycopg.Connection, workspace_id: uuid.UUID
+    ) -> list[ExportedRecord]:
+        """Return every live job in a workspace."""
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT id, job_type, status, payload, result, attempts, max_attempts, "
+                "last_error, created_at, finished_at "
+                "FROM public.jobs "
+                "WHERE workspace_id = %s AND deleted_at IS NULL ORDER BY created_at",
+                (workspace_id,),
+            )
+
+            return [
+                {
+                    "id": str(row[0]),
+                    "job_type": row[1],
+                    "status": row[2],
+                    "payload": row[3],
+                    "result": row[4],
+                    "attempts": row[5],
+                    "max_attempts": row[6],
+                    "last_error": row[7],
+                    "created_at": row[8].isoformat(),
+                    "finished_at": None if row[9] is None else row[9].isoformat(),
+                }
+                for row in cursor
+            ]
+
+    def erase(
+        self,
+        connection: psycopg.Connection,
+        workspace_id: uuid.UUID,
+        _storage: StorageProvider,
+    ) -> int:
+        """Soft-delete every job in a workspace.
+
+        An `UPDATE`, never a `DELETE` — the table has no DELETE policy and
+        `authenticated` holds no DELETE grant.
+
+        This works for two separate reasons, and both had to be got right in the
+        creating migration. `jobs_select_same_workspace` does **not** filter
+        `deleted_at IS NULL`, so the row stays visible to the statement writing
+        it — the defect that cost STEP-11a and STEP-19 a step each. And
+        `app_jobs_queue_state_not_client_writable` permits `deleted_at` while
+        refusing every other column, so this is the one client write the table
+        accepts. `test_erasure_is_the_one_client_write_jobs_accepts` asserts
+        both halves.
+
+        **A soft-deleted job stops being claimable**, because the dispatcher's
+        claim filters `deleted_at IS NULL`. An erasure therefore also drains the
+        workspace's queue, which is the correct behaviour: a workspace that asked
+        to be cleared should not have work still running on its behalf afterwards.
+        """
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE public.jobs SET deleted_at = now() "
+                "WHERE workspace_id = %s AND deleted_at IS NULL",
+                (workspace_id,),
+            )
+
+            return cursor.rowcount
+
+
 class ConversationStore:
     """A workspace's conversations: exportable and erasable.
 
@@ -949,4 +1034,5 @@ REGISTERED_STORES: tuple[ExportableStore, ...] = (
     WorkflowStepRunStore(),
     ConversationStore(),
     MessageStore(),
+    JobStore(),
 )

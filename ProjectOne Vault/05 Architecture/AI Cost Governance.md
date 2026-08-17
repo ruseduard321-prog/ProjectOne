@@ -249,7 +249,7 @@ Stated so the next reader does not assume otherwise:
 
 ## Navigation
 
-- **Previous:** [[AI Router Implementation]]
+- **Previous:** [[Async Job Execution]]
 - **Next:** [[Web Session Handling]]
 - **Parent:** [[Architecture MOC]]
 - **Related Notes:** [[AI Router Implementation]] · [[AI Providers]] · [[RLS Policy Pattern]] · [[Table - ai_spend_records]] · [[Table - ai_budgets]] · [[Table - ai_shutdown_switches]] · [[Security Architecture]]

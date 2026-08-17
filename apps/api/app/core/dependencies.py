@@ -29,11 +29,14 @@ from app.ai.router import AIRouter
 from app.core.config import Settings, get_settings
 from app.core.permissions import WorkspacePermission, WorkspaceRole
 from app.core.security import InvalidTokenError
+from app.jobs.registry import JobHandlerRegistry, build_registry
+from app.jobs.service import JobService
 from app.repositories.ai_spend import AISpendRepository
 from app.repositories.audit import AuditRepository
 from app.repositories.chat_turns import ChatTurnRepository
 from app.repositories.conversations import ConversationRepository
 from app.repositories.database import DatabaseRepository
+from app.repositories.jobs import JobRepository
 from app.repositories.memberships import MembershipRepository
 from app.repositories.projects import ProjectRepository
 from app.repositories.provider_credentials import ProviderCredentialRepository
@@ -568,6 +571,48 @@ def get_ai_spend_service(repository: AISpendRepositoryDep) -> AISpendService:
 
 
 AISpendServiceDep = Annotated[AISpendService, Depends(get_ai_spend_service)]
+
+
+def get_job_repository(connection: TenantConnectionDep) -> JobRepository:
+    """Construct the job repository over the request's tenant connection.
+
+    `TenantConnectionDep`, never the privileged one -- and here the distinction
+    carries more than usual. Enqueueing on the tenant connection is what makes a
+    job commit in the same transaction as the row that motivated it, which is the
+    first property ADR-005 §1 chose a database-backed queue for.
+
+    The privileged path to this table exists exactly once, in
+    `app/repositories/job_dispatch.py`, and is deliberately **not** wired here:
+    nothing on the request path may claim, lease or settle a job.
+    """
+    return JobRepository(connection)
+
+
+JobRepositoryDep = Annotated[JobRepository, Depends(get_job_repository)]
+
+
+@lru_cache
+def _job_registry() -> JobHandlerRegistry:
+    """Return the process-wide handler registry.
+
+    Cached because building it validates every handler's retry ceiling, and that
+    answer cannot change within a process -- the registry is fixed at import.
+    Zero-argument so `lru_cache` has something hashable to key on, the same shape
+    as `_cached_storage_provider`.
+    """
+    return build_registry()
+
+
+def get_job_service(repository: JobRepositoryDep) -> JobService:
+    """Construct the enqueue service.
+
+    Takes the registry rather than importing it, so a test can enqueue against
+    handlers of its own without patching module state (CLAUDE.md §12).
+    """
+    return JobService(repository, _job_registry())
+
+
+JobServiceDep = Annotated[JobService, Depends(get_job_service)]
 
 
 def get_workflow_repository(connection: TenantConnectionDep) -> WorkflowRepository:

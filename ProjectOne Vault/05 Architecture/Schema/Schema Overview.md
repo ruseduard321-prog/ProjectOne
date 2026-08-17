@@ -33,6 +33,7 @@ As of [[STEP-22 Minimum Workflow Engine]]:
 | [[Table - assets]] | A file or document belonging to one project | Yes | ✅ Enabled + forced |
 | [[Table - workflow_runs]] | One execution of a workflow definition | Yes | ✅ Enabled + forced |
 | [[Table - workflow_runs\|workflow_step_runs]] | One step of one run, with its output | Yes | ✅ Enabled + forced |
+| [[Table - jobs]] | The asynchronous job queue — enqueued by the API, executed by a worker | Yes | ✅ Enabled + forced (**plus a client write guard**) |
 
 Two tables deliberately break [[Table Conventions]], and in both cases the departure **is** the security property:
 
@@ -91,6 +92,7 @@ Applied in order. History is append-only: a correction is a new migration, never
 | `d1f70a4c62be` | Drop the `deleted_at` filter from the `provider_credentials` SELECT policy, which had made revoking a key impossible for every role | [[STEP-19 Settings and BYOK UI]] |
 | `e5a91c34d7f2` | Create `projects` and `assets` with RLS enabled and forced, the lifecycle CHECK constraint, and the composite foreign key binding an asset to its project's workspace | [[STEP-20 Projects Schema and Lifecycle]] |
 | `f3c82b19d4a7` | Create `workflow_runs` and `workflow_step_runs` with RLS enabled and forced, two status CHECK constraints, the persisted step `output`, and composite foreign keys binding a run to its project and a step to its run | [[STEP-22 Minimum Workflow Engine]] |
+| `a1b7c3e94f6d` | Create `jobs` — the queue — with RLS enabled and forced, an INSERT policy pinning `enqueued_by` to the caller, the composed retry ceiling as a CHECK constraint, and a trigger making queue state unwritable from the client path | [[STEP-30 Async Job Infrastructure]] |
 
 Apply with `./scripts/migrate.sh up` (or `.\scripts\migrate.ps1 up`); see `scripts/README.md`.
 
@@ -110,6 +112,9 @@ Apply with `./scripts/migrate.sh up` (or `.\scripts\migrate.ps1 up`); see `scrip
 | `trg_assets_touch_row` | Trigger | Attaches `touch_row()` to `assets` |
 | `trg_workflow_runs_touch_row` | Trigger | Attaches `touch_row()` to `workflow_runs` |
 | `trg_workflow_step_runs_touch_row` | Trigger | Attaches `touch_row()` to `workflow_step_runs` |
+| `trg_jobs_touch_row` | Trigger | Attaches `touch_row()` to `jobs` |
+| `app_jobs_queue_state_not_client_writable()` | Function (plpgsql, **SECURITY INVOKER**) | Refuses every client write to `jobs` except the soft delete — see [[Table - jobs#Queue state is not client-writable]] |
+| `app_jobs_queue_state_not_client_writable` | Trigger | Attaches that guard to `jobs`, firing **before** `touch_row` |
 
 `ai_spend_records` deliberately has **no** `touch_row` trigger: it is append-only, so there is no UPDATE for one to fire on.
 
@@ -125,6 +130,7 @@ Apply with `./scripts/migrate.sh up` (or `.\scripts\migrate.ps1 up`); see `scrip
 
 ## Outstanding
 
+- **Jobs have no HTTP surface.** [[STEP-30 Async Job Infrastructure]] built the table, the dispatcher, the worker and the enqueue service; nothing routes to them yet, because the step's only handler is an infrastructure probe. [[STEP-31 Workflow Async Execution]] is the first real caller.
 - **Workflow runs have no UI.** [[STEP-22 Minimum Workflow Engine]] built the schema, engine and routes; they are reachable over HTTP only. A surface for starting and approving runs is later work.
 - **`assets.storage_path` points at nothing.** No storage backend is chosen yet, so the column is an opaque locator a later step defines. The step that adds a backend also owes it a deletion path — [[CLAUDE|CLAUDE.md]] §16 erasure is end-to-end, and soft-deleting the row does not remove the bytes.
 - **Workspace creation has no service path.** The INSERT policies deliberately cannot bootstrap a workspace and its first membership row from a client — [[STEP-13 Auth Users Workspaces Endpoints]] owns the audited path.

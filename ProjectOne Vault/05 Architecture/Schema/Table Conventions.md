@@ -124,6 +124,8 @@ workflow_runs      → projects
 workflow_step_runs → workflow_runs
 ```
 
+A table referencing only `workspaces` — `jobs`, added by [[STEP-30 Async Job Infrastructure]] — has no such constraint and stays in alphabetical position.
+
 `assets` before `projects` was satisfied by alphabetical order, which [[STEP-20 Projects Schema and Lifecycle]] recorded as *luck rather than design*. [[STEP-22 Minimum Workflow Engine]] is where that luck ran out: `workflow_runs` sorts after `projects` but must be deleted before it, so the list was explicitly reordered.
 
 The failure surfaces **in teardown**, so it appears in whichever database test happened to run last rather than in anything related to the new table — a slow way to find a one-line omission. `test_teardown_completeness` catches a *missing* entry; it does **not** catch a mis-ordered one, so read the dependency graph above before inserting anything.
