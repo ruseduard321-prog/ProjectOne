@@ -12,27 +12,27 @@ Shared execution model: `ProjectOne Vault/06 AI/Skill Contract.md`.
 
 ## Trigger Conditions
 
-CLAUDE.md §6a routes "a non-trivial diff, or any change presented as ready for review" here. **A diff is non-trivial unless every hunk falls under "Not a trigger" below** — triviality is a property of the whole diff, not of one hunk.
+**Non-trivial diff, or any change presented as ready for review.** A diff is non-trivial unless *every* hunk falls under "Not a trigger" below — evaluate the whole diff, never a single hunk in isolation.
 
 **Application code** — `apps/api/app/`, `apps/web/src/`, `packages/`, `scripts/`:
 
-- **Adds** a module, endpoint, component, service, repository, route, or hook.
-- **Modifies** already-shipped code — signature changes across call sites, widened public interface, changed default, module moved between layers (§8 inward dependency flow), rename reaching outside its own file.
-- **Deletes** code — module, function, endpoint, component, export, or branch. Review what still depends on it, whether removal is in the approved task (§29/§35 cut both ways), and whether its tests were deleted with it.
+- **Adds** — module, endpoint, component, service, repository, route, hook.
+- **Modifies** already-shipped code — signature change across call sites, widened public interface, changed default, module moved between layers (§8), rename reaching outside its own file.
+- **Deletes** — module, function, endpoint, component, export, branch; check surviving dependents and tests removed alongside it (§29, §35).
 
 **Tests** — `apps/api/tests/`, `apps/web/src/**/*.test.ts(x)`, `conftest.py`, `fakes.py`:
 
-- Any test-only diff. Nothing else reviews it, and §18 makes the test the evidence.
+- Any test-only diff, including one with no accompanying source change.
 - Flag: removed assertions; `pytest.mark.skip` / `xfail` / `.skip` / `.only`; a fixture or fake widened until it stops constraining; a test edited to match changed code rather than the code fixed.
-- Guard tests carry the weight of the rule, not their diff size: `test_api_conventions.py`, `test_ci_configuration.py`, `test_governance_docs_sync.py`.
+- Guard tests: `test_api_conventions.py`, `test_ci_configuration.py`, `test_governance_docs_sync.py`.
 
 **Quality-gate configuration**
 
-- `.github/workflows/ci.yml` — job renames (branch protection matches required checks by literal name, so a rename removes the gate while CI stays green), removed steps, steps made conditional or non-blocking.
-- The bar itself: `[tool.ruff.lint]` `select`/`ignore`/`per-file-ignores` and `[tool.mypy] strict` in `apps/api/pyproject.toml`; `"strict"` in `apps/web/tsconfig.json`; `globalIgnores`/rule overrides in `apps/web/eslint.config.mjs`; `include` globs and `passWithNoTests` in `apps/web/vitest.config.mts`; `[tool.pytest.ini_options]`.
-- Infrastructure/deployment configuration stays **Critical** under §21 regardless of this skill's Advisory verdict — check 8 flags it for owner review.
+- `.github/workflows/ci.yml` — job renames, removed steps, steps made conditional or non-blocking.
+- Lint/type/test configuration — `[tool.ruff.lint]` `select`/`ignore`/`per-file-ignores` and `[tool.mypy] strict` in `apps/api/pyproject.toml`; `"strict"` in `apps/web/tsconfig.json`; `globalIgnores` and rule overrides in `apps/web/eslint.config.mjs`; `include` globs and `passWithNoTests` in `apps/web/vitest.config.mts`; `[tool.pytest.ini_options]`.
+- Infrastructure/deployment configuration → **Critical** under §21 regardless of this skill's Advisory verdict; check 8 routes it to owner review.
 
-**Presented as done** — described as complete, finished, or ready for review, **whatever its size** (fires independently of the non-trivial threshold).
+**Presented as done** — described as complete, finished, or ready for review, **whatever its size**; fires independently of the non-trivial threshold above.
 
 **Explicit request** — "review this", "check this against our standards".
 
