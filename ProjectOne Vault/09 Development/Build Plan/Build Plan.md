@@ -2,15 +2,15 @@
 title: Build Plan
 category: Development
 status: stable
-version: "4.3"
-last_updated: 2026-08-16
+version: "4.4"
+last_updated: 2026-08-17
 tags: [engineering, documentation, workflow]
 aliases: ["Implementation Plan", "Build Roadmap", "Step Index"]
 ---
 
 # ProjectOne Build Plan
 
-The ordered execution index taking ProjectOne from an empty repository to a verified product in the hands of real users. **94 sequential steps** — 34 delivered (29 numbered plus five inserted by owner decision: STEP-11a, STEP-16a, STEP-12a, STEP-16b, STEP-25a), and **60 future steps, STEP-30 through STEP-89**, each sized for a single Claude Code session. Three further step notes are **superseded and carry no status**, so they are deliberately not part of that 94 — they are kept as history in [[#Superseded Step Numbering]].
+The ordered execution index taking ProjectOne from an empty repository to a verified product in the hands of real users. **94 sequential steps** — 35 delivered (30 numbered plus five inserted by owner decision: STEP-11a, STEP-16a, STEP-12a, STEP-16b, STEP-25a), and **59 future steps, STEP-31 through STEP-89**, each sized for a single Claude Code session. Three further step notes are **superseded and carry no status**, so they are deliberately not part of that 94 — they are kept as history in [[#Superseded Step Numbering]].
 
 **The future half of this plan was rebuilt on 2026-08-15**, by owner decision, against the [[Product Coverage Audit]]. That audit measured the complete intended product against what `main` actually implements and found 24 capabilities Missing, 14 Foundation/Partial and — the finding that forced the rebuild — several P0 prerequisites with **no executable step anywhere**: file storage, async execution, the AI capability model beyond chat completion, and the Memory System. A three-step tail could not carry them.
 
@@ -76,7 +76,7 @@ Status appears in two places — the step note and the row below — and they mu
 | STEP-27 | [[STEP-27 Storage Provider Abstraction]] | Done | full |
 | STEP-28 | [[STEP-28 Asset Upload and Download]] | Done | full |
 | STEP-29 | [[STEP-29 Asset Management UI]] | Done | full |
-| STEP-30 | [[STEP-30 Async Job Infrastructure]] | In Progress | full |
+| STEP-30 | [[STEP-30 Async Job Infrastructure]] | Done | full |
 | STEP-31 | [[STEP-31 Workflow Async Execution]] | Not Started | outline |
 | STEP-32 | [[STEP-32 Media Processing Pipeline]] | Not Started | outline |
 | STEP-33 | [[STEP-33 Storage Quotas and Lifecycle]] | Not Started | outline |
@@ -661,7 +661,7 @@ The fix re-throws `ApiUnreachableError` and leaves every other error on the exis
 
 **Two closing records were written late and one is still missing.** STEP-29's status stayed `In Progress` in both places after its merge, and was corrected by a documentation-only Pull Request on 2026-08-17 — the same lag [[STEP-28 Asset Upload and Download]] had. Neither STEP-27 nor STEP-28 has a Current State entry at all; that gap is left standing rather than back-filled here, because writing another step's completion record inside this one is the scope widening [[CLAUDE|CLAUDE.md]] §29 forbids. It is an open item for the owner, not a silent omission.
 
-**Work can now outlive the request that started it** ([[STEP-30 Async Job Infrastructure]], `In Progress` — implemented 2026-08-17, awaiting CI, review and the owner's approval). The queue is a **table**: `public.jobs`, claimed with `SELECT ... FOR UPDATE SKIP LOCKED`, with no broker, no new dependency and no new credential class. [[ADR-005 Async Job Queue and Worker Execution Model]] chose it for transactional enqueue above all — a job and the row that motivated it commit together, or neither exists, which every external broker breaks and only an outbox repairs.
+**Work can now outlive the request that started it** ([[STEP-30 Async Job Infrastructure]], `Done` — merged as `7ae8d58` via PR #26 on 2026-08-17, with all three required checks green). The queue is a **table**: `public.jobs`, claimed with `SELECT ... FOR UPDATE SKIP LOCKED`, with no broker, no new dependency and no new credential class. [[ADR-005 Async Job Queue and Worker Execution Model]] chose it for transactional enqueue above all — a job and the row that motivated it commit together, or neither exists, which every external broker breaks and only an outbox repairs.
 
 **The worker is a second process, not a second application.** `python -m app.jobs.worker` runs from the same image, the same package and the same validated `Settings` as the API, so a worker cannot start with configuration the API has never seen — object storage included, which is the STEP-28 defect one layer deeper. `infrastructure/` finally exists, holding the process model; **which platform runs it stays deferred to [[STEP-82 Staging Environment and Deployment Pipeline]]** by owner decision.
 

@@ -1,20 +1,20 @@
 ---
 title: STEP-30 Async Job Infrastructure
 category: Development/Build Step
-status: draft
-version: "2.0"
+status: stable
+version: "3.0"
 last_updated: 2026-08-17
 tags: [engineering, workflow, build-step, backend, infrastructure]
 step_id: STEP-30
-step_status: In Progress
+step_status: Done
 detail_level: full
 phase: "Platform Substrate"
 ---
 
 # STEP-30 — Async Job Infrastructure
 
-**Status:** In Progress
-**Tasks 1–8 implemented; awaiting CI, review and the owner's approval.** [[ADR-005 Async Job Queue and Worker Execution Model]] was `Accepted` by the project owner on 2026-08-17, clearing the §7 gate; Tasks 2–8 were implemented on the owner's instruction the same day. The step stays `In Progress` until its Pull Request's required CI is green and its owner gate is satisfied — [[Execution Protocol#Step Completion]] makes those completion conditions, not formalities.
+**Status:** Done
+**Tasks 1–8 complete.** [[ADR-005 Async Job Queue and Worker Execution Model]] was `Accepted` on 2026-08-17, clearing the §7 gate; Tasks 2–8 were implemented the same day and merged to `main` as `7ae8d58` via PR #26. See [[#Step Completion Record]].
 **Phase:** Platform Substrate — The absent infrastructure every media, approval and automation capability sits behind: storage, async execution, and enough notification to make an asynchronous run visible.
 **Detail level:** full — expanded 2026-08-17 by [[STEP-29 Asset Management UI]], per [[Execution Protocol#The Loop]] item 11, against `main` @ `1a5f1e3`.
 
@@ -176,8 +176,8 @@ Additionally, per [[Execution Protocol#Step Completion]]:
 
 - [x] **ADR-005 `Accepted` by the project owner** before implementation began — 2026-08-17.
 - [x] The composed retry ceiling stated as a number, with its arithmetic — `MAX_UPSTREAM_REQUESTS_PER_ENQUEUE` = **60**, computed from its three factors rather than written down.
-- [ ] Required CI green, and the manual checklist complete.
-- [ ] Owner approval obtained — this step is Critical.
+- [x] Required CI green, and the manual checklist complete — the checklist is **not applicable**, with the reason recorded in [[#Step Completion Record]] rather than left as an unexplained omission.
+- [x] Owner approval obtained — this step is Critical. Squash-merged by the project owner on 2026-08-17.
 - [x] Status synchronized between this note and the [[Build Plan]] index.
 - [x] [[STEP-31 Workflow Async Execution]] expanded to full detail.
 
@@ -240,6 +240,52 @@ This is recorded here rather than settled quietly because it is the one place th
 | New tests | 4 files, 79 tests: contract and ceilings, the queue against a real database, the worker, and the architectural boundary |
 
 The suite grew from 1039 to 1120. The four skips are the opt-in live-R2 integration tests, unchanged.
+
+## Step Completion Record
+
+Merged to `main` as **`7ae8d58`** via **PR #26**, squash-merged by the project owner on 2026-08-17 at 17:35 UTC from branch `step-30-async-jobs` (one commit, `14e5c3d`).
+
+**Required CI, on the final run (`32040077353`, head `14e5c3d`):**
+
+| Check | Result |
+|---|---|
+| `api (lint, format, typecheck, test)` | `SUCCESS` — 1m57s |
+| `web (lint, typecheck, test, build)` | `SUCCESS` — 47s |
+| `governance docs (sync check)` | `SUCCESS` — 7s |
+| `Supabase Preview` | `SKIPPED` — not a required check |
+
+**What shipped:** 34 files, +5,673 / −31. One migration (`a1b7c3e94f6d`), six new modules under `app/jobs/`, two repositories, four test files, the `infrastructure/` directory, and fourteen vault notes. `apps/web` untouched.
+
+**Validation, as observed rather than expected:**
+
+| Check | Result |
+|---|---|
+| `ruff check .` / `ruff format --check .` | Passed |
+| `mypy app` (strict) | Passed — 93 source files |
+| `pytest` against PostgreSQL 17 | **1120 passed, 4 skipped** (from 1039 — **+81**) |
+| `migration_cycle_drill.py` (FA-02) | Passed — 418 schema facts identical after downgrade to base and re-upgrade |
+| `backup_restore_drill.py` (FA-03) | Not runnable locally (`pg_dump`/`pg_restore` absent); **passed in CI** |
+
+The four skips are the opt-in live-R2 integration tests, unchanged by this step.
+
+**79 new tests across four files**, and the split between them is the point: `test_job_contract.py` asserts the ceilings and the retry classification offline; `test_job_queue.py` and `test_job_worker.py` assert against real PostgreSQL, because a fake has no `SKIP LOCKED`, no lease that lapses and no RLS policy; `test_job_boundary.py` asserts the architectural constraints ADR-005 §5 requires be proven by test rather than by inspection.
+
+> [!note] The manual test checklist is **not applicable**, and this is the reason
+> [[Execution Protocol#Step Completion]] requires a completed manual checklist where a step has user-visible behaviour. **This step has none** — no route, no screen, no surface a browser can reach. `JobService` is wired into the dependency graph and nothing calls it; the only registered handler is an infrastructure probe.
+>
+> Stated explicitly rather than left blank, because "not applicable" and "not done" look identical in an empty checklist. Contrast [[STEP-29 Asset Management UI]], which was marked `Done` with nine browser checks genuinely unperformed and says so.
+>
+> What replaces browser verification here is that **the worker's own startup is exercised as a subprocess**: `python -m app.jobs.worker` is launched with each required variable removed in turn, and the exit code and stderr are asserted. That is the only way to observe what a deploy would, and an in-process call to `get_settings()` would have proven nothing about the command a platform actually runs.
+
+**Two matters raised for the owner in the PR description**, both recorded in [[#Outcome]] rather than only in the PR, since a PR body is not vault documentation:
+
+1. **A `SECURITY DEFINER` role guard silently never fires.** Fixed to `SECURITY INVOKER` before merge, and generalized into [[RLS Policy Pattern#A grant given for erasure is a grant given for everything]] so the next table whose only client write is an erasure meets the warning rather than the bug.
+2. **ADR-005 §4 and §5 constraint 4 needed one reading reconciled.** Resolved by proving the actor's identity in a short RLS-scoped session that closes *before* the handler is invoked. **The merge settles this reading**; if the intended meaning was a session held open across handler execution, that is a change to §4's transaction shape and requires a superseding ADR rather than a code change — ADR-005's own Status section says the same.
+
+**What is deliberately still open**, carried forward rather than closed quietly:
+
+- **Worker liveness has no external monitor.** A worker that is not running logs nothing. The in-process sibling is closed (ten consecutive dispatch failures exit non-zero), but external monitoring is [[STEP-81 Observability and Alerting]]'s, and is recorded in `infrastructure/process-model.md` and [[Async Job Execution]] rather than assumed.
+- **[[Schema Overview]]'s table list predates this step's additions in one respect.** `conversations` and `messages` were never added to it by [[STEP-23 AI Chat End to End]]. `jobs` was added correctly here; back-filling another step's omission inside this one is the scope widening [[CLAUDE|CLAUDE.md]] §29 forbids, so it is reported as an open item rather than silently repaired.
 
 ## Risks and Governance Gates
 
