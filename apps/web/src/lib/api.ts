@@ -68,6 +68,19 @@ export class ApiUnreachableError extends Error {
 /** Version prefix the API mounts every non-infrastructure route under. */
 const API_PREFIX = "/api/v1";
 
+/**
+ * `RequestInit` plus the flag a streaming request body requires.
+ *
+ * `duplex` is part of the fetch standard and is implemented by the runtime, but
+ * TypeScript's DOM library has not adopted it — so a literal carrying it fails
+ * the excess-property check even though the value is correct. Declared here
+ * rather than reached with a cast, so the field keeps a type and a reason
+ * instead of being erased ([[CLAUDE|CLAUDE.md]] §35 forbids `any`).
+ */
+interface StreamingRequestInit extends RequestInit {
+  readonly duplex: "half";
+}
+
 function isErrorBody(value: unknown): value is ApiErrorBody {
   return (
     typeof value === "object" &&
@@ -147,6 +160,18 @@ export async function apiRequest<T>({
     throw new ApiUnreachableError();
   }
 
+  return decodeResponse<T>(response);
+}
+
+/**
+ * Decode one API response, raising {@link ApiError} on any non-2xx.
+ *
+ * Shared by {@link apiRequest} and {@link uploadAsset} so the error contract is
+ * written once. The two differ only in how they *send* a body — JSON versus a
+ * forwarded multipart stream — and a failure must look identical to a caller
+ * whichever sent it.
+ */
+async function decodeResponse<T>(response: Response): Promise<T> {
   // A 204 carries no body, so parsing one is not a failure to tolerate — it is
   // the expected outcome. `.catch(() => null)` already handles it, and the null
   // is only ever returned to a caller whose response type says `void`.
@@ -452,10 +477,36 @@ export interface ApiAsset {
   readonly project_id: string;
   readonly name: string;
   readonly kind: ApiAssetKind;
-  /** Always null today — no storage backend exists. See `app/schemas/project.py`. */
+  /**
+   * Where the bytes live, or null when this asset has none.
+   *
+   * **Opaque, and must stay that way.** It is not a URL, not a path, and not
+   * something to parse, split, strip or prefix — the storage layer constructs
+   * the real object key from a workspace id plus this value (ADR-004), and a
+   * client that took it apart would be reimplementing a boundary that exists to
+   * make cross-tenant access unconstructable.
+   *
+   * The only thing the UI reads from it is **whether it is null**. Non-null
+   * means the asset has bytes and can be downloaded; null means it was recorded
+   * through `POST /assets` without a file, which is a legitimate state rather
+   * than a failure — see [[STEP-29 Asset Management UI]].
+   */
   readonly storage_path: string | null;
   readonly created_by: string;
   readonly created_at: string;
+}
+
+/**
+ * A time-limited URL for one asset's bytes, from `GET .../assets/{id}/download`.
+ *
+ * **The URL is a bearer capability**: anyone holding it reads the object with no
+ * further authentication. It lives 15 minutes (STEP-28 D3), which is why it is
+ * minted on demand and never rendered into a page that may be cached — see
+ * [[STEP-29 Asset Management UI]] D3.
+ */
+export interface ApiAssetDownload {
+  readonly url: string;
+  readonly expires_in_seconds: number;
 }
 
 export function listProjects(accessToken: string, workspaceId: string): Promise<ApiProject[]> {
@@ -565,6 +616,91 @@ export function createAsset(
     path: `/workspaces/${workspaceId}/projects/${projectId}/assets`,
     method: "POST",
     body: { name, kind },
+    accessToken,
+  });
+}
+
+/**
+ * Store a file's bytes and attach them to a project.
+ *
+ * **The only call here that does not send JSON**, and the reason it sits beside
+ * {@link apiRequest} rather than inside it. That function hardcodes
+ * `Content-Type: application/json` and `JSON.stringify`, and widening it with a
+ * "unless the body is a stream" branch would make every one of its thirty
+ * existing call sites carry a conditional written for this one. They share
+ * {@link decodeResponse} instead, which is the part that must not drift.
+ *
+ * `body` is forwarded as a **stream**, not buffered. A 100 MB upload
+ * (`MAX_UPLOAD_BYTES` in `app/services/asset_content.py`) held in full by this
+ * process before being sent again would double the memory a single request
+ * costs, for no gain — nothing here inspects the bytes. Validation is the API's,
+ * where the magic-byte check lives and where it is testable without HTTP.
+ *
+ * `contentType` must carry the multipart boundary exactly as the browser wrote
+ * it. Regenerating it would produce a header that no longer describes the body.
+ *
+ * @throws {ApiError} On any non-2xx — 413 oversize, 415 refused format, 429 rate
+ *   limited, 404 no such project. Each carries the API's own `public_message`,
+ *   written to be shown and deliberately never naming the file.
+ * @throws {ApiUnreachableError} When the request never completed.
+ */
+export async function uploadAsset(
+  accessToken: string,
+  workspaceId: string,
+  projectId: string,
+  body: ReadableStream<Uint8Array>,
+  contentType: string,
+): Promise<ApiAsset> {
+  const init: StreamingRequestInit = {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": contentType,
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body,
+    // Required by `fetch` whenever the body is a stream: it declares that this
+    // side finishes sending before it starts reading. Absent it, the request is
+    // rejected before it leaves the process.
+    duplex: "half",
+    cache: "no-store",
+  };
+
+  let response: Response;
+
+  try {
+    response = await fetch(
+      `${env.apiUrl}${API_PREFIX}/workspaces/${workspaceId}/projects/${projectId}/assets/upload`,
+      init,
+    );
+  } catch {
+    throw new ApiUnreachableError();
+  }
+
+  return decodeResponse<ApiAsset>(response);
+}
+
+/**
+ * Mint a time-limited URL for one asset's bytes.
+ *
+ * Called **on user action only**, never while rendering a list. Each call
+ * produces a fresh 15-minute capability, so minting one per asset at render
+ * time would spend the lifetime while the page was merely being read, and would
+ * place bearer URLs into markup that Next.js may cache ([[STEP-29 Asset
+ * Management UI]] D3).
+ *
+ * @throws {ApiError} 404 when the asset has no bytes, or belongs to another
+ *   workspace — the API answers both identically on purpose.
+ */
+export function assetDownloadUrl(
+  accessToken: string,
+  workspaceId: string,
+  projectId: string,
+  assetId: string,
+): Promise<ApiAssetDownload> {
+  return apiRequest<ApiAssetDownload>({
+    path: `/workspaces/${workspaceId}/projects/${projectId}/assets/${assetId}/download`,
+    method: "GET",
     accessToken,
   });
 }

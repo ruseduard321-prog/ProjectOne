@@ -1,7 +1,8 @@
 "use client";
 
 import { useSettingsFormContext } from "@/components/settings/form-context";
-import { ASSET_KINDS, assetKindLabel } from "@/lib/projects";
+import type { ApiAssetKind } from "@/lib/api";
+import { ASSET_KINDS, assetKindLabel, isAssetKind } from "@/lib/projects";
 
 /**
  * The asset kind, as a fixed choice.
@@ -29,6 +30,19 @@ export interface AssetKindFieldProps {
   readonly hint?: string;
   readonly error?: string;
   readonly disabled?: boolean;
+  /**
+   * Notified when the selection changes.
+   *
+   * Optional, and the field stays **uncontrolled** either way — the value is
+   * still submitted by the form, not held in React state. This exists for one
+   * caller: the upload control derives its file picker's `accept` list from the
+   * chosen kind, so it has to know when that choice changes.
+   *
+   * A callback cannot be passed from a Server Component, which is why it is
+   * optional rather than required: `[projectId]/page.tsx` renders this field
+   * from the server and supplies nothing.
+   */
+  readonly onChange?: (kind: ApiAssetKind) => void;
 }
 
 export function AssetKindField({
@@ -38,6 +52,7 @@ export function AssetKindField({
   hint,
   error: errorProp,
   disabled: disabledProp,
+  onChange,
 }: AssetKindFieldProps) {
   // Same contract as `FormField`: read from the enclosing form, prop overrides.
   const form = useSettingsFormContext();
@@ -61,6 +76,19 @@ export function AssetKindField({
         name={name}
         disabled={disabled}
         defaultValue={ASSET_KINDS[0]}
+        onChange={
+          onChange === undefined
+            ? undefined
+            : (event) => {
+                // Narrowed rather than cast: the options are rendered from
+                // `ASSET_KINDS`, so this always holds — and if it ever stops
+                // holding, silently doing nothing beats reporting a kind the
+                // API would refuse.
+                if (isAssetKind(event.target.value)) {
+                  onChange(event.target.value);
+                }
+              }
+        }
         aria-invalid={error !== undefined}
         aria-describedby={describedBy}
         className={[

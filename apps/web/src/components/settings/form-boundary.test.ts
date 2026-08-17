@@ -25,6 +25,10 @@ const CALL_SITES = [
   join(SRC, "app", "(app)", "projects", "page.tsx"),
   join(SRC, "app", "(app)", "projects", "[projectId]", "page.tsx"),
   join(SRC, "components", "settings", "ProviderKeyForm.tsx"),
+  // STEP-29 moved the asset delete form into a row component, inside a
+  // `ConfirmDialog` — which is itself a Client Component taking `children`, so
+  // the same constraint applies one level deeper than before.
+  join(SRC, "components", "projects", "AssetRow.tsx"),
 ];
 
 /**
