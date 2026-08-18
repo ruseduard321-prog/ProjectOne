@@ -2,8 +2,8 @@
 title: Full Stack Engineer
 category: AI/Skills
 status: stable
-version: "1.1"
-last_updated: 2026-08-17
+version: "1.2"
+last_updated: 2026-08-18
 tags: [ai, engineering, frontend, backend]
 aliases: []
 ---
@@ -63,13 +63,14 @@ Activates on implementation work that **adds or changes feature behavior**. The 
 - **Architecture not yet approved** — [[Architecture Reviewer]] (Critical) decides whether a new module boundary, dependency, or cross-cutting pattern is permitted (§7's ADR gate). Implementation proceeds only against an `Accepted` ADR.
 - **AI behavior** — [[AI Systems Engineer]] leads on cost governance, retry limits and approval policy where a feature reaches an AI call; this skill implements the application code around it.
 
-**What the check sequence does not cover.** The nine checks below are §11/§12/§14 checks. They say nothing about job retry ceilings, storage key isolation, workflow approval defaults, migration safety, or AI spend limits. Each of those routes to a named owner rather than being treated as cleared because these nine passed:
+**What the check sequence does not cover.** The nine checks below are §11/§12/§14 checks. They say nothing about job retry ceilings, storage key isolation, workflow approval defaults, migration safety, AI spend limits, or the performance consequences of the implementation. Each of those routes to a named owner rather than being treated as cleared because these nine passed:
 
 - AI-related job retry ceilings, and AI spend limits — [[AI Systems Engineer]].
 - Non-AI job retry behavior this checklist does not cover — [[Code Reviewer]], on the finished diff.
 - Storage or tenant isolation — [[Security Reviewer]].
 - Migration safety — [[Database Engineer]].
 - AI/agent workflow approval defaults — [[AI Systems Engineer]].
+- Performance-significant runtime behavior the implementation adds, changes or removes — a fetch/query/render path whose runtime behavior changes materially, a result-set bound or parallel structure altered, caching/invalidation, loading/bundle behavior or worker cadence changed — [[Performance Reviewer]]. A path, query, component or asset merely being touched is not sufficient; runtime performance behavior must change materially.
 - Any remaining finished-diff concern — [[Code Reviewer]].
 
 ## Check Sequence
@@ -103,6 +104,7 @@ Stops and asks (per §33–34) when:
 - [[Security Reviewer]] — reviews the security-sensitive portions of anything Full Stack Engineer builds; Critical and leads over this skill's self-check.
 - [[AI Systems Engineer]] — leads when the feature triggers an AI call; Full Stack Engineer implements the surrounding application code.
 - [[Bug Investigator]] — leads while an unexplained defect is being diagnosed, then hands the root-cause report here for the fix; Full Stack Engineer implements the fix, it does not decide what the fix is.
+- [[Performance Reviewer]] — evaluates the performance consequences when implementation work adds, changes, or removes a performance-significant path (a fetch/query/render path, a result-set bound, parallelism, caching or invalidation, loading/bundle behavior, background cadence). Advisory: it recommends, Full Stack Engineer remains the implementation owner of any accepted recommendation, and its PASS never substitutes for [[Code Reviewer]], [[Database Engineer]], [[AI Systems Engineer]] or owner review. Both firing on one change is the sequence working, not a routing conflict.
 - [[Code Reviewer]] — provides the independent review pass on Full Stack Engineer's output; the two checklists overlap by design (§11/§12/§14 here, §21/§36 there) but Code Reviewer is the one whose verdict is recorded as the review. The two fire at different moments — this skill while the change is being built, Code Reviewer on the finished diff — so both firing on one change is the sequence working, not a routing conflict.
 
 ---
