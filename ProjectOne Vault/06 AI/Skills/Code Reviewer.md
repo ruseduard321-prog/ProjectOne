@@ -2,8 +2,8 @@
 title: Code Reviewer
 category: AI/Skills
 status: stable
-version: "1.1"
-last_updated: 2026-08-17
+version: "1.2"
+last_updated: 2026-08-18
 tags: [ai, engineering]
 aliases: []
 ---
@@ -37,7 +37,7 @@ Runs the CLAUDE.md §21/§36 review checklist against any non-trivial change, su
 
 ## Trigger Conditions
 
-[[CLAUDE|CLAUDE.md]] §6a routes **"a non-trivial diff, or any change presented as ready for review"** to this skill. That phrasing binds, and this section does not widen it — it defines *non-trivial* for this repository, because a threshold nobody can evaluate is not a threshold.
+[[CLAUDE|CLAUDE.md]] §6a routes **"a non-trivial diff, or any change presented as ready for review"** to this skill. That row is a routing summary, not a boundary — this section is the complete activation surface, and it defines *non-trivial* for this repository, because a threshold nobody can evaluate is not a threshold.
 
 **A diff is non-trivial unless every hunk in it falls under the exclusions at the end of this section.** Triviality is a property of the whole diff, not of any single hunk: one behavioural line makes the entire change reviewable, however much formatting travels alongside it.
 

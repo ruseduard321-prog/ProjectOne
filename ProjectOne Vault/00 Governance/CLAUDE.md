@@ -2,8 +2,8 @@
 title: CLAUDE.md
 category: Meta/Governance
 status: stable
-version: "1.6"
-last_updated: 2026-08-17
+version: "1.7"
+last_updated: 2026-08-18
 tags: [documentation, engineering, governance, ai]
 aliases: ["ProjectOne Constitution", "AI Operating Manual"]
 canonical: true
@@ -115,7 +115,7 @@ If a proposed feature or change fails this filter, say so before building it.
 
 ProjectOne defines ten specialist Skills: canonical specifications in `06 AI/Skills/`, paired with runtime wrappers in `.claude/skills/` that the Claude Code harness loads. [[Skill Contract]] is their shared execution model and [[SKILLS]] is the index. **This section is only the route into that layer** — which skill to consult for which class of work. How a skill performs its checks lives in that skill's own specification and is deliberately not restated here.
 
-Matching skills should be consulted when their trigger conditions apply. If a relevant skill was not used, the reason should be clear from the task context.
+Matching skills should be consulted when their trigger conditions apply. If a relevant skill was not used, the reason should be clear from the task context. **The rows below summarize each skill's domain; they do not bound it.** A skill's complete activation surface is the Trigger Conditions in its own specification, which may state that same governed domain more concretely or more broadly than the row that routes to it.
 
 | When the work involves | Consult | Class |
 |---|---|---|
