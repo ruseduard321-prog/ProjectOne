@@ -2,8 +2,8 @@
 title: CLAUDE.md
 category: Meta/Governance
 status: stable
-version: "1.5"
-last_updated: 2026-08-16
+version: "1.6"
+last_updated: 2026-08-17
 tags: [documentation, engineering, governance, ai]
 aliases: ["ProjectOne Constitution", "AI Operating Manual"]
 canonical: true
