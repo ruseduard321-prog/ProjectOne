@@ -1,7 +1,7 @@
 # Database migration commands for apps/api (Windows PowerShell twin of migrate.sh).
 #
 # Behavior is identical to the Bash version; both exist so the command is the
-# same on every machine, matching the sync-claude-md.sh/.ps1 pair.
+# same on every machine, matching the sync-governance-docs.sh/.ps1 pair.
 #
 # Every schema change is a version-controlled migration file. Manual SQL
 # against a live database is forbidden (CLAUDE.md §13).

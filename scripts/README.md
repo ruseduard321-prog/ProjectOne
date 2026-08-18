@@ -56,7 +56,6 @@ that file or the virtual environment is missing.
 | `sync-governance-docs.sh` | macOS / Linux / Git Bash |
 | `sync-governance-docs.ps1` | Windows PowerShell (5.1 and 7+) |
 | `sync-governance-docs.config.json` | All paths and strip rules — the only file a project edits |
-| `sync-claude-md.sh` / `.ps1` | **Deprecated** shims — delegate to the above, CLAUDE.md only |
 
 Two governed documents are generated into the repository root:
 
@@ -137,10 +136,6 @@ Nothing in either script needs to change — the scripts are the mechanism, the 
 
 ### Notes
 
-- **The `sync-claude-md.*` scripts are deprecated compatibility shims.** They delegate to
-  `sync-governance-docs.*` restricted to the `claude` document, so their behaviour is exactly what
-  it always was. They exist because the old name is referenced from `README.md`, from this file's
-  history, and from the callout inside the canonical CLAUDE.md. Prefer the new name.
 - The Bash script parses the config with `awk` rather than requiring `jq`, so it has no
   dependency beyond a POSIX shell.
 - The PowerShell script targets Windows PowerShell 5.1, so it avoids `??`, ternaries and
