@@ -33,7 +33,7 @@ Fires on implementation work that **adds or changes feature behavior**, in one l
 
 **Where another skill leads:** see Handoff. This skill still implements the surrounding feature code; the decision inside each boundary is not its own.
 
-**The nine checks below are §11/§12/§14 only** — they do not cover job retry ceilings, storage isolation, workflow approval defaults, migration safety, or AI spend limits. Handoff routes each to its owner.
+**The nine checks below are §11/§12/§14 only** — they do not cover job retry ceilings, storage isolation, workflow approval defaults, migration safety, AI spend limits, or performance consequences. Handoff routes each to its owner.
 
 ## Check Sequence
 
@@ -67,4 +67,5 @@ Each leads its own decision boundary; Full Stack Engineer still implements the s
 - Schema/migration design, and migration safety → `database-engineer` skill (Critical).
 - Security-sensitive logic, trust boundary, auth and permissions (`apps/web/src/proxy.ts`, `apps/web/src/lib/session-cookies.ts`), storage or tenant isolation → `security-reviewer` skill (Critical).
 - AI cost governance, AI spend limits, AI-related job retry ceilings, and AI/agent workflow approval defaults → `ai-systems-engineer` skill.
+- Performance-significant runtime behavior the implementation adds, changes or removes — a fetch/query/render path whose runtime behavior changes materially, a result-set bound or parallel structure altered, caching/invalidation, loading/bundle behavior or worker cadence changed → `performance-reviewer` skill (advisory; its PASS never substitutes for `code-reviewer`, `database-engineer`, `ai-systems-engineer`, or owner review). A path, query, component or asset merely being touched is not sufficient; runtime performance behavior must change materially.
 - Non-AI job retry behavior this checklist does not cover, and any remaining finished-diff concern → `code-reviewer` skill, on the finished diff.
