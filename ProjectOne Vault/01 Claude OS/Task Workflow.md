@@ -63,8 +63,11 @@ note and the governing documents already define. Nothing invokes one automatical
   decide.
 - **Each command declares its own mutation boundary**, in its own file, in concrete terms. That
   declaration is the command's contract and is reviewed like any other standard.
-- **A read-only command changes nothing.** `/po-review` reviews a selected change and modifies no
-  file, branch, commit, Pull Request, review conversation, or Build Plan status.
+- **An inspection-only command changes no project or hosted state.** `/po-review` reviews a
+  selected change and modifies no file, local branch, commit, Pull Request, review conversation,
+  or Build Plan status. Its only operational side effect is refreshing and pruning local
+  remote-tracking refs — repository metadata, declared in the command's own mutation boundary,
+  and not a change to anything the project keeps.
 - **An implementation command may perform only the mutations its declared scope explicitly
   authorizes**, and nothing beyond them. A mutation a command's scope does not name is out of
   bounds even when it would be convenient.
