@@ -163,12 +163,32 @@ who attested it.
 ## 5 — Report
 
 **Target** — repository identity, target type, resolution rule, exact SHA/range, base and head
-OIDs, evidence sets included.
+OIDs, evidence sets included. State the **identifier scope** explicitly as one line:
+`scope: <owner>/<repo> <target-type> base=<baseOid> head=<headOid>`.
 **Evidence** — files by status, files read beyond the patch, anything un-inspectable.
 **Skills** — all ten, triggered or not, with the reason.
-**Findings** — severity order; each with owning skill, `path:line`, evidence, cited section, and
-tagged **Verified** / **Risk** / **Unknown**.
+**Findings** — severity order; each row begins with its identifier, then owning skill,
+`path:line`, evidence, cited section, and tagged **Verified** / **Risk** / **Unknown**.
 **Gates** — required CI per check; review-thread state; outstanding §21 owner decisions.
+
+### Finding identifiers
+
+Every finding carries a **report-local identifier**: `F001`, `F002`, … assigned in the order the
+findings are printed, zero-padded to three digits, starting at `F001`. Assignment is sequential
+within the report. An identifier is never reused, renumbered, or skipped within a report, and is
+emitted for every finding whatever its tag or severity.
+
+**Identifiers are local to one report and are not stable across runs.** Two runs over the same
+repository at the same HEAD may find different things, order them differently, or number them
+differently — nothing here promises otherwise.
+
+**A newer report supersedes every earlier report entirely**, unchanged repository and HEAD
+included, and every identifier in a superseded report becomes invalid.
+
+An identifier is also meaningless without the identifier scope line printed in the Target block.
+A consumer must reject any identifier presented against a different repository, a different
+target, a different `head`, or a superseded report, and must consume only the latest complete
+report. This command emits identifiers; it never consumes them and never acts on one.
 
 Then two independent verdicts.
 
