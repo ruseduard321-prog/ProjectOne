@@ -194,10 +194,18 @@ GRANT USAGE ON SCHEMA public TO anon, authenticated;
 
 # Supabase grants these by default on its own projects; a bare PostgreSQL does
 # not. Applied *before* migrations so the database starts from the same
-# permissive posture a real Supabase project has -- which is what migration
-# `c4f21a86b3de` then narrows. Without this the grant migration would be
-# revoking privileges that were never granted, and the test database would end
-# up in a state no real environment passes through.
+# permissive posture a real Supabase project has -- which is what migrations
+# `c4f21a86b3de` and `7b4360bcefed` then narrow. Without this the narrowing
+# migrations would be revoking privileges that were never granted, and the test
+# database would end up in a state no real environment passes through.
+#
+# `alembic_version` is in this list for a reason that is easy to lose. On a real
+# Supabase project it holds these grants without anyone granting them: Alembic
+# creates its bookkeeping table before the first revision runs, while Supabase's
+# default privileges are still permissive, so the table inherits them. A bare
+# PostgreSQL container grants nothing, so without this line `7b4360bcefed` would
+# revoke privileges that were never there -- a silent no-op -- and every
+# assertion about it would pass without proving anything.
 _DEFAULT_TABLE_GRANTS = """
 GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
     ON public.users TO anon, authenticated;
@@ -205,6 +213,8 @@ GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
     ON public.workspaces TO anon, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
     ON public.workspace_members TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
+    ON public.alembic_version TO anon, authenticated;
 """
 
 # The request-path role is created by migration `d7b95c1f4e08`, deliberately

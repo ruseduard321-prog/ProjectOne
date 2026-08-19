@@ -2,8 +2,8 @@
 title: RLS Policy Pattern
 category: Architecture/Schema
 status: stable
-version: "1.3"
-last_updated: 2026-08-08
+version: "1.4"
+last_updated: 2026-08-19
 tags: [database, security, multi-tenancy, standards]
 aliases: ["Row Level Security Pattern", "Tenant Isolation Pattern"]
 ---
@@ -242,6 +242,13 @@ ALTER TABLE public.<table> FORCE ROW LEVEL SECURITY;
 
 `ENABLE` applies policies to everyone **except the table owner**. Without `FORCE`, the owner (`postgres`) silently bypasses its own policies — which would make an isolation test connecting as the owner pass while proving nothing. Both statements, every table. `test_every_application_table_has_rls_enabled_and_forced` queries the catalog to enforce this on tables added later.
 
+> [!note] One documented exception: `alembic_version`
+> Alembic's own bookkeeping table carries `ENABLE` **without** `FORCE` (migration `7b4360bcefed`). It is infrastructure bookkeeping rather than application or tenant data: it intentionally has no policies, and it must stay writable by whichever role runs migrations — which is exactly the role `FORCE` would subject to them.
+>
+> On the environments this project supports today the flag would not actually lock anyone out, since both Supabase's `postgres` and the CI container's superuser already bypass row-level policies. It is omitted so the migration pipeline does not become fragile on some future environment whose table owner does not.
+>
+> `test_every_application_table_has_rls_enabled_and_forced` excludes this one table, and `test_alembic_version_has_rls_enabled_but_not_forced` asserts `relforcerowsecurity` is **false** — so the exception stays deliberate rather than being "corrected" by the next person cross-checking the catalog against the rule above.
+
 ## What RLS Cannot Enforce
 
 > [!danger] `service_role` bypasses RLS and no policy can stop it
@@ -305,6 +312,8 @@ Until [[STEP-10 Authentication Backend]], RLS was doing all the work: `anon` and
 > This is the same class of defect STEP-09 found with `REVOKE ... FROM PUBLIC` failing to revoke `anon`'s EXECUTE: Supabase's defaults are granted to roles **by name**, so they must be addressed by name. `c4f21a86b3de` alters the default privileges too, and `test_future_tables_do_not_inherit_permissive_grants` creates a real table and inspects what it inherited.
 >
 > **Known residue:** `supabase_admin` owns a second copy of these defaults that `postgres` cannot alter (it is not a superuser on managed Supabase). That copy governs tables *Supabase* creates, not ProjectOne's, because Alembic connects as `postgres`.
+>
+> **Residue that was live until 2026-08-18:** `alembic_version` held these grants itself — `arwdDxtm` to both `anon` and `authenticated`. Alembic creates that table at the start of the *first* `alembic upgrade`, before it applies the first revision, so it is created while the defaults are still permissive. `c4f21a86b3de` reaches neither it (it names three tables, and nothing in this repository creates this one) nor the moment it was created (it repairs the defaults only for tables created afterwards). This is not a historical accident: **it reproduces on every clean bootstrap against a Supabase-shaped database.** `7b4360bcefed` revokes both roles and enables RLS on the table.
 
 ## Adding a New Tenant Table
 
