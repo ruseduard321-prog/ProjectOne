@@ -1,17 +1,44 @@
 name: CI
 
-# Every push and every pull request. Established while the codebase is still a
-# skeleton so that every later step lands into a pipeline already policing it,
-# rather than having quality gates retrofitted onto existing work (STEP-06).
+# Two triggers doing two different jobs, deliberately not overlapping.
+# Established while the codebase was still a skeleton so that every later step
+# lands into a pipeline already policing it (STEP-06).
+#
+# `pull_request` is the merge gate: the full pipeline on every update to a PR,
+# and the run that reports the required check contexts.
+#
+# `push` is scoped to `main` — post-merge validation of the squashed commit.
+# Unrestricted, it ran this same pipeline a second time against the same commit
+# on every PR-branch push, and concurrency cannot collapse the two: `github.ref`
+# is `refs/heads/<branch>` for push and `refs/pull/<n>/merge` for pull_request,
+# so they never share a group. Both report the same required check names, and a
+# pending context from either holds the merge button — so a slow duplicate
+# blocks a merge whose PR run is already green.
+#
+# A branch pushed before its PR exists therefore gets no run until the PR is
+# opened. Intended: CI is a merge gate, and the PR is opened immediately.
 on:
   push:
+    branches:
+      - main
   pull_request:
 
-# A new push to the same branch cancels the previous run. Without this, a burst
-# of commits queues redundant runs and the useful result is the last one anyway.
+# One in-flight run per pull request; a newer update supersedes its predecessor.
+#
+# The group keys on the PR number rather than `github.ref`, so it is stable
+# across pushes to the same PR and distinct between PRs — two PRs never cancel
+# each other.
+#
+# On `main` there is no PR number, so the key falls back to `github.run_id`,
+# which is unique per run: every main validation gets a group of its own, and a
+# later push to `main` therefore cannot cancel or replace it through this
+# configuration. That is why `cancel-in-progress: false` alone would not be
+# enough — GitHub keeps at most one *pending* run per group, so a shared main
+# group would let a newer merge replace a queued validation outright. A commit
+# on `main` is already permanent and must be validated.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Read-only by default (CLAUDE.md §16, least privilege). A job needing more
 # must widen its own scope explicitly, which makes the widening reviewable.
@@ -35,13 +62,21 @@ jobs:
   # itself. Verified against the ruleset API during STEP-25a (FA-08).
   #
   # The check name below is therefore load-bearing: the ruleset matches on the
-  # literal string, so renaming this job silently removes the gate — the
-  # ruleset would keep requiring a check that no longer reports. If it must be
-  # renamed, the ruleset entry has to be updated in the same change, and only
-  # the project owner can do that.
+  # literal string. Renaming this job does not quietly drop the gate — it
+  # strands it: the ruleset goes on expecting a context that no longer reports,
+  # and GitHub holds every PR waiting for a status that will never arrive. The
+  # failure is a permanently blocked merge, not a silent pass. If this job is
+  # renamed, the ruleset entry has to change in the same breath, and only the
+  # project owner can do that.
   governance-docs:
     name: governance docs (sync check)
     runs-on: ubuntu-latest
+    # GitHub's default job timeout is 360 minutes. A hung step therefore holds a
+    # required check pending for six hours, and a pending required check blocks
+    # the merge for that whole time. Each ceiling below leaves generous headroom
+    # over observed durations: it bounds a failure, it is not a performance
+    # budget.
+    timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@v4
@@ -52,6 +87,7 @@ jobs:
   web:
     name: web (lint, typecheck, test, build)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: apps/web
@@ -106,6 +142,7 @@ jobs:
   api:
     name: api (lint, format, typecheck, test)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: apps/api

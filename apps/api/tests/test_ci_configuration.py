@@ -268,9 +268,10 @@ def test_ci_credentials_are_placeholders_not_real_ones(variable: str) -> None:
 #:
 #: The ruleset matches on the literal string, so these names are part of the
 #: repository's merge protection rather than cosmetic labels. Renaming a job
-#: without updating the ruleset silently removes its gate: the ruleset goes on
-#: requiring a check that no longer reports, and GitHub treats an absent check
-#: as nothing to wait for.
+#: without updating the ruleset strands its gate: the ruleset goes on expecting
+#: a context that no longer reports, and GitHub holds every PR waiting for a
+#: status that never arrives. The result is a permanently blocked merge, not a
+#: silent pass.
 REQUIRED_CHECK_NAMES = (
     "governance docs (sync check)",
     "web (lint, typecheck, test, build)",
@@ -295,7 +296,199 @@ def test_a_required_check_keeps_the_name_the_ruleset_requires(check_name: str) -
 
     assert f"name: {check_name}" in workflow, (
         f"No job in ci.yml declares `name: {check_name}`, but the `Protect main` "
-        "ruleset requires a check with exactly that name. A required check that "
-        "never reports does not block a merge — it is simply never waited for, "
-        "so this rename would remove the gate rather than fail loudly."
+        "ruleset requires a check with exactly that name. The ruleset would keep "
+        "expecting a context nothing reports, and GitHub holds a PR waiting for a "
+        "status that never arrives — so this rename blocks every merge until the "
+        "ruleset is corrected."
     )
+
+
+# --------------------------------------------------------------------------
+# Triggers, concurrency and job ceilings
+# --------------------------------------------------------------------------
+
+#: Every CI job with the ceiling it must declare. GitHub's default is 360
+#: minutes, so an unbounded job holds a required check pending for six hours —
+#: and a pending required check blocks the merge button the whole time.
+JOB_TIMEOUTS = (
+    ("governance-docs", 10),
+    ("web", 20),
+    ("api", 30),
+)
+
+
+def _top_level_block(name: str) -> str:
+    """Return one top-level workflow block, comments stripped.
+
+    Comments are documentation, not configuration: a test that read them could
+    pass on a promise the workflow does not actually keep.
+
+    Args:
+        name: The top-level key, at column zero.
+
+    Returns:
+        The block's body, with comment lines removed.
+    """
+    source = WORKFLOW_PATH.read_text(encoding="utf-8")
+    block = re.search(rf"^{name}:\n(?P<body>(?:^ +.*\n|^\s*\n)*)", source, re.MULTILINE)
+    assert block is not None, f"No top-level `{name}:` block in {WORKFLOW_PATH.name}"
+
+    return "".join(
+        line
+        for line in block.group("body").splitlines(keepends=True)
+        if not line.lstrip().startswith("#")
+    )
+
+
+def _trigger_sub_block(event: str) -> str:
+    """Return one event's sub-block from the `on:` mapping.
+
+    Args:
+        event: The trigger name, such as `push` or `pull_request`.
+
+    Returns:
+        The event's indented body, empty when the event carries no settings.
+    """
+    block = re.search(
+        rf"^  {event}:\n(?P<body>(?:^    .*\n)*)", _top_level_block("on"), re.MULTILINE
+    )
+    assert block is not None, f"CI declares no `{event}:` trigger"
+
+    return block.group("body")
+
+
+def test_push_ci_is_restricted_to_main() -> None:
+    """A push to a PR branch must not start a second full pipeline.
+
+    `push` and `pull_request` both fire on a PR-branch push, against the same
+    commit, and both report the same required check names — so a pending context
+    from either holds the merge button. Concurrency cannot collapse them:
+    `github.ref` differs by event, so the two never share a group.
+    """
+    branches = re.findall(r"^      - (?P<branch>\S+)$", _trigger_sub_block("push"), re.MULTILINE)
+
+    assert branches == ["main"], (
+        "CI's `push:` trigger must be restricted to `main` — post-merge validation of the "
+        f"squashed commit. Found: {branches or 'no branch filter'}. An unrestricted push "
+        "trigger runs the whole pipeline twice for every PR update."
+    )
+
+
+def test_pull_request_ci_is_not_branch_restricted() -> None:
+    """The merge gate must keep running for every pull request.
+
+    The duplicate-run fix narrows `push`. Narrowing `pull_request` instead — or
+    as well — would remove the gate the fix exists to protect.
+    """
+    assert re.search(r"^  pull_request:\s*$", _top_level_block("on"), re.MULTILINE), (
+        "CI must run on every `pull_request`; that run reports the required checks."
+    )
+    assert not _trigger_sub_block("pull_request").strip(), (
+        "`pull_request:` must carry no branch filter — every PR is validated, without exception."
+    )
+
+
+def test_each_pull_request_gets_its_own_stable_concurrency_group() -> None:
+    """Supersede within one PR, never across PRs, never on `main`.
+
+    Keying on `github.ref` is the mistake this replaces: it is
+    `refs/pull/<n>/merge` for a pull_request and `refs/heads/<branch>` for a
+    push, so the two events never share a group and cannot deduplicate.
+
+    The `|| github.run_id` fallback is what protects `main`. A push to `main` has
+    no PR number, and `run_id` is unique per run, so every main validation gets
+    its own group and a later push to `main` cannot cancel or replace it through
+    this configuration. Without the fallback, main runs would share one group —
+    and GitHub keeps at most one *pending* run per group, so a newer merge would
+    replace a queued validation outright, which no `cancel-in-progress` setting
+    prevents.
+    """
+    group = re.search(r"^  group: (?P<value>.+)$", _top_level_block("concurrency"), re.MULTILINE)
+    assert group is not None, "CI declares no concurrency `group:`"
+    value = group.group("value")
+
+    assert "github.event.pull_request.number" in value, (
+        "The concurrency group must key on the pull request number, so pushes to one PR "
+        f"supersede each other and different PRs never do. Found: {value}"
+    )
+    assert "github.run_id" in value, (
+        "The concurrency group must fall back to `github.run_id`, giving every push to `main` "
+        f"a group of its own so no main validation is cancelled or replaced. Found: {value}"
+    )
+    assert "github.ref" not in value, (
+        "The concurrency group must not key on `github.ref`: it differs between the push and "
+        f"pull_request events, which is what let duplicate runs coexist. Found: {value}"
+    )
+
+
+def test_only_pull_request_runs_are_cancelled() -> None:
+    """A commit on `main` is already permanent and must be validated.
+
+    An unconditional `cancel-in-progress: true` would let the next merge cancel
+    the previous merge's validation, leaving a commit on `main` proven by nothing.
+    """
+    cancel = re.search(
+        r"^  cancel-in-progress: (?P<value>.+)$", _top_level_block("concurrency"), re.MULTILINE
+    )
+    assert cancel is not None, "CI declares no `cancel-in-progress:`"
+    value = cancel.group("value")
+
+    assert "github.event_name == 'pull_request'" in value, (
+        "`cancel-in-progress` must be conditional on the event being a pull request, so "
+        f"superseded PR runs cancel and main validations never do. Found: {value}"
+    )
+
+
+@pytest.mark.parametrize(("job", "minutes"), JOB_TIMEOUTS)
+def test_every_ci_job_declares_its_timeout(job: str, minutes: int) -> None:
+    """Every job is bounded, so a hung step fails rather than blocking the merge.
+
+    Without `timeout-minutes` GitHub applies 360 minutes. A required check stays
+    pending for that whole time while a step hangs, and a pending required check
+    holds the merge button — an unbounded job is a merge blocker waiting for a
+    slow network. The ceilings leave generous headroom over observed durations.
+    """
+    source = WORKFLOW_PATH.read_text(encoding="utf-8")
+
+    block = re.search(rf"^  {job}:\n(?P<body>(?:.*\n)*?)(?=^  \S|\Z)", source, re.MULTILINE)
+    assert block is not None, f"No `{job}:` job found in {WORKFLOW_PATH.name}"
+
+    declared = re.search(
+        r"^    timeout-minutes: (?P<value>\d+)$", block.group("body"), re.MULTILINE
+    )
+    assert declared is not None, (
+        f"The `{job}` job declares no `timeout-minutes`, so GitHub applies its 360-minute "
+        "default and a hung step holds a required check pending for six hours."
+    )
+    assert int(declared.group("value")) == minutes, (
+        f"The `{job}` job's timeout is {declared.group('value')} minutes; this suite expects "
+        f"{minutes}. Change both together, deliberately."
+    )
+
+
+@pytest.mark.parametrize(
+    "step_name",
+    ["Verify migrations reverse (FA-02)", "Verify backup and restore (FA-03)"],
+)
+def test_the_pipeline_still_runs_the_foundation_drills(step_name: str) -> None:
+    """FA-02 and FA-03 must keep running on every pull request.
+
+    Both drills live in the `api` job, which runs on `pull_request`. A trigger
+    change that narrowed that would remove the only place either drill executes —
+    and a drill that stops running fails silently by definition.
+    """
+    assert f"name: {step_name}" in WORKFLOW_PATH.read_text(encoding="utf-8"), (
+        f"The `{step_name}` step is gone from ci.yml. It is the only place this drill runs."
+    )
+
+
+def test_the_trigger_and_concurrency_blocks_are_shaped_as_this_parser_assumes() -> None:
+    """Guard the parsers above against a workflow restructure.
+
+    Same reasoning as `test_the_workflow_is_shaped_as_this_parser_assumes`: a
+    parser that silently reads nothing turns every assertion above into a vacuous
+    pass, which is worse than having no test at all.
+    """
+    assert _top_level_block("on").strip(), "Parsed no triggers — the `on:` block changed shape"
+    assert _top_level_block("concurrency").strip(), "Parsed no concurrency settings"
+    assert _trigger_sub_block("push").strip(), "Parsed no `push:` configuration"

@@ -2,8 +2,8 @@
 title: Branch and Pull Request Workflow
 category: Development
 status: stable
-version: "1.0"
-last_updated: 2026-08-11
+version: "1.1"
+last_updated: 2026-08-19
 tags: [engineering, workflow, governance, git]
 aliases: ["Git Workflow", "PR Workflow", "Branch Workflow"]
 ---
@@ -57,7 +57,7 @@ Lowercase, hyphen-separated, descriptive enough to read in a branch list without
 
 ## Continuous Integration
 
-The pipeline in `.github/workflows/ci.yml` runs on every push and every pull request. It must be **green before merge**.
+The pipeline in `.github/workflows/ci.yml` runs on **every pull request**, and on **pushes to `main`** — the squashed commit, after merge. It must be **green before merge**.
 
 A red pipeline is never merged and never overridden. If CI fails on something the change did not cause, fix the underlying flake or state the cause explicitly in the PR — do not re-run until it passes by luck. A test that passes intermittently is a defect, not noise.
 
@@ -69,10 +69,18 @@ CI runs three jobs:
 
 The API job runs against a throwaway PostgreSQL container with `PROJECTONE_REQUIRE_DATABASE_TESTS=1`, so the Row Level Security isolation tests cannot silently downgrade to skips.
 
+**One full run per PR update.** `push` is scoped to `main` so that pushing to a PR branch does not also start a second run of the same pipeline against the same commit. Both would report the same required check names, and a pending context from *either* holds the gate — so a stuck duplicate blocks a merge whose PR run is already green. A branch pushed before its PR exists gets no run until the PR is opened: CI is a merge gate, and the PR is opened immediately after the first push.
+
+Runs are superseded per pull request — a newer push cancels the older run for that PR, and never for another PR. Each push to `main` gets its own run, which a later push to `main` cannot cancel or replace through this workflow's concurrency configuration, because a commit already on `main` must be validated.
+
+Every job declares an explicit `timeout-minutes` ceiling, so a hung step fails its job instead of holding a required check pending for GitHub's six-hour default.
+
 > [!warning] A job that runs is not automatically a merge gate
 > **Running in CI and being *required* by the `Protect main` ruleset are two different things.** A job that runs on every PR but is not listed as a required check can be red while the merge button stays green — it informs, it does not block.
 >
-> The ruleset currently requires **web** and **api** only. **`governance docs (sync check)` is not yet a required check**, so until the project owner adds it to the ruleset, a stale generated `CLAUDE.md` or `AGENTS.md` will fail visibly without preventing a merge.
+> The ruleset requires **all three** checks — `web (lint, typecheck, test, build)`, `api (lint, format, typecheck, test)` and `governance docs (sync check)` — by those exact names, and requires a branch to be up to date with `main` before merging.
+>
+> **The names must match the ruleset exactly.** Renaming a job does not quietly drop its gate — it strands it: the ruleset keeps expecting a context nothing reports, and GitHub holds the PR waiting for a status that never arrives, blocking every merge until the ruleset is corrected. `apps/api/tests/test_ci_configuration.py` asserts each name still exists in the workflow.
 >
 > Adding a job to CI and adding it to the required-checks list are separate actions, and only the owner can perform the second. When adding a job intended as a gate, say explicitly that the ruleset still needs updating rather than assuming the two happened together.
 
