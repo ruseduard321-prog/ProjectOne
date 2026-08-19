@@ -24,11 +24,17 @@ container. It must never target the shared Supabase development database.
 Run it directly:
 
     PROJECTONE_TEST_DATABASE_URL=postgresql://... python scripts/backup_restore_drill.py
+
+The client tools come from PATH. Set `PROJECTONE_PG_CLIENT_IMAGE` to an approved
+PostgreSQL image tag to run them from a container instead -- what CI does, so the
+client it uses is the one already inside its own database service image, and no
+step of the drill reaches a network it does not control.
 """
 
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -47,6 +53,20 @@ _FORBIDDEN_HOST_FRAGMENTS = ("supabase.co", "supabase.in", "rds.amazonaws.com", 
 #: The database the dump is restored into. Created empty by this script and
 #: dropped afterwards, so a rerun does not depend on the previous one's cleanup.
 _RESTORE_DB_PREFIX = "projectone_restore_drill"
+
+#: When set, `pg_dump` and `pg_restore` run from this container image rather
+#: than from PATH. CI sets it to the same image as its service container.
+_CLIENT_IMAGE_VARIABLE = "PROJECTONE_PG_CLIENT_IMAGE"
+
+#: The only image references this drill will execute. Deliberately narrow: the
+#: official Docker Hub `postgres` repository, no registry host, no namespace, an
+#: explicit numeric tag (never `latest`), an optional variant suffix, and an
+#: optional digest pin -- which is stricter still, not looser. Widening this is a
+#: security decision rather than a convenience one, because whatever matches here
+#: is what `docker run` executes.
+_APPROVED_CLIENT_IMAGE = re.compile(
+    r"postgres:[0-9]+(?:\.[0-9]+){0,2}(?:-[a-z0-9]+)*(?:@sha256:[0-9a-f]{64})?"
+)
 
 
 def _require_disposable(url: str) -> None:
@@ -69,33 +89,167 @@ def _with_database(url: str, database: str) -> str:
     return urlunsplit((parts.scheme, parts.netloc, f"/{database}", parts.query, parts.fragment))
 
 
-def _require_tooling() -> None:
-    """Fail early and clearly when `pg_dump`/`psql` are missing.
+def _client_image() -> str | None:
+    """Return the validated client image reference, or None to use PATH.
+
+    The value names a container image this drill then executes, so it is treated
+    as untrusted input and matched against `_APPROVED_CLIENT_IMAGE` rather than
+    passed through (CLAUDE.md 16). Being shell-safe is not the bar: this is never
+    interpolated into a shell, and a value no shell would object to can still
+    name an image somebody else chose.
+
+    Returns:
+        The approved image reference, or None when the variable is unset or
+        empty -- in which case the tools come from PATH as before.
+
+    Raises:
+        SystemExit: If the variable is set to anything not approved.
+    """
+    image = os.environ.get(_CLIENT_IMAGE_VARIABLE)
+
+    if not image:
+        return None
+
+    if any(
+        character.isspace() or ord(character) < 0x20 or ord(character) == 0x7F
+        for character in image
+    ):
+        raise SystemExit(
+            f"{_CLIENT_IMAGE_VARIABLE} contains whitespace or control characters. "
+            "Give a bare image reference, such as 'postgres:17'."
+        )
+
+    if not _APPROVED_CLIENT_IMAGE.fullmatch(image):
+        raise SystemExit(
+            f"{_CLIENT_IMAGE_VARIABLE} is set to '{image}', which is not an approved "
+            "PostgreSQL client image. This drill executes it, so only the official "
+            "Docker Hub 'postgres' image with an explicit version tag is accepted -- "
+            "for example 'postgres:17' or 'postgres:17.11-bookworm', optionally "
+            "pinned with '@sha256:<64 hex digits>'."
+        )
+
+    return image
+
+
+def _client_command(tool: str, image: str | None, *, mount: str | None = None) -> list[str]:
+    """Return the argv that runs a PostgreSQL client tool.
+
+    Local binaries when `image` is None, so a machine with a matching client
+    installed runs the drill exactly as it did before. Otherwise the tool runs
+    from that container image -- CI points it at the same image its PostgreSQL
+    service container already runs, which is what makes the client's major
+    version match the server's by construction rather than by two pins somebody
+    has to remember to bump together.
+
+    Every flag is load-bearing:
+
+    * `--pull never` is the reliability claim. Docker has already fetched this
+      image to start the service container, so the drill reaches no registry and
+      cannot stall on one. A missing image fails immediately and says so. The
+      step this replaced hung for 62 minutes fetching packages on 2026-08-19.
+    * `--network host` lets the container reach the server on the same
+      `127.0.0.1:5432` the rest of the drill uses, so one connection URL serves
+      psycopg and the client tools alike.
+    * `--cap-drop ALL` and `--security-opt no-new-privileges` leave a process
+      that can open a socket and read its input and nothing else. Neither tool
+      execs a setuid helper, so nothing here needs them.
+    * `--cap-add DAC_OVERRIDE` is added **only** alongside a mount, and only
+      because the container runs as root against a dump file the host wrote as
+      another uid with mode 0600 -- without it that read is refused. The
+      container that writes to stdout mounts nothing and gets no capability back.
+    * `--entrypoint` bypasses the image's `docker-entrypoint.sh`, which is there
+      to start a *server*.
+
+    Args:
+        tool: The client binary to run -- `pg_dump` or `pg_restore`.
+        image: An approved reference from `_client_image`, or None to use PATH.
+        mount: A host directory the tool must read at the same path inside the
+            container. Mounted read-only: `pg_dump` writes to stdout and needs no
+            mount at all, and `pg_restore` only ever reads the dump.
+
+    Returns:
+        The argv prefix for `tool`, ready to be extended with its arguments.
+    """
+    if image is None:
+        return [tool]
+
+    command = [
+        "docker",
+        "run",
+        "--rm",
+        "--pull",
+        "never",
+        "--network",
+        "host",
+        "--cap-drop",
+        "ALL",
+        "--security-opt",
+        "no-new-privileges",
+    ]
+
+    if mount is not None:
+        command += ["--cap-add", "DAC_OVERRIDE", "--volume", f"{mount}:{mount}:ro"]
+
+    return [*command, "--entrypoint", tool, image]
+
+
+def _require_tooling(image: str | None) -> None:
+    """Fail early and clearly when the client tools cannot actually run.
 
     A drill that cannot find its tools must say so rather than fail obscurely
-    three steps later — the audit environment had exactly this gap.
-    """
-    missing = [name for name in ("pg_dump", "pg_restore") if shutil.which(name) is None]
+    three steps later -- the audit environment had exactly this gap.
 
-    if missing:
-        raise SystemExit(
-            f"missing required tooling: {', '.join(missing)}. "
-            "The restore drill needs the PostgreSQL client binaries."
-        )
+    Args:
+        image: An approved reference from `_client_image`, or None to use PATH.
+
+    Raises:
+        SystemExit: If the tools are missing, or the probe below cannot run them.
+    """
+    if image is None:
+        missing = [name for name in ("pg_dump", "pg_restore") if shutil.which(name) is None]
+
+        if missing:
+            raise SystemExit(
+                f"missing required tooling: {', '.join(missing)}. "
+                "The restore drill needs the PostgreSQL client binaries."
+            )
+
+        source = str(shutil.which("pg_dump"))
+    else:
+        if shutil.which("docker") is None:
+            raise SystemExit(
+                f"missing required tooling: docker. {_CLIENT_IMAGE_VARIABLE} is set to "
+                f"'{image}', so the drill runs the PostgreSQL client tools from that "
+                "image and needs a working Docker daemon."
+            )
+
+        source = f"image {image}"
 
     # `pg_dump` refuses a server newer than itself, and says so only once it has
     # connected -- several steps into a drill that then reads like a restore
-    # failure rather than a toolchain one. Printing the client version and its
-    # path up front turns that into a line naming both, which is exactly what
-    # happened in CI: the runner's own /usr/bin/pg_dump (16) shadowed the 17
-    # client the workflow had installed to /usr/lib/postgresql/17/bin.
-    version = subprocess.run(  # noqa: S603 - fixed argv, no shell
-        ["pg_dump", "--version"],
+    # failure rather than a toolchain one. Probing up front turns that into a
+    # line naming the version and where it came from, which is exactly what was
+    # needed in CI once: the runner's own /usr/bin/pg_dump (16) shadowed the 17
+    # client the workflow then installed to /usr/lib/postgresql/17/bin.
+    #
+    # A non-zero exit or empty output is now a stop, not a shrug. This probe is
+    # the first thing that runs the container, so it is where a dead Docker
+    # daemon and a `--pull never` miss both surface -- and printing an empty
+    # version line and carrying on would push either of them three steps
+    # downstream, where it reads like a restore failure instead of a toolchain
+    # one.
+    probe = subprocess.run(  # noqa: S603 - fixed argv, no shell
+        [*_client_command("pg_dump", image), "--version"],
         capture_output=True,
         text=True,
         check=False,
     )
-    print(f"    client: {version.stdout.strip()} ({shutil.which('pg_dump')})")
+
+    if probe.returncode != 0 or not probe.stdout.strip():
+        detail = (probe.stderr or probe.stdout).strip() or "no output"
+        raise SystemExit(f"could not run pg_dump from {source} (exit {probe.returncode}): {detail}")
+
+    print(f"    client: {probe.stdout.strip()} ({source})")
 
 
 def _seed(url: str) -> dict[str, Any]:
@@ -232,8 +386,23 @@ def _capture_verification(url: str) -> dict[str, Any]:
     return captured
 
 
-def _run(command: list[str], *, env: dict[str, str], stdout: IO[bytes] | None = None) -> None:
-    """Run a subprocess, raising with its stderr when it fails."""
+def _run(
+    command: list[str],
+    *,
+    env: dict[str, str],
+    stdout: IO[bytes] | None = None,
+    label: str | None = None,
+) -> None:
+    """Run a subprocess, raising with its stderr when it fails.
+
+    Args:
+        command: The argv to execute.
+        env: The environment for the child process.
+        stdout: Where to send standard output, or None to capture it as text.
+        label: The name to blame in the failure message. Given explicitly
+            because `command[0]` is `docker` when the tools run from an image,
+            and "docker failed" names the wrong thing.
+    """
     result = subprocess.run(  # noqa: S603 - fixed argv, no shell
         command,
         env=env,
@@ -247,7 +416,7 @@ def _run(command: list[str], *, env: dict[str, str], stdout: IO[bytes] | None = 
         stderr = result.stderr
         if isinstance(stderr, bytes):
             stderr = stderr.decode("utf-8", "replace")
-        raise SystemExit(f"{command[0]} failed ({result.returncode}):\n{stderr}")
+        raise SystemExit(f"{label or command[0]} failed ({result.returncode}):\n{stderr}")
 
 
 def main() -> int:  # noqa: C901 - a linear drill; splitting it would obscure the sequence
@@ -263,7 +432,8 @@ def main() -> int:  # noqa: C901 - a linear drill; splitting it would obscure th
         return 2
 
     _require_disposable(source_url)
-    _require_tooling()
+    client_image = _client_image()
+    _require_tooling(client_image)
 
     restore_db = f"{_RESTORE_DB_PREFIX}_{uuid.uuid4().hex[:8]}"
     admin_url = _with_database(source_url, "postgres")
@@ -301,9 +471,16 @@ def main() -> int:  # noqa: C901 - a linear drill; splitting it would obscure th
         backup_started = time.monotonic()
         with open(dump_path, "wb") as handle:
             _run(
-                ["pg_dump", "--format=custom", "--no-owner", "--no-acl", source_url],
+                [
+                    *_client_command("pg_dump", client_image),
+                    "--format=custom",
+                    "--no-owner",
+                    "--no-acl",
+                    source_url,
+                ],
                 env=env,
                 stdout=handle,
+                label="pg_dump",
             )
         backup_seconds = time.monotonic() - backup_started
         dump_bytes = os.path.getsize(dump_path)
@@ -321,7 +498,7 @@ def main() -> int:  # noqa: C901 - a linear drill; splitting it would obscure th
             restore_started = time.monotonic()
             _run(
                 [
-                    "pg_restore",
+                    *_client_command("pg_restore", client_image, mount=workdir),
                     "--dbname",
                     restore_url,
                     "--no-owner",
@@ -330,6 +507,7 @@ def main() -> int:  # noqa: C901 - a linear drill; splitting it would obscure th
                     dump_path,
                 ],
                 env=env,
+                label="pg_restore",
             )
             restore_seconds = time.monotonic() - restore_started
             print(f"    restored in {restore_seconds:.2f}s")
