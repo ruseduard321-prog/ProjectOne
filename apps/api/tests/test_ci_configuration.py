@@ -492,3 +492,146 @@ def test_the_trigger_and_concurrency_blocks_are_shaped_as_this_parser_assumes() 
     assert _top_level_block("on").strip(), "Parsed no triggers — the `on:` block changed shape"
     assert _top_level_block("concurrency").strip(), "Parsed no concurrency settings"
     assert _trigger_sub_block("push").strip(), "Parsed no `push:` configuration"
+
+
+# --------------------------------------------------------------------------
+# The FA-03 drill's client image (STEP-25a, FA-03)
+# --------------------------------------------------------------------------
+
+#: The service container whose image the FA-03 drill's client tools must match.
+#: Named rather than positional on purpose — `services:` is a mapping, and a
+#: second service added above this one must never become the comparison target.
+API_DATABASE_SERVICE = "postgres"
+
+#: The variable naming the image the drill runs `pg_dump`/`pg_restore` from.
+CLIENT_IMAGE_VARIABLE = "PROJECTONE_PG_CLIENT_IMAGE"
+
+
+def _api_service_image(service: str = API_DATABASE_SERVICE, *, source: str | None = None) -> str:
+    """Return the image declared by one **named** service of the `api` job.
+
+    Resolved by walking `api:` -> `services:` -> `<service>:` -> `image:`, rather
+    than by taking the first `image:` the job happens to contain. The difference
+    is not cosmetic: adding a second service container — a cache, a queue — would
+    put another `image:` in the same job, and a first-match parser would silently
+    start comparing the drill's client against whichever one appeared first.
+    `test_the_service_image_parser_resolves_the_named_service` holds that line.
+
+    Args:
+        service: The key under `services:` to read.
+        source: Workflow text to parse instead of the real file. Used by the
+            guard test below to present a shape this repository does not have
+            yet, so the parser is tested against the failure it must survive.
+
+    Returns:
+        The image reference the named service declares.
+    """
+    text = source if source is not None else WORKFLOW_PATH.read_text(encoding="utf-8")
+
+    job = re.search(rf"^  {API_JOB}:\n(?P<body>(?:.*\n)*?)(?=^  \S|\Z)", text, re.MULTILINE)
+    assert job is not None, f"No `{API_JOB}:` job found in {WORKFLOW_PATH.name}"
+
+    services = re.search(
+        r"^    services:\n(?P<body>(?:.*\n)*?)(?=^    \S|\Z)",
+        job.group("body"),
+        re.MULTILINE,
+    )
+    assert services is not None, f"The `{API_JOB}` job declares no `services:` block"
+
+    entry = re.search(
+        rf"^      {re.escape(service)}:\n(?P<body>(?:.*\n)*?)(?=^      \S|\Z)",
+        services.group("body"),
+        re.MULTILINE,
+    )
+    assert entry is not None, (
+        f"No `{service}:` service found in the `{API_JOB}` job. The FA-03 drill's client "
+        "image is compared against this service specifically — if it was renamed, this "
+        "comparison has to be pointed at the new name deliberately."
+    )
+
+    image = re.search(r"^        image: (?P<value>\S+)$", entry.group("body"), re.MULTILINE)
+    assert image is not None, f"The `{service}` service declares no `image:`"
+
+    return image.group("value")
+
+
+def test_the_drill_client_image_matches_the_database_service_image() -> None:
+    """FA-03's client tools must come from the same image as the server.
+
+    `pg_dump` refuses to dump a server newer than itself, so the drill needs a
+    client of at least the service container's major version. Naming one image
+    for both is what makes that true by construction instead of by two pins
+    somebody has to remember to bump together — and this is what fails when they
+    drift, rather than a red drill blaming the backup for a toolchain gap.
+
+    `--pull never` gives this a second edge: the drill can only run an image
+    Docker already holds, and the only image it is guaranteed to hold is the one
+    the service container started from. A client image naming anything else
+    would not be slow, it would simply not exist.
+    """
+    configured = _api_job_env().get(CLIENT_IMAGE_VARIABLE)
+
+    assert configured == _api_service_image(), (
+        f"{CLIENT_IMAGE_VARIABLE} has drifted from the `{API_DATABASE_SERVICE}` service "
+        "container's image. The FA-03 drill runs pg_dump/pg_restore from that image with "
+        "`--pull never`, so it must name an image the job has already pulled. Bump both "
+        "together."
+    )
+
+
+def test_the_service_image_parser_resolves_the_named_service() -> None:
+    """A second service must not become the comparison target by being first.
+
+    This repository declares one service today, so the real workflow cannot
+    exercise the ambiguity — which is exactly why the parser is pointed at a
+    shape it does not have yet. A first-`image:` parser passes every assertion in
+    this file right up until someone adds a cache container, and then it starts
+    comparing the PostgreSQL client against Redis and reporting drift that is not
+    there (or, worse, agreement that is not either).
+    """
+    two_services = (
+        "jobs:\n"
+        "  api:\n"
+        "    runs-on: ubuntu-latest\n"
+        "    services:\n"
+        "      cache:\n"
+        "        image: redis:7\n"
+        "        ports:\n"
+        "          - 6379:6379\n"
+        "      postgres:\n"
+        "        # A comment, at the depth the real workflow uses.\n"
+        "        image: postgres:17\n"
+        "        env:\n"
+        "          POSTGRES_DB: projectone_test\n"
+        "\n"
+        "    env:\n"
+        "      PROJECTONE_ENVIRONMENT: development\n"
+        "  web:\n"
+        "    runs-on: ubuntu-latest\n"
+    )
+
+    assert _api_service_image(source=two_services) == "postgres:17"
+    assert _api_service_image("cache", source=two_services) == "redis:7"
+
+    # The failure this guards: `redis:7` is the first `image:` in that job.
+    naive = re.search(r"^        image: (?P<value>\S+)$", two_services, re.MULTILINE)
+    assert naive is not None and naive.group("value") == "redis:7", (
+        "The fixture no longer places a non-PostgreSQL image first, so it no longer "
+        "distinguishes a named lookup from a first-match one."
+    )
+
+
+def test_the_service_block_is_shaped_as_this_parser_assumes() -> None:
+    """Guard the service parser against a workflow restructure.
+
+    Same reasoning as the other parser guards in this file: a parser that
+    silently reads nothing turns the drift assertion above into a vacuous pass.
+    An unknown service name must raise rather than return something plausible.
+    """
+    assert _api_service_image() == "postgres:17", (
+        "The `postgres` service image is not what this suite expects. Change it and "
+        f"{CLIENT_IMAGE_VARIABLE} together, deliberately."
+    )
+
+    with pytest.raises(AssertionError):
+        _api_service_image("no-such-service")
