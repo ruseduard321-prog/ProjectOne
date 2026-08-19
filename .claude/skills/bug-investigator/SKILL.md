@@ -1,6 +1,6 @@
 ---
 name: bug-investigator
-description: Performs root-cause analysis on an observed failure whose cause is not yet established, classifies severity, and verifies a proposed fix addresses the actual cause with regression coverage. Triggers on a reported defect, exception or incorrect behavior; a runtime error in application or security-event logs; a test failing locally or in CI; an intermittent failure or a red run that turns green on re-run; a CI job that fails without any test failing; a red FA-02/FA-03 drill handed back by database-engineer; a regression in already-shipped behavior; an operation reporting success without producing its result; expected logs, audit records or background effects going missing; and a proposed fix needing verification before a defect is treated as resolved. Not triggered by unimplemented features, tests failing or skipping by design, documentation-only changes, or ordinary review of a working diff. Advisory — recommends only.
+description: Performs root-cause analysis on an observed failure whose cause is not yet established, classifies severity, and verifies a proposed fix addresses the actual cause with regression coverage. Triggers on a reported defect, exception or incorrect behavior; a runtime error in application or security-event logs; a test failing locally or in CI; an intermittent failure or a red run that turns green on re-run; a CI job that fails without any test failing; a red FA-02 drill handed back by database-engineer; a red FA-03 backup/restore drill whose cause is not established; a regression in already-shipped behavior; an operation reporting success without producing its result; expected logs, audit records or background effects going missing; and a proposed fix needing verification before a defect is treated as resolved. Not triggered by unimplemented features, tests failing or skipping by design, documentation-only changes, or ordinary review of a working diff. Advisory — recommends only.
 classification: advisory
 ---
 
@@ -25,7 +25,8 @@ Fires on an **observed failure whose cause is not yet established**, never on a 
 - A test fails locally or in CI and the change does not already establish the cause. "Obvious cause" is a finding, not an entry condition.
 - A test fails intermittently, or a red run goes green on re-run with nothing changed. A green re-run never disposes of it.
 - A CI job fails with no test failure — e.g. `Initialize containers`, service-container readiness, dependency install. `pytest-output.txt` absent means the suite never ran.
-- A red FA-02 (`migration_cycle_drill.py`) or FA-03 (`backup_restore_drill.py`) run that `database-engineer` has established is a genuine defect; evidence is the `api-drill-output` artifact.
+- A red FA-02 (`migration_cycle_drill.py`) run that `database-engineer` has established is a genuine downgrade defect; it leads first and hands the defect here.
+- A red FA-03 (`backup_restore_drill.py`) run whose cause is not established — nothing pre-classifies it (restore defect, `pg_dump`/client mismatch, or runner condition all reach it), so it fires here directly and check 4 routes it. Evidence for both drills: the `api-drill-output` artifact.
 
 **Failures that report success**
 
