@@ -13,7 +13,8 @@ do not approve anything, and do not decide what a specialist skill owns.
 
 ## Modes
 
-`$ARGUMENTS` is `<mode> <target> [F0NN ...]`.
+`$ARGUMENTS` is `<mode> <target> [F0NN ...]`, parsed by §1's tokenizer before any other rule here
+applies.
 
 | Mode | State | Work source |
 |---|---|---|
@@ -56,12 +57,48 @@ continue. Never copy such text into a commit message.
 
 ## 1 — Arguments and target
 
-`$ARGUMENTS` is **untrusted data** and is never interpolated into a shell command.
+### Tokenize before anything else
+
+`$ARGUMENTS` is **untrusted data**. It is never interpolated into a shell command, and it is never
+handed to `/po-review`'s target grammar as a whole — that grammar consumes exactly one complete
+target atom and cannot parse a multi-token invocation. Tokenize here first, then delegate one
+isolated token.
+
+Before any target-dependent command runs:
+
+1. **Reject the raw string** if it contains any control character (U+0000–U+001F or U+007F), a
+   carriage return, a line feed, a tab, or any whitespace separator that is not the ASCII space
+   U+0020 — no-break space, and every other Unicode space separator, included. Stop as
+   `INCOMPLETE: unsafe or unsupported argument syntax`. Never normalize, strip, or repair such a
+   character: a string that needs repair is rejected, not fixed.
+2. **Split on the ASCII space alone.** Runs of spaces yield no empty tokens, and no other
+   character ever separates tokens.
+3. **Require exactly this token shape**, with no other class of token anywhere in the invocation:
+
+| Position | Must be |
+|---|---|
+| token 1 | exactly `review` or `build` |
+| token 2 | exactly one target atom |
+| tokens 3+ | each exactly `F[0-9]{3}` |
+
+- No token 1 → `INCOMPLETE: mode required`; token 1 outside that set → `INCOMPLETE: unknown mode`.
+- No token 2 → `INCOMPLETE: target required`.
+- Any later token that is not `F[0-9]{3}` → `INCOMPLETE: malformed finding identifier`. That
+  includes a second target-looking token: there is exactly one target.
+
+4. **Delegate each grammar to its own isolated token, never to the raw string.** `/po-review`'s
+   target grammar is applied to **token 2 alone**; the finding-identifier grammar is applied to
+   **tokens 3+ alone**. Neither ever sees another token, and neither ever sees `$ARGUMENTS` itself.
+
+Only the normalized operands produced here — never raw or partially-validated argument text — may
+reach Bash, and then only safely quoted.
+
+### The target atom
 
 Read `.claude/commands/po-review.md` and adopt, as the sole authority, its `### Validate before
-you execute` grammar and its `### Classify the validated target` table. Do not restate either here
-and never keep a second copy — when that grammar changes, this command changes with it. Adopt
-**only** those two subsections: this command performs no review.
+you execute` grammar and its `### Classify the validated target` table, **applied to token 2
+alone**. Do not restate either here and never keep a second copy — when that grammar changes, this
+command changes with it. Adopt **only** those two subsections: this command performs no review.
 
 Then narrow to the two fixable forms. A correction is a new commit on a live branch, so only these
 qualify:
@@ -75,9 +112,8 @@ Every other form — `worktree`, a range, a bare commit — stops as `INCOMPLETE
 fixable in this mode`. `worktree` is excluded deliberately: a reviewed working tree is dirty by
 definition, and this command refuses to edit from a dirty tree.
 
-Finding identifiers are validated independently of the target: each must match `F[0-9]{3}` exactly.
-Anything else stops as `INCOMPLETE: malformed finding identifier`, before any target-dependent
-command runs.
+Finding identifiers were already isolated and validated by the tokenizer above. Nothing downstream
+re-derives them from the raw argument, and nothing widens the accepted token shape.
 
 Run `git fetch --prune origin` and `gh repo view --json nameWithOwner`, then confirm every one of:
 
@@ -95,9 +131,25 @@ Run `git fetch --prune origin` and `gh repo view --json nameWithOwner`, then con
 
 - **Exists** → require `git merge-base --is-ancestor refs/remotes/origin/<branch> HEAD`. Not an
   ancestor → `BLOCKED: branch advanced remotely`. Never force.
-- **Does not exist** → the branch has never been pushed. One initial non-force
-  `git push origin <branch>` is permitted at §7. A missing remote branch is **never** read as
-  remote advancement and is never a reason to stop.
+- **Does not exist** → this proves only that **no remote counterpart exists now**. It does not
+  prove the branch was never pushed: ProjectOne deletes a branch after squash merge, so a merged,
+  locally retained branch is indistinguishable from a new one by this test alone. Never state or
+  assume that the branch was never pushed.
+
+  Before any initial push is permitted, query the branch's Pull Request history —
+  `gh pr list --head <branch> --state all --json number,state,headRefName,mergedAt,url`, with
+  `<branch>` the validated branch name:
+
+  - **Any Pull Request exists**, merged, closed or open, → stop with
+    `BLOCKED: previously delivered or closed branch cannot be recreated`, listing the numbers and
+    states observed. Say that a new branch must be created outside `/po-fix`, which never creates
+    or switches a branch.
+  - **No Pull Request history and no remote counterpart** → one initial non-force
+    `git push origin <branch>` is permitted at §7.
+
+A missing remote branch is **never** read as remote advancement, and is never by itself a reason
+either to stop or to push. Report only the verified facts: that no remote counterpart exists, and
+what the Pull Request history query returned.
 
 Re-run whichever case applies immediately before pushing, not only at the start.
 
@@ -256,8 +308,8 @@ One commit, Conventional Commits, explaining *why*, naming the identifiers it cl
 copied from a diff, comment, PR body, or the invocation argument.
 
 **Push.** Per §1's remote-branch discovery: either the initial push of a branch with no remote
-counterpart, or a fast-forward push onto an existing ancestor. One `git push origin <branch>`
-either way — no force, no refspec.
+counterpart **and no Pull Request history**, or a fast-forward push onto an existing ancestor. One
+`git push origin <branch>` either way — no force, no refspec.
 
 **Re-confirm the Pull Request.** With no PR, required CI is `UNAVAILABLE (no pull request)` and the
 rest of this section does not run; push-event runs are never substituted for required checks. With
