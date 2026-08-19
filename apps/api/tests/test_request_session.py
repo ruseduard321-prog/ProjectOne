@@ -254,3 +254,80 @@ def test_future_tables_do_not_inherit_permissive_grants(
     assert anon_grants == set(), f"a new table was granted to anon: {anon_grants}"
     assert "DELETE" not in authenticated_grants
     assert "TRUNCATE" not in authenticated_grants
+
+
+def test_alembic_version_holds_no_application_role_grants(migrated_database: str) -> None:
+    """`anon` and `authenticated` must hold nothing on the migration ledger.
+
+    `c4f21a86b3de` narrowed the three tenant tables and repaired Supabase's
+    default privileges, but Alembic creates `alembic_version` *before* the first
+    revision runs — while those defaults are still permissive — so it inherited
+    full DML, TRUNCATE included, and kept it. `7b4360bcefed` revokes it.
+
+    The grants are seeded in `conftest.py` before this migration runs, so this
+    asserts a revoke that actually happened rather than a privilege that was
+    never granted in the first place.
+    """
+    with (
+        psycopg.connect(migrated_database) as connection,
+        connection.cursor() as cursor,
+    ):
+        cursor.execute(
+            """
+            SELECT grantee, privilege_type
+            FROM information_schema.role_table_grants
+            WHERE table_schema = 'public'
+              AND table_name = 'alembic_version'
+              AND grantee IN ('anon', 'authenticated')
+            """
+        )
+        remaining = cursor.fetchall()
+
+    assert remaining == [], f"application roles still hold grants on alembic_version: {remaining}"
+
+
+def test_alembic_version_is_unreachable_over_the_request_path(
+    factory: RequestSessionFactory,
+) -> None:
+    """The real request path cannot read the migration ledger.
+
+    The catalog test above proves the grant is gone; this proves the production
+    connection is actually refused. Grants and RLS are independent gates and
+    neither stands in for the other, so both are asserted separately.
+    """
+    with factory.authenticated_as(uuid.uuid4()) as connection, connection.cursor() as cursor:
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            cursor.execute("SELECT count(*) FROM public.alembic_version")
+
+
+def test_alembic_version_has_rls_enabled_but_not_forced(migrated_database: str) -> None:
+    """RLS is on, and `FORCE` is deliberately off — an explicit exception.
+
+    Every application table carries both flags ([[RLS Policy Pattern]]), and
+    `test_rls_isolation.py` asserts exactly that while excluding this table.
+    `alembic_version` is infrastructure bookkeeping rather than tenant data: it
+    intentionally has no policies and must stay writable by whichever role runs
+    migrations, and `FORCE` subjects the table owner to policies.
+
+    The `false` half of this assertion is the load-bearing one. Without it,
+    someone cross-checking the catalog against the application-table rule would
+    read this table as a violation and "fix" it — and on an environment whose
+    table owner does not bypass RLS, that breaks the migration pipeline itself.
+    """
+    with (
+        psycopg.connect(migrated_database) as connection,
+        connection.cursor() as cursor,
+    ):
+        cursor.execute(
+            """
+            SELECT c.relrowsecurity, c.relforcerowsecurity
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'public' AND c.relname = 'alembic_version'
+            """
+        )
+        row = cursor.fetchone()
+
+    assert row is not None, "alembic_version is missing"
+    assert row[0] is True, "row-level security is not enabled on alembic_version"
+    assert row[1] is False, "alembic_version must not be FORCEd — see 7b4360bcefed"
