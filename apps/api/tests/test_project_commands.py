@@ -5,11 +5,19 @@ turn, so nothing type-checks it and nothing fails when it drifts. Two mechanical
 properties must not drift.
 
 *First, the tool frontmatter.* `allowed-tools` **preauthorizes**; it does not
-restrict. A command absent from it still runs, behind the normal permission
-prompt. So the safety question is not "is the dangerous thing missing from the
-allow list" -- it is "is the dangerous thing **denied**, and is nothing dangerous
-**broadly preauthorized**". Those are tested separately because they fail for
-different reasons.
+restrict. A command absent from it is not forbidden -- absence removes that
+command's explicit preauthorization and nothing more, and what happens next is
+decided by the active Claude Code permission mode: Default may prompt, while Auto
+runs without permission prompts, auto-approves local file operations and routes
+other actions through its own background safety checks.
+
+**These tests therefore assert only what is checkable in the file: that an
+operation is not explicitly preauthorized by the command.** They do not assert,
+and must never be described as asserting, that the owner will see a prompt --
+that would be a promise about a permission mode this file cannot observe. The
+safety question they answer is "is the dangerous thing **denied**, and is nothing
+dangerous **broadly preauthorized**". Those are tested separately because they
+fail for different reasons.
 
 **These tests do not prove semantic safety.** Pattern matching over a frontmatter
 string cannot enumerate every spelling of a destructive command (`git -c ...
@@ -100,7 +108,8 @@ REQUIRED_DENY_RULES = (
 )
 
 #: Allow patterns broad enough to admit a destructive variant through an extra
-#: flag. A write command belongs at the permission prompt, not in `allowed-tools`.
+#: flag. A write command must not carry blanket command-level preauthorization;
+#: what bounds it is the mutation boundary and the deny rules, not this list.
 FORBIDDEN_BROAD_ALLOWS = (
     "Bash(git branch:*)",
     "Bash(git push:*)",
@@ -121,9 +130,10 @@ FORBIDDEN_BROAD_ALLOWS = (
     "Bash(./scripts/migrate.sh new:*)",
 )
 
-#: Generic file-editing tools. Preauthorizing these would let an edit land
-#: outside the approved scope with no owner prompt, contradicting `/po-build`'s
-#: own mutation boundary.
+#: Generic file-editing tools. Preauthorizing these would give the command
+#: blanket authorization to write anywhere, contradicting its own mutation
+#: boundary. What actually bounds an edit is the approved scope envelope, the
+#: frozen planned file set and the pre-commit reconciliation -- not this list.
 FORBIDDEN_GENERIC_EDIT_TOOLS = ("Edit", "Write", "NotebookEdit")
 
 
@@ -277,9 +287,9 @@ def test_po_build_denies_the_required_dangerous_operations() -> None:
     missing = [rule for rule in REQUIRED_DENY_RULES if rule not in denied]
     assert not missing, (
         f"po-build.md is missing deny rules: {missing}. `allowed-tools` only "
-        "preauthorizes -- an operation absent from it still runs behind the "
-        "permission prompt, so denying it is what makes it unreachable. Defense "
-        "in depth, not a proof of safety."
+        "preauthorizes -- absence from it removes explicit preauthorization but "
+        "does not block the operation, so an explicit deny is what makes it "
+        "unreachable. Defense in depth, not a proof of safety."
     )
 
 
@@ -290,7 +300,8 @@ def test_po_build_does_not_broadly_preauthorize_a_write_command() -> None:
         f"po-build.md broadly preauthorizes: {offending}. A wildcarded write "
         "command can absorb an extra destructive flag without matching any deny "
         "rule. Branch creation, commit, push, PR creation and migration "
-        "generation belong at the permission prompt (CLAUDE.md 20/20a)."
+        "generation must not carry blanket command-level preauthorization "
+        "(CLAUDE.md 20/20a)."
     )
 
 
@@ -298,9 +309,10 @@ def test_po_build_does_not_preauthorize_generic_file_edits() -> None:
     entries = _tool_entries(_field(_frontmatter(_po_build()), "allowed-tools"))
     offending = [tool for tool in FORBIDDEN_GENERIC_EDIT_TOOLS if tool in entries]
     assert not offending, (
-        f"po-build.md preauthorizes generic file editing: {offending}. That would "
-        "permit an edit outside the approved scope envelope and planned file set "
-        "with no owner prompt, contradicting the command's own mutation boundary."
+        f"po-build.md preauthorizes generic file editing: {offending}. That is "
+        "blanket authorization to write anywhere, which contradicts the command's "
+        "own mutation boundary. This asserts only that the command does not "
+        "explicitly preauthorize it -- not that any prompt will occur."
     )
 
 

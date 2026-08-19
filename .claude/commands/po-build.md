@@ -55,21 +55,33 @@ changed, or still unresolved stops implementation. It is never authorization to 
 ## Mutation boundary
 
 **`allowed-tools` preauthorizes; it does not restrict.** A command absent from it is **not
-forbidden** — it reaches the normal permission prompt, where the owner sees it. What this command
-preauthorizes is therefore deliberately narrow:
+forbidden**: absence removes this command's explicit preauthorization and nothing more. What this
+command preauthorizes is therefore deliberately narrow:
 
 - **read operations** — inspecting the repository, the vault, and GitHub;
 - **explicitly fixed validation and regeneration operations** — the per-layer check commands of §7,
   each a literal containing no derived text.
 
+**What happens to an unlisted operation is decided by the active Claude Code permission mode, not
+by this file.** Default mode may prompt. Auto mode runs without permission prompts — it
+auto-approves local file operations and routes other actions through its own background safety
+checks. **Absence from `allowed-tools` therefore does not guarantee a prompt, and does not
+guarantee that the owner sees the operation at all**, and this command never claims otherwise.
+
+**This command is permission-mode-neutral.** It does not require a particular mode, does not detect
+one, and **does not stop because Auto mode is active**. Owner authorization here is the explicit
+phase boundary — `audit` → `implement` → `deliver`, each typed by the owner — never a tool prompt.
+A control that only exists in one permission mode is not a control this command may rely on.
+
 **Generic file edits are not preauthorized.** `Edit` and `Write` are absent from `allowed-tools`, so
-every file this command creates or modifies reaches the owner through the normal permission prompt.
-Preauthorizing them globally would let an edit land outside the approved scope without the owner
-ever seeing it, which is precisely what §4 and §6 exist to prevent.
+this command carries no blanket, command-level authorization to write anywhere. What actually bounds
+every edit is the approved scope envelope (§4), the frozen planned file set (§6), and the pre-commit
+reconciliation that refuses to commit a path outside both — not the tool list, and not a prompt.
 
 **Git and GitHub writes are not preauthorized either.** `git switch -c`, `git add`, `git commit`,
-`git push`, `gh pr create` and `./scripts/migrate.sh new` are all absent from `allowed-tools` and
-prompt every time. No `gh api` form is preauthorized at all, in any method.
+`git push`, `gh pr create` and `./scripts/migrate.sh new` are all absent from `allowed-tools`, and no
+`gh api` form is preauthorized at all, in any method. What bounds them is this prose boundary and the
+`disallowed-tools` rules below.
 
 **The one intentional fixed exception is governance regeneration.**
 `./scripts/sync-governance-docs.sh`, and its `--check`, `--only claude` and `--only agents` forms,
@@ -80,6 +92,11 @@ generated documents the configuration already declares. No other write is preaut
 rules match the command as the harness parses it; they cannot enumerate every equivalent spelling
 (`git -c … push`, an alias, a wrapper). **This prose boundary is primary.** Where the two appear to
 disagree, this boundary governs and you stop.
+
+**The controls this command actually relies on**, none of which depend on a permission mode: the
+approved scope envelope (§4), the frozen planned file set (§6), the pre-commit reconciliation (§6),
+this mutation boundary, the `disallowed-tools` rules, and the owner's exclusive authority over
+merging and over every Critical decision (§3, §10).
 
 **Permitted in `implement`, and nothing else:**
 

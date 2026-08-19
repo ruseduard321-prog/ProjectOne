@@ -76,11 +76,21 @@ note and the governing documents already define. Nothing invokes one automatical
   resolves a review conversation, never changes the `Protect main` ruleset, and never begins the
   following step.
 - **`allowed-tools` preauthorizes; `disallowed-tools` denies.** A command's tool frontmatter is
-  not its boundary: an operation absent from `allowed-tools` still runs behind the normal
-  permission prompt. A command therefore preauthorizes only read operations and explicitly fixed
-  validation or regeneration commands, leaves generic file edits and every Git/GitHub write *out*
-  so the owner sees each one, carries explicit deny rules as defense in depth, and states its real
-  boundary in prose — which governs whenever the two appear to disagree.
+  not its boundary. Absence from `allowed-tools` removes that command's explicit preauthorization
+  and nothing more; **what happens next is decided by the active Claude Code permission mode, so
+  absence does not guarantee a prompt and does not guarantee the owner sees the operation at all.**
+  Default mode may prompt; Auto mode runs without permission
+  prompts, auto-approves local file operations, and routes other actions through its own background
+  safety checks. A command therefore preauthorizes only read operations and explicitly fixed
+  validation or regeneration commands, leaves generic file edits and every Git/GitHub write out of
+  that list, carries explicit deny rules as defense in depth, and states its real boundary in prose
+  — which governs whenever the two appear to disagree.
+- **A command is permission-mode-neutral, and never relies on a control that exists in only one
+  mode.** It does not detect the mode and does not stop because Auto is active. Owner authorization
+  is the command's own explicit phase boundary — for `/po-build`, `audit` → `implement` →
+  `deliver`, each typed by the owner — together with the approved scope, the pre-commit
+  reconciliation, the deny rules, and the owner's exclusive authority over merging and every
+  Critical decision. A tool prompt is never one of those controls.
 - **A command re-derives repository state; approval is the exception.** Exactly two artifacts are
   conversation-derived, each required verbatim and scope-bound: `/po-build implement` requires the
   latest complete `/po-build audit` report for the same step and the same repository state, and
