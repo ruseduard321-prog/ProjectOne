@@ -248,6 +248,24 @@ jobs:
       PROJECTONE_R2_BUCKET: projectone-ci-throwaway
       PROJECTONE_R2_ACCESS_KEY_ID: ci-throwaway-access-key-id
       PROJECTONE_R2_SECRET_ACCESS_KEY: ci-throwaway-secret-not-a-real-key
+      # Where the FA-03 drill gets `pg_dump` and `pg_restore`. Deliberately the
+      # SAME tag as the `postgres` service container above, not a second pin
+      # that happens to agree: `pg_dump` refuses to dump a server newer than
+      # itself, so client and server major versions must match, and naming one
+      # image makes that structural rather than remembered.
+      # `test_ci_configuration.py` asserts the two stay equal.
+      #
+      # This replaced `apt-get install postgresql-client-17` from
+      # apt.postgresql.org. On 2026-08-19 that step hung for 62 minutes and the
+      # run had to be cancelled (run 32271805691, attempt 1), taking FA-03's
+      # evidence with it -- and it was not PGDG that stalled: the PGDG fetches
+      # completed, then `apt-get update` went on to refresh every OTHER
+      # configured repository, the Azure Ubuntu mirror failed over to
+      # archive.ubuntu.com, and that transfer never returned. A required check
+      # should not depend on the Ubuntu mirror fleet to prove a backup restores.
+      # Docker has already pulled this image to start the service container, so
+      # the drill now fetches nothing at all.
+      PROJECTONE_PG_CLIENT_IMAGE: postgres:17
 
     steps:
       - uses: actions/checkout@v4
@@ -366,30 +384,12 @@ jobs:
       # Runs here rather than on a developer machine because this is where a
       # disposable PostgreSQL exists, and because a drill that runs on every PR
       # keeps proving itself, while one run once on a laptop proves it once.
-      # `pg_dump` refuses to dump a server newer than itself, and the service
-      # container is pinned to 17. The runner's default client tracks whatever
-      # Ubuntu ships, so this installs the matching major version explicitly
-      # rather than leaving the drill to fail on a version mismatch that has
-      # nothing to do with the backup being tested.
-      - name: Install PostgreSQL 17 client
-        if: always()
-        run: |
-          sudo install -d /usr/share/postgresql-common/pgdg
-          sudo curl -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
-            --fail https://www.postgresql.org/media/keys/ACCC4CF8.asc
-          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] \
-            https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
-            | sudo tee /etc/apt/sources.list.d/pgdg.list
-          sudo apt-get update
-          sudo apt-get install -y postgresql-client-17
-          # Installing is not enough. The runner ships an older client at
-          # /usr/bin/pg_dump, and the versioned packages land in
-          # /usr/lib/postgresql/17/bin -- so PATH still resolves to 16 and
-          # `pg_dump` refuses the newer server. Prepending the versioned
-          # directory to PATH for subsequent steps is what actually selects it.
-          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
-          /usr/lib/postgresql/17/bin/pg_dump --version
-
+      #
+      # The client tools come from PROJECTONE_PG_CLIENT_IMAGE above rather than
+      # from the runner, whose own `pg_dump` is 16 on ubuntu-24.04 and would
+      # refuse the pinned 17 server. The drill runs them with `--pull never`, so
+      # a step that exists to prove a backup can never stall on a download.
+      #
       # `if: always()` so a broken downgrade does not also hide whether restore
       # works. They are separate findings and each deserves its own answer;
       # skipping this on FA-02's failure would have cost a full CI round trip
