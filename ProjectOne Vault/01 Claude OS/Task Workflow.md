@@ -70,7 +70,41 @@ note and the governing documents already define. Nothing invokes one automatical
   and not a change to anything the project keeps.
 - **An implementation command may perform only the mutations its declared scope explicitly
   authorizes**, and nothing beyond them. A mutation a command's scope does not name is out of
-  bounds even when it would be convenient.
+  bounds even when it would be convenient. `/po-build` executes exactly one [[Build Plan]] step
+  under [[Execution Protocol]], which it sequences without altering, in three owner-invoked
+  phases — `audit` (read-only), `implement`, `deliver`. It never merges, never approves, never
+  resolves a review conversation, never changes the `Protect main` ruleset, and never begins the
+  following step.
+- **`allowed-tools` preauthorizes; `disallowed-tools` denies.** A command's tool frontmatter is
+  not its boundary. Absence from `allowed-tools` removes that command's explicit preauthorization
+  and nothing more; **what happens next is decided by the active Claude Code permission mode, so
+  absence does not guarantee a prompt and does not guarantee the owner sees the operation at all.**
+  Default mode may prompt; Auto mode runs without permission
+  prompts, auto-approves local file operations, and routes other actions through its own background
+  safety checks. A command therefore preauthorizes only read operations and explicitly fixed
+  validation or regeneration commands, leaves generic file edits and every Git/GitHub write out of
+  that list, carries explicit deny rules as defense in depth, and states its real boundary in prose
+  — which governs whenever the two appear to disagree.
+- **A command is permission-mode-neutral, and never relies on a control that exists in only one
+  mode.** It does not detect the mode and does not stop because Auto is active. Owner authorization
+  is the command's own explicit phase boundary — for `/po-build`, `audit` → `implement` →
+  `deliver`, each typed by the owner — together with the approved scope, the pre-commit
+  reconciliation, the deny rules, and the owner's exclusive authority over merging and every
+  Critical decision. A tool prompt is never one of those controls.
+- **A command re-derives repository state; approval is the exception.** Exactly two artifacts are
+  conversation-derived, each required verbatim and scope-bound: `/po-build implement` requires the
+  latest complete `/po-build audit` report for the same step and the same repository state, and
+  `/po-build deliver` requires the latest complete `/po-review` report for the exact current head.
+  A command cannot invoke another command, neither artifact is ever reconstructed from a summary,
+  and an attested account is never accepted in place of a report.
+- **Marking a step complete moves the head, so verification takes two passes.** `/po-build
+  deliver` first verifies every gate and marks the step `Done` in a status-only commit; that push
+  creates a new head, which is re-reviewed and re-tested before a second `deliver` invocation
+  verifies the final head and reports `DELIVERED` — still unmerged, awaiting the owner.
+- **A command states what it will not do.** `/po-build` v1 does not adopt, resume, stash or
+  discard a dirty working tree, does not resume an `In Progress` step, and never repairs
+  implementation code during `deliver`: review findings go to `/po-fix review`, and CI failures are
+  reported rather than fixed in place.
 - **No command may bypass a gate, satisfy one by assertion, or automate one away** — CI, owner
   approval, branch protection, the ADR lifecycle, and Definition of Done are untouched by the
   existence of any command. Automating *how* a check runs is operational policy; automating a

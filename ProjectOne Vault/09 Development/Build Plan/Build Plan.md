@@ -20,7 +20,7 @@ The ordered execution index taking ProjectOne from an empty repository to a veri
 
 This note is an **index, not a plan** — it holds only ID, title and status. Step detail lives in one note per step under `Steps/`, so a session reads this index plus exactly one step file, and beyond that only what [[Execution Protocol#Context Discipline]] permits.
 
-**To execute:** say *"Implement the next step."* Claude follows [[Execution Protocol]] — no other instruction needed.
+**To execute:** say *"Implement the next step."* Claude follows [[Execution Protocol]] — no other instruction needed. The `/po-build STEP-NN` project command is an alternative surface over the same protocol, which it sequences without changing: it verifies the named step is the first step that is not `Done` **as this index reads at `origin/main`** rather than selecting one, and refuses any other. A step marked `In Progress` or `Done` on its own branch therefore does not change which step is next, because nothing has reached `main` until the owner merges.
 
 ## Status Legend
 
