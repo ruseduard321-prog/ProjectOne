@@ -1,8 +1,11 @@
 """Pin `search_path` on the security event log's immutability trigger.
 
 `b2e94c17a5d3` created `public.security_event_log_forbid_update()` without
-`SET search_path = ''`. It is the only function in this schema that omits it,
-and the omission is an oversight rather than a decision: [[RLS Policy Pattern]]
+`SET search_path = ''`. It is one of **two** functions in this schema that omit
+it — `touch_row()` is the other, and is deliberately out of scope here for the
+reason recorded at the end of this docstring. The remaining seven all carry it.
+
+The omission is an oversight rather than a decision: [[RLS Policy Pattern]]
 already requires it of invoker triggers in as many words — "Keep
 `SET search_path = ''` regardless" — and `app_jobs_queue_state_not_client_writable()`,
 the other `SECURITY INVOKER` trigger function, carries it. Supabase's advisor

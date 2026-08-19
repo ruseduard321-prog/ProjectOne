@@ -526,11 +526,15 @@ def test_the_trigger_function_pins_its_search_path(events) -> None:
             JOIN pg_namespace n ON n.oid = p.pronamespace
             WHERE n.nspname = 'public'
               AND p.proname = 'security_event_log_forbid_update'
+              -- Pin the exact zero-argument signature. Matching on name alone
+              -- would silently pass on an overload that is not the trigger's
+              -- function, and PostgreSQL permits the overload.
+              AND pg_get_function_identity_arguments(p.oid) = ''
             """
         )
         row = cursor.fetchone()
 
-    assert row is not None, "the immutability trigger function is missing"
+    assert row is not None, "public.security_event_log_forbid_update() is missing"
     config, security_definer = row
 
     assert config is not None, (
@@ -539,9 +543,10 @@ def test_the_trigger_function_pins_its_search_path(events) -> None:
     )
     assert 'search_path=""' in config, f"search_path is not pinned empty: {config}"
 
-    # SECURITY INVOKER is load-bearing here, not stylistic (RLS Policy Pattern):
-    # inside a definer function `current_user` reads as the owner, and this
-    # trigger holds no elevated rights it would need anyway.
+    # SECURITY INVOKER is load-bearing here, not stylistic: this trigger must
+    # not run with the owner's privileges. It needs none -- it raises and
+    # returns nothing -- and definer rights it does not need are rights an
+    # unqualified reference in a future body could put to use.
     assert security_definer is False, "this trigger must stay SECURITY INVOKER"
 
 
