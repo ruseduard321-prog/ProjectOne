@@ -504,6 +504,47 @@ def test_rls_is_enabled_and_forced(events) -> None:
     assert forced is True
 
 
+def test_the_trigger_function_pins_its_search_path(events) -> None:
+    """A mutable `search_path` on this trigger must not come back.
+
+    The body resolves no schema object today -- a single `RAISE EXCEPTION` with
+    literal arguments -- so nothing here is currently exploitable. This guards
+    the next edit to it: a body that grows one unqualified reference would
+    acquire the vulnerability silently. [[RLS Policy Pattern]] requires
+    `SET search_path = ''` on invoker triggers too, and until `ca213a665ad7`
+    nothing in the suite asserted it on any of the nine functions in this
+    schema. Supabase reports the gap as `function_search_path_mutable`.
+
+    Read from the catalog rather than the migration text, because what protects
+    the function is what the database ended up with.
+    """
+    with events.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT p.proconfig, p.prosecdef
+            FROM pg_proc p
+            JOIN pg_namespace n ON n.oid = p.pronamespace
+            WHERE n.nspname = 'public'
+              AND p.proname = 'security_event_log_forbid_update'
+            """
+        )
+        row = cursor.fetchone()
+
+    assert row is not None, "the immutability trigger function is missing"
+    config, security_definer = row
+
+    assert config is not None, (
+        "search_path is mutable on security_event_log_forbid_update() -- "
+        "Supabase reports this as function_search_path_mutable"
+    )
+    assert 'search_path=""' in config, f"search_path is not pinned empty: {config}"
+
+    # SECURITY INVOKER is load-bearing here, not stylistic (RLS Policy Pattern):
+    # inside a definer function `current_user` reads as the owner, and this
+    # trigger holds no elevated rights it would need anyway.
+    assert security_definer is False, "this trigger must stay SECURITY INVOKER"
+
+
 def test_there_is_no_select_policy_at_all(events) -> None:
     """No tenant-facing read path, by the owner's requirement.
 
