@@ -32,6 +32,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Protocol
 
 import psycopg
 
@@ -106,6 +107,27 @@ def _asset_from_row(row: tuple[object, ...]) -> Asset:
         created_by=row[6],  # type: ignore[arg-type]
         created_at=row[7],  # type: ignore[arg-type]
     )
+
+
+class ProjectReader(Protocol):
+    """The one project read a workflow step performs.
+
+    Narrower than `ProjectRepository` on purpose. A step needs to read one
+    project; it does not need the writes, and a caller that can only read is a
+    caller that cannot accidentally do anything else.
+
+    It exists as a Protocol rather than a base class so that **the connection's
+    lifetime stops being part of the contract**. `ProjectRepository` is bound to
+    one connection for its whole life, which is right for a request -- the
+    request owns that connection -- and wrong for a workflow step, whose
+    execution spans an external provider call. `app/workflows/execution.py`
+    satisfies this with an implementation that opens a short session per call,
+    so nothing holds a connection across that call (ADR-005 §4).
+    """
+
+    def get(self, workspace_id: uuid.UUID, project_id: uuid.UUID) -> Project | None:
+        """Return one live project, or None when it does not exist or is hidden."""
+        ...
 
 
 class ProjectRepository:

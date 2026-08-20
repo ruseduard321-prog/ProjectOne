@@ -44,7 +44,7 @@ from app.ai.provider import CompletionRequest, CompletionResponse
 from app.ai.router import AIRouter
 from app.core.logging import get_logger, log_context
 from app.services.ai_spend_service import AISpendService
-from app.services.provider_credential_service import ProviderCredentialService
+from app.services.provider_credential_service import CredentialReader
 
 logger = get_logger(__name__)
 
@@ -62,7 +62,7 @@ class AIService:
     def __init__(
         self,
         router: AIRouter,
-        credentials: ProviderCredentialService,
+        credentials: CredentialReader,
         spend: AISpendService,
     ) -> None:
         """Wire the router to the workspace's credentials and its spend controls.

@@ -47,12 +47,16 @@ Trigger → Validation → Planning → Agent Execution → Quality Checks → U
 
 Failed workflows can pause, retry, resume from checkpoints or terminate safely while preserving execution history.
 
-> [!note] Execution is still synchronous; the substrate for asynchronous execution now exists
-> [[STEP-30 Async Job Infrastructure]] delivered the queue, the worker process and the tenant boundary an asynchronous run needs — see [[Async Job Execution]] — and proved them on an infrastructure probe rather than on a workflow. `WorkflowRunner` continues to execute every step inside the request that started it.
+> [!note] Execution is asynchronous, and recovery from a paid step is a decision rather than a default
+> [[STEP-30 Async Job Infrastructure]] built the queue, the worker and the tenant boundary; [[STEP-31 Workflow Async Execution]] moved runs onto them, against the accepted [[ADR-006 Workflow Async Execution and Run Reconciliation]]. Starting a run, approving a step and continuing a stopped run all **enqueue** and answer `202 Accepted`; a client learns the outcome by reading the run.
 >
-> **Making runs asynchronous is [[STEP-31 Workflow Async Execution]]**, and the engine needs no change to accept it: state is persisted after each step and `next_step_index` counts only completed steps, so a run identified by its id alone can be continued in a process that did not start it. The queue drives that existing resumability rather than replacing it.
+> The queue drives the engine's existing resumability rather than replacing it: state is persisted after each step and `next_step_index` counts only completed steps, so a run identified by its id alone continues in a process that did not start it.
 >
-> One consequence is already fixed and worth knowing here: an asynchronous run inherits a **third** retry layer, and the composed worst case is **60 upstream provider requests per enqueue** (2 job attempts × 5 chained invocations × 6 requests per completion). Raising any layer means recomputing that product — see [[Async Job Execution#The composed ceiling 60]].
+> **One thing genuinely changed, and it is what a reader of "resume from checkpoints" needs to know.** Delivery is at-least-once, so two executions of one run can be alive at once — and a step that reaches a paid provider is therefore protected by a durable claim with **no expiry**. Automatic redelivery resumes replayable work; an interrupted paid step **stops and waits for a person**, because a platform that silently re-spends a user's money to avoid showing them a failure has made the user's decision for them. Continuing is one click, and the endpoint says what it may cost.
+>
+> **There is no exactly-once provider execution.** A provider paid before its worker died is a real, unrecorded charge; nothing re-drives it automatically, and a deliberate recovery may repeat it.
+>
+> An asynchronous run also inherits a **third** retry layer, and the composed worst case is **60 upstream provider requests per enqueue** (2 job attempts × 5 chained invocations × 6 requests per completion). Raising any layer means recomputing that product — see [[Async Job Execution#The composed ceiling 60]].
 
 ## Success Criteria
 

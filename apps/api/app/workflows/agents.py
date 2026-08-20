@@ -35,7 +35,7 @@ from __future__ import annotations
 
 from app.ai.provider import CompletionRequest, Message, Role
 from app.core.logging import get_logger, log_context
-from app.repositories.projects import ProjectRepository
+from app.repositories.projects import ProjectReader
 from app.services.ai_service import AIService
 from app.workflows.models import StepContext, StepResult, WorkflowError, WorkflowStep
 
@@ -73,8 +73,15 @@ class ValidateProjectStep(WorkflowStep):
     `AISpendService` uses for its own checks.
     """
 
-    def __init__(self, projects: ProjectRepository) -> None:
-        """Store the repository this step reads the project through."""
+    def __init__(self, projects: ProjectReader) -> None:
+        """Store the reader this step reads the project through.
+
+        `ProjectReader` rather than `ProjectRepository`, so the reader's
+        connection lifetime is its own business. A request supplies the
+        repository over the request connection; a workflow supplies one that
+        opens a short session per call, because a workflow step must not hold a
+        connection across the provider call the next step makes (ADR-005 §4).
+        """
         self._projects = projects
 
     @property
@@ -91,6 +98,19 @@ class ValidateProjectStep(WorkflowStep):
         service. There is no consequence for a user to approve.
         """
         return False
+
+    @property
+    def replayable(self) -> bool:
+        """Pure with respect to everything outside this database.
+
+        **The documented exemption** ADR-006 D8 requires: `execute` reads one
+        project row through its reader and returns. It writes nothing,
+        spends nothing, and reaches no external service, so a second execution
+        of it costs nothing and changes nothing -- there is no effect for a
+        claim to protect, and claiming it would strand a run on a step that was
+        always safe to repeat.
+        """
+        return True
 
     def execute(self, context: StepContext) -> StepResult:
         """Read the project and confirm it is usable.
@@ -143,6 +163,21 @@ class PlanningAgent(WorkflowStep):
     CLAUDE.md §15 lists alongside them. `requires_approval` is inherited as
     `True` rather than overridden, so this agent is gated by default and the
     inheritance is the decision rather than an oversight.
+
+    ## Why this is not replayable
+
+    The same fact, seen from the other side: `AIService.complete` reaches a paid
+    provider, so a second execution of this step is a second bill. `replayable`
+    is inherited as `False` (ADR-006 D8), which means this step is entered only
+    by winning a durable claim exactly one execution can hold, and its result is
+    persisted only while that execution still owns its job.
+
+    **What that does not buy** is stated here rather than left to be assumed: a
+    provider that accepted and billed the request before its worker died has
+    already been paid, and nothing in this platform records it. No automatic
+    delivery re-enters this step afterwards -- recovery is an explicit user
+    decision -- but there is no exactly-once provider execution, and nothing
+    here should be read as claiming one.
     """
 
     def __init__(self, ai: AIService) -> None:
@@ -254,6 +289,17 @@ class QualityCheckStep(WorkflowStep):
     def name(self) -> str:
         """Return the step's stable identifier."""
         return "quality_check"
+
+    @property
+    def replayable(self) -> bool:
+        """Deterministic over values already in memory.
+
+        **The documented exemption** ADR-006 D8 requires: `execute` inspects
+        `context.outputs`, touches no repository and no service, and returns the
+        same answer for the same inputs. Running it twice is indistinguishable
+        from running it once.
+        """
+        return True
 
     @property
     def requires_approval(self) -> bool:

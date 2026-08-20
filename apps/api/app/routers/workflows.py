@@ -46,14 +46,13 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, Response, status
 
+from app.core.api import current_request_id
 from app.core.dependencies import (
     AIServiceDep,
-    CurrentUserDep,
     ProjectRepositoryDep,
     WorkflowRepositoryDep,
-    WorkflowRunnerDep,
     requires,
 )
 from app.core.permissions import WorkspacePermission, WorkspaceRole
@@ -68,9 +67,11 @@ from app.schemas.workflow import (
 from app.workflows.definitions import AVAILABLE_WORKFLOWS, build_definition
 from app.workflows.models import (
     RunNotFoundError,
+    RunNotResumableError,
     RunStatus,
     StepStatus,
     WorkflowDefinition,
+    WorkflowStateConflictError,
 )
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/workflows", tags=["workflows"])
@@ -169,47 +170,47 @@ def list_runs(
 @router.post(
     "/runs",
     response_model=WorkflowRunResponse,
-    status_code=status.HTTP_201_CREATED,
+    status_code=status.HTTP_202_ACCEPTED,
     summary="Start a workflow run",
-    # Tighter than project creation, and for a different reason: a run makes AI
-    # calls, so an accidental loop here spends money rather than merely creating
-    # rows. This is the per-user gate; the workspace's spend ceiling and the
-    # run's own ExecutionBudget are the two independent ones beneath it.
+    # Unchanged, and now genuinely load-bearing rather than nominally so. Since
+    # `app_start_workflow_run` refuses any caller that did not arrive over the
+    # application login, this route is the only entrance to starting a run, and
+    # this limiter is the only gate anyone passes through (ADR-006 D11).
     dependencies=[Depends(limit_by_user("workflow-run", limit=20, window_seconds=60))],
 )
 def start_run(
     workspace_id: uuid.UUID,
     request: WorkflowRunStartRequest,
-    user: CurrentUserDep,
+    http_request: Request,
+    response: Response,
     projects: ProjectRepositoryDep,
     ai: AIServiceDep,
-    runner: WorkflowRunnerDep,
     workflows: WorkflowRepositoryDep,
     _role: _MemberOfWorkspace,
 ) -> WorkflowRunResponse:
-    """Trigger a run and execute it until it finishes, pauses or fails.
+    """Accept a workflow run and queue it.
 
-    **Synchronous**, and that is a stated limitation rather than an oversight. A
-    background queue is real infrastructure needing its own ADR ([[CLAUDE|CLAUDE.md]]
-    §10/§28), and the run's wall-clock ceiling (300s) bounds how long a request
-    can take in the meantime. The persistence model is already the one a queue
-    would need -- state is written after every step and resumed from the
-    database -- so moving execution off the request thread later does not change
-    this design, only where `_execute_from` is called from.
+    **202, not 201, and the difference is the point.** A run row *is* created, so
+    201 would not be false -- but the operation is not complete, and 202 is the
+    only code that says so. Three sibling endpoints answering with one code for
+    one semantic is what makes the contract legible
+    ([[ADR-006 Workflow Async Execution and Run Reconciliation]] D1).
 
-    Returns **201 with the run in whatever state execution reached**, including
-    `failed`. See rule 2 in the module docstring.
+    The definition is built here to validate the workflow type and read the
+    version this run will be pinned to. It is **not** executed here: a
+    multi-minute render inside an HTTP request is what STEP-31 removed.
     """
     definition = _definition(request.workflow_type, projects, ai)
 
-    run = runner.start(
+    run_id = workflows.start_run(
         workspace_id=workspace_id,
-        definition=definition,
-        triggered_by=user.id,
+        workflow_type=definition.workflow_type,
+        definition_version=definition.version,
         project_id=request.project_id,
+        correlation_id=current_request_id(),
     )
 
-    return _run_response(run, workflows.list_steps(workspace_id, run.id))
+    return _accepted(http_request, response, workflows, workspace_id, run_id)
 
 
 @router.get(
@@ -241,102 +242,151 @@ def read_run(
 @router.post(
     "/runs/{run_id}/approval",
     response_model=WorkflowRunResponse,
+    status_code=status.HTTP_202_ACCEPTED,
     summary="Approve the step a run is waiting on",
     dependencies=[Depends(limit_by_user("workflow-run", limit=20, window_seconds=60))],
 )
 def approve_run(
     workspace_id: uuid.UUID,
     run_id: uuid.UUID,
-    user: CurrentUserDep,
-    projects: ProjectRepositoryDep,
-    ai: AIServiceDep,
-    runner: WorkflowRunnerDep,
+    http_request: Request,
+    response: Response,
     workflows: WorkflowRepositoryDep,
     _role: _MayApprove,
 ) -> WorkflowRunResponse:
-    """Approve one gated step and continue the run.
+    """Record the approval and queue the continuation.
 
-    **Owner and admin only.** A gated step spends money or acts externally, which
-    is the same class of consequence guarding AI keys and budgets.
+    **The approval is now durable state, and it did not used to be.** Approving
+    used to pass `approved=True` in memory to a runner executing in the same
+    request. Asynchronously the decision has to reach a different process, so it
+    is written to the step as a single-use grant pinned to the approver, in the
+    same transaction that enqueues the job which will spend it (ADR-006 D9).
 
-    Approves exactly the step the run is waiting on. The run continues until it
-    finishes or reaches the *next* gated step, where it stops again — there is no
-    "approve everything from here", because that is autonomous execution and
-    CLAUDE.md §15 requires it to be a documented, configured opt-in rather than a
-    side effect of clicking approve.
+    **The grant and the job are inseparable.** There is no way to obtain one
+    without the other, which is what keeps a detached entitlement -- a run
+    carrying an approval that some other path could spend -- out of reach.
 
-    A run that is not waiting for approval answers **409**: the caller is acting
-    on stale state, and saying so is better than silently doing nothing.
-
-    Shares the `workflow-run` rate-limit bucket with starting a run, deliberately
-    — both cause AI calls, and separate buckets would let a caller spend twice
-    the intended allowance by alternating between them.
-    """
-    workflow_type = _run_workflow_type(workflows, workspace_id, run_id)
-    definition = _definition(workflow_type, projects, ai)
-
-    run = runner.approve(
-        workspace_id=workspace_id,
-        run_id=run_id,
-        definition=definition,
-        approved_by=user.id,
-    )
-
-    return _run_response(run, workflows.list_steps(workspace_id, run.id))
-
-
-@router.post(
-    "/runs/{run_id}/resume",
-    response_model=WorkflowRunResponse,
-    summary="Resume an interrupted run",
-    dependencies=[Depends(limit_by_user("workflow-run", limit=20, window_seconds=60))],
-)
-def resume_run(
-    workspace_id: uuid.UUID,
-    run_id: uuid.UUID,
-    projects: ProjectRepositoryDep,
-    ai: AIServiceDep,
-    runner: WorkflowRunnerDep,
-    workflows: WorkflowRepositoryDep,
-    _role: _MemberOfWorkspace,
-) -> WorkflowRunResponse:
-    """Continue a run from its last completed step.
-
-    For a run interrupted by a process restart or a lost connection. **Resuming
-    is not approving**: a run in `awaiting_approval` answers 409 here, because
-    letting resume clear a gate would let anyone who can restart a run bypass the
-    human CLAUDE.md §15 put behind it.
-
-    `VIEW_WORKSPACE` rather than the approval gate: resuming continues work
-    already authorized, and the next gated step will still stop the run.
-    """
-    workflow_type = _run_workflow_type(workflows, workspace_id, run_id)
-    definition = _definition(workflow_type, projects, ai)
-
-    run = runner.resume(workspace_id=workspace_id, run_id=run_id, definition=definition)
-
-    return _run_response(run, workflows.list_steps(workspace_id, run.id))
-
-
-def _run_workflow_type(
-    workflows: WorkflowRepositoryDep,
-    workspace_id: uuid.UUID,
-    run_id: uuid.UUID,
-) -> str:
-    """Return the workflow type a stored run executed.
-
-    Read from the run rather than taken from the request body, which is the
-    property that stops a caller resuming run A against workflow B's steps --
-    a body-supplied type would let a client substitute a different step sequence
-    into a run already in progress.
-
-    Raises:
-        RunNotFoundError: no live run matched. Raised here so the definition is
-            never built for a run the caller cannot see.
+    `UPDATE_WORKSPACE`, unchanged: approving is the consequential half.
     """
     run = workflows.get_run(workspace_id, run_id)
 
     if run is None:
         raise RunNotFoundError()
 
-    return run.workflow_type
+    awaited = workflows.first_incomplete_step(workspace_id, run_id)
+
+    if awaited is None or awaited.status != StepStatus.AWAITING_APPROVAL:
+        raise WorkflowStateConflictError(f"Run {run_id} records no step waiting for approval")
+
+    # The index is re-derived under the command's own row locks and the call is
+    # refused if the answer moved, so this read decides nothing on its own.
+    workflows.approve_step(
+        workspace_id=workspace_id,
+        run_id=run_id,
+        step_index=awaited.step_index,
+        correlation_id=current_request_id(),
+    )
+
+    return _accepted(http_request, response, workflows, workspace_id, run_id)
+
+
+@router.post(
+    "/runs/{run_id}/resume",
+    response_model=WorkflowRunResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Continue a run that stopped before it finished",
+    dependencies=[Depends(limit_by_user("workflow-run", limit=20, window_seconds=60))],
+)
+def resume_run(
+    workspace_id: uuid.UUID,
+    run_id: uuid.UUID,
+    http_request: Request,
+    response: Response,
+    projects: ProjectRepositoryDep,
+    ai: AIServiceDep,
+    workflows: WorkflowRepositoryDep,
+    _role: _MemberOfWorkspace,
+) -> WorkflowRunResponse:
+    """Supersede a stale claim and put a failed run back on a path forward.
+
+    **This is the recovery endpoint** (ADR-006 D10). A step that reaches a paid
+    provider is protected by a claim that never expires and is never stolen, so
+    a run interrupted inside one does not resume by itself -- continuing is a
+    decision a person makes, because the alternative is a platform that silently
+    re-spends a user's money to avoid showing them a failure.
+
+    Two outcomes, and never neither:
+
+    - **The interrupted step is not gated** -> it becomes claimable again, the
+      run returns to `pending`, and a replacement job is enqueued. Execution
+      follows, from the last completed step rather than from the beginning.
+    - **The interrupted step is gated** -> the gate is re-armed with **no job**,
+      and continuing needs a fresh approval from an owner or admin. The grant
+      was spent at admission, so there is nothing left to infer approval from.
+
+    **This may cause a second provider call for the interrupted step**, and that
+    is exactly why it is an explicit act rather than an automatic one.
+
+    `VIEW_WORKSPACE`, unchanged: for a gated step this grants nothing, because
+    it only re-arms the gate. The consequential half stays behind
+    `UPDATE_WORKSPACE` on the approval route.
+    """
+    run = workflows.get_run(workspace_id, run_id)
+
+    if run is None:
+        raise RunNotFoundError()
+
+    if RunStatus(run.status) is not RunStatus.FAILED:
+        raise RunNotResumableError(RunStatus(run.status), "resumed")
+
+    interrupted = workflows.first_incomplete_step(workspace_id, run_id)
+
+    if interrupted is None:
+        raise WorkflowStateConflictError(f"Run {run_id} records no incomplete step to continue")
+
+    # Whether a step is gated is a property of the definition rather than of any
+    # row, so the route reads it and the command re-derives *which* step is
+    # interrupted under its lock, refusing if that is not the one named.
+    definition = _definition(run.workflow_type, projects, ai)
+    gated = definition.step_at(interrupted.step_index).requires_approval
+
+    workflows.recover_run(
+        workspace_id=workspace_id,
+        run_id=run_id,
+        step_index=interrupted.step_index,
+        step_requires_approval=gated,
+        correlation_id=current_request_id(),
+    )
+
+    return _accepted(http_request, response, workflows, workspace_id, run_id)
+
+
+def _accepted(
+    http_request: Request,
+    response: Response,
+    workflows: WorkflowRepositoryDep,
+    workspace_id: uuid.UUID,
+    run_id: uuid.UUID,
+) -> WorkflowRunResponse:
+    """Render an accepted run and point `Location` at the monitor for it.
+
+    A 202 says the work was accepted, not done, and `Location` is how a client
+    finds out what became of it. It names `GET .../runs/{run_id}` -- the run
+    itself, which is exactly what a status monitor is here: `workflow_runs` is
+    the authoritative record of user-facing state, and no client surface derives
+    it by reading the queue (ADR-006 D2, D3).
+
+    **No job identifier is exposed anywhere.** Doing so would make the queue a
+    public contract and turn ADR-005 §1's broker-migration escape hatch into a
+    breaking client change.
+    """
+    run = workflows.get_run(workspace_id, run_id)
+
+    if run is None:  # pragma: no cover - the command just committed it
+        raise RunNotFoundError()
+
+    response.headers["Location"] = str(
+        http_request.url_for("read_run", workspace_id=workspace_id, run_id=run_id)
+    )
+
+    return _run_response(run, workflows.list_steps(workspace_id, run.id))

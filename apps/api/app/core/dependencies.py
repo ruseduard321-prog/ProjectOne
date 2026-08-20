@@ -62,7 +62,7 @@ from app.services.token_service import AuthenticatedUser, TokenService, build_jw
 from app.services.workspace_service import WorkspaceService
 from app.storage.factory import build_storage_provider
 from app.storage.provider import StorageProvider
-from app.workflows.runner import WorkflowRunner
+from app.workflows.execution import build_workflow_definitions
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 
@@ -598,9 +598,17 @@ def _job_registry() -> JobHandlerRegistry:
     Cached because building it validates every handler's retry ceiling, and that
     answer cannot change within a process -- the registry is fixed at import.
     Zero-argument so `lru_cache` has something hashable to key on, the same shape
-    as `_cached_storage_provider`.
+    as `_cached_storage_provider`, which is why `get_settings` is called here
+    rather than taken as a parameter.
+
+    **The API and the worker build the same registry**, through the same
+    factory, so "what can this deployment run" has one answer in both processes.
+    The API never enqueues a workflow job through `JobService` -- the protected
+    commands do, atomically with the run -- and the database refuses one anyway:
+    `ck_jobs_workflow_link_matches_type` makes a `workflow.execute` row without
+    a run link impossible, and `JobRepository.enqueue` cannot set that link.
     """
-    return build_registry()
+    return build_registry(build_workflow_definitions(get_settings()))
 
 
 def get_job_service(repository: JobRepositoryDep) -> JobService:
@@ -626,20 +634,6 @@ def get_workflow_repository(connection: TenantConnectionDep) -> WorkflowReposito
 
 
 WorkflowRepositoryDep = Annotated[WorkflowRepository, Depends(get_workflow_repository)]
-
-
-def get_workflow_runner(repository: WorkflowRepositoryDep) -> WorkflowRunner:
-    """Construct the workflow runner.
-
-    The runner takes only the repository. Its *definitions* are built per request
-    from `app.workflows.definitions`, because a definition holds steps and steps
-    hold request-scoped services -- see that module's docstring for why a
-    module-level definition would be a cross-tenant leak.
-    """
-    return WorkflowRunner(repository)
-
-
-WorkflowRunnerDep = Annotated[WorkflowRunner, Depends(get_workflow_runner)]
 
 
 def get_ai_service(

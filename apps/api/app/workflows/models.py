@@ -141,6 +141,85 @@ class RunNotFoundError(WorkflowError):
         super().__init__(message)
 
 
+class WorkflowStateConflictError(WorkflowError):
+    """The run or step is not in a state that accepts this transition.
+
+    **409, not 422.** The request was well-formed and the caller holds every
+    permission it needs; the resource's own state is what refuses -- the same
+    distinction `IllegalTransitionError` draws for a project.
+
+    Raised when a protected command refuses under its row locks: a run that is
+    not waiting for an approval, a step index the run is not waiting on, a grant
+    that has already been spent, a run that is not `failed` and therefore has
+    nothing to recover. The command's own message is kept as the internal one;
+    what reaches a client is the fixed sentence below (ADR-006 D7).
+    """
+
+    public_message = "This run is not in a state that allows this action"
+
+
+class StepApprovalRequiredError(WorkflowError):
+    """This step needs a fresh, unspent approval before it can execute.
+
+    Raised by admission, under the step's row lock, when a gated step's grant is
+    absent or has already been consumed. **It never reaches a client**: the
+    runner catches it, records the step and its run as `awaiting_approval`, and
+    returns -- which is what a workflow pausing at a gate *is*.
+
+    A separate type from `WorkflowStateConflictError` because the runner has to
+    tell "pause and wait for a person" apart from "this transition is refused",
+    and telling them apart by message text would be a decision that drifts.
+    """
+
+    public_message = "This step is waiting for an approval"
+
+
+class StepInterruptedError(WorkflowError):
+    """Another execution holds this step's durable claim.
+
+    Raised by admission when a non-replayable step is already claimed -- a
+    replacement worker reaching a step the original worker took and did not
+    release ([[ADR-006 Workflow Async Execution and Run Reconciliation]] D8).
+
+    **This is terminal, and it must never be reported as success.** A
+    `WorkflowError` subclass, so `app.jobs.contract.classify` dead-letters it
+    without spending another attempt, and the run is reconciled to `failed` in
+    the same statement that dead-letters the job (D5).
+
+    The reasoning for terminating rather than succeeding is worth keeping next
+    to the exception: **a replacement worker cannot prove the claim holder is
+    alive.** Reporting success on a dead holder would leave a job terminally
+    `succeeded`, a run still `running`, the original worker gone, and nothing
+    left that could ever advance or reconcile that run -- a stranded run nobody
+    would notice, which is the CLAUDE.md §26 failure this design exists to
+    remove. Between two unprovable states, the safe assumption is interruption,
+    and interruption has an honest terminal outcome available.
+    """
+
+    public_message = (
+        "This run stopped before it finished. Resume it to continue from the last completed step."
+    )
+
+
+class StepOwnershipLostError(WorkflowError):
+    """This execution no longer owns the job it is running, so it wrote nothing.
+
+    Raised when a fenced settlement matches nothing: the step's claim is not
+    ours, the job's lease has rotated to another worker, or the run has already
+    been terminally reconciled (ADR-006 D8, the three predicates).
+
+    Terminal, and deliberately silent about the outside world: whatever this
+    execution already did, none of it will land. The queue's own lease fence
+    means this worker's dead-letter attempt is itself refused when another
+    worker holds the job, so raising here cannot fail a run someone else is
+    legitimately executing.
+    """
+
+    public_message = (
+        "This run stopped before it finished. Resume it to continue from the last completed step."
+    )
+
+
 class RunNotResumableError(WorkflowError):
     """A run was asked to continue from a state that does not permit it.
 
@@ -251,6 +330,34 @@ class WorkflowStep(ABC):
         docstring, which is the documented exemption §15 requires.
         """
         return True
+
+    @property
+    def replayable(self) -> bool:
+        """Return whether re-executing this step is free of external effect.
+
+        **Defaults to `False`, and is inherited rather than written** -- the
+        identical defaulting decision `requires_approval` above makes, for the
+        identical reason: a step author who did not consider the question ships
+        the safe behaviour.
+
+        A step declared `replayable = True` is asserting that running it twice
+        costs nothing and changes nothing outside this database -- a pure read,
+        a computation over values already in memory, or a write that converges.
+        It owes that reasoning in its docstring, exactly as a
+        `requires_approval = False` exemption does.
+
+        What the answer decides: a non-replayable step is entered only by
+        winning a durable claim that exactly one execution can hold, and its
+        result is persisted only while that execution still owns its job and its
+        run is not already reconciled (ADR-006 D8). A replayable step skips the
+        claim, because a claim would buy nothing and would strand a run on a
+        step that was safe to repeat.
+
+        **Declaring a step replayable when it is not is the most expensive
+        mistake available here**: it removes the only thing standing between a
+        lapsed job lease and a provider being paid twice for one step.
+        """
+        return False
 
     @abstractmethod
     def execute(self, context: StepContext) -> StepResult:

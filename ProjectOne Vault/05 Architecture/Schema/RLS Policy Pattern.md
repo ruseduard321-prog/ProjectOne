@@ -2,8 +2,8 @@
 title: RLS Policy Pattern
 category: Architecture/Schema
 status: stable
-version: "1.4"
-last_updated: 2026-08-19
+version: "1.5"
+last_updated: 2026-08-20
 tags: [database, security, multi-tenancy, standards]
 aliases: ["Row Level Security Pattern", "Tenant Isolation Pattern"]
 ---
@@ -292,6 +292,54 @@ Both revert on commit *and* on rollback, which is what makes connection reuse sa
 > During STEP-10, a session-scoped `set_config` left the claim set after its transaction committed. A subsequent session with *no* claim read the previous user's workspace. `test_claim_does_not_leak_between_sessions` guards it permanently — and note that a single-request test cannot catch it, because the first request always looks correct.
 
 `set_config` rather than `SET LOCAL` because `SET` does not accept bind parameters: a user id could only reach it through string interpolation. `set_config` takes it as a parameter, keeping a token-derived value out of the SQL text.
+
+## The caller-identity boundary
+
+**Added by [[STEP-31 Workflow Async Execution]] under [[ADR-006 Workflow Async Execution and Run Reconciliation]], and it closes a gap the two connections above do not.**
+
+RLS answers *which rows may this actor touch*. It cannot answer *which process is asking*, and for one class of state that is the question that matters.
+
+### The application and a direct Supabase client are the same principal
+
+`RequestSessionFactory` runs `SET LOCAL ROLE authenticated`. Supabase's PostgREST reaches the database as `authenticated` too. A member holding their own JWT therefore meets **the same role, the same policies and the same `auth.uid()`** as the application does on their behalf — which is correct for ordinary tenant data and wrong for *execution-control* state.
+
+No policy, trigger or column grant can separate "the runner writing a step claim" from "a member writing one", because there is nothing to separate. So for that state the rule moved into the database and the direct write was taken away:
+
+- `authenticated` lost `INSERT` and all but `UPDATE (deleted_at)` on `workflow_step_runs`;
+- every write goes through a `SECURITY DEFINER` command;
+- each command's **first executable statement** checks the caller's login.
+
+### `session_user` is the one thing that differs, and it cannot be forged
+
+| | Application / worker | Supabase PostgREST |
+|---|---|---|
+| `session_user` | **`projectone_api`** | **`authenticator`** |
+| `current_user` inside the transaction | `authenticated` | `authenticated` |
+| `auth.uid()` | the verified actor | the requesting user |
+
+`current_user` is mutable — that is what `SET LOCAL ROLE` is for, and both sides use it. **`session_user` is fixed at authentication and changes only through `SET SESSION AUTHORIZATION`, which PostgreSQL restricts to superusers**, and neither request-path login is one. `SET ROLE`, a JWT `role` claim, an arbitrary GUC, `set_config` and a request header all reach `current_user` or a setting; none of them reaches `session_user`.
+
+So the guard is a *login* check rather than a marker or a token: there is nothing to steal, nothing to replay and nothing to leak, because the value is asserted by the database at connection time from a credential the client does not hold.
+
+```sql
+IF session_user <> 'projectone_api' THEN
+    RAISE EXCEPTION '…' USING ERRCODE = '42501';
+END IF;
+```
+
+**The login name is a literal in each function body** — never a parameter, a GUC, a table lookup or an allowlist — and it runs before any read or write, so a direct invocation changes nothing at all rather than being rolled back after doing work. `tests/test_workflow_commands.py` reads the installed bodies out of `pg_proc` and fails if any of that stops being true.
+
+> [!important] This makes the login part of the security model, not a configuration detail
+> Any change to the request-path or worker connection role, to Supabase's connection roles or pooler configuration, or any proposal to add a second application login, is a change to **this** boundary — a migration and a superseding ADR, not an environment variable.
+
+### Discoverable is not callable
+
+Every function granted to `authenticated` is exposed at `/rest/v1/rpc/<name>`. That is harmless and the design does not depend on anyone not knowing the names: an unauthenticated or member-authenticated call reaches the guard on its first statement and is refused.
+
+A private, unexposed schema was considered as the primary mechanism and rejected for a reason that decides it: **PostgREST's exposed-schema list is Supabase project configuration, not repository state.** It cannot be asserted by a test here, and a security property whose enforcement lives outside version control is one this project cannot prove it still has. A private schema is a worthwhile second layer later; it must never become a substitute for the guard.
+
+> [!warning] One migration docstring is permanently wrong about the request role
+> `c4f21a86b3de`'s docstring says "the API connects as `authenticator`". That was true for the 42 minutes before `d7b95c1f4e08` created `projectone_api` and **explicitly rejected** `authenticator`. Migrations are immutable, so the docstring stays; **this note is the correction**, and `apps/api/app/core/config.py` carried the same error until STEP-31 fixed it.
 
 ## Grants Are a Second, Independent Gate
 

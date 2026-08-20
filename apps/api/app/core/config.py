@@ -113,9 +113,18 @@ class Settings(BaseSettings):
     # what serves requests, and the split is the whole point.
     database_url: SecretStr = Field(alias="DATABASE_URL")
 
-    # The **request-path** connection, connecting as a role WITHOUT
-    # `rolbypassrls` (`authenticator`). Every tenant query goes over this one so
-    # the STEP-09 policies actually apply — see AuthenticatedSession.
+    # The **request-path** connection, connecting as `projectone_api` — the role
+    # `d7b95c1f4e08` creates, WITHOUT `rolbypassrls` and WITHOUT `rolinherit`.
+    # Every tenant query goes over this one so the STEP-09 policies actually
+    # apply — see AuthenticatedSession.
+    #
+    # Deliberately **not** Supabase's `authenticator`, which that migration
+    # rejected: it cannot be provisioned from here (Supabase reserves it) and
+    # its definition is Supabase's to change. The distinction is load-bearing
+    # rather than cosmetic — PostgREST connects as `authenticator` and reaches
+    # `current_user = authenticated` exactly as this connection does, so
+    # `session_user` is the only thing separating an application call from a
+    # direct client one (ADR-006).
     #
     # Required, deliberately with no fallback to `database_url`: a default that
     # silently reused the privileged connection would turn a missing variable

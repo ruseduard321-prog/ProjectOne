@@ -277,13 +277,19 @@ _WORKSPACE_DEPENDANTS = (
     "ai_spend_records",
     "assets",
     "audit_log",
-    # `jobs` references only `workspaces`, so its position is unconstrained
-    # (STEP-30). Kept alphabetical here for that reason -- the three entries
-    # below are the ones whose order is load-bearing.
-    "jobs",
-    # The two workflow tables come **before** `projects`, breaking the
-    # alphabetical order deliberately -- see the ordering note above.
+    # **These three are ordered, and the order is load-bearing** (STEP-31).
+    # A step row's claim names the job that took it
+    # (`fk_workflow_step_runs_claimed_by_job_id_jobs`), and a job names the run
+    # it advances (`fk_jobs_workflow_run_id_workflow_runs`). Both are
+    # `ON DELETE RESTRICT`, so the chain has to come apart in this order --
+    # deleting jobs first fails whenever a claim survived a test, which is
+    # exactly what a deliberately stranded run leaves behind.
+    #
+    # `jobs` used to reference only `workspaces` and sat alphabetically here.
     "workflow_step_runs",
+    "jobs",
+    # The workflow tables come **before** `projects`, breaking the alphabetical
+    # order deliberately -- see the ordering note above.
     "workflow_runs",
     # `messages` before `conversations` before `projects`, for the same reason.
     "messages",

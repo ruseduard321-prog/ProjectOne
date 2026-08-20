@@ -27,12 +27,25 @@ verified in `pg_roles` rather than assumed:
 """
 
 import uuid
-from collections.abc import Iterator
-from contextlib import contextmanager
+from collections.abc import Callable, Iterator
+from contextlib import AbstractContextManager, contextmanager
 
 import psycopg
 
 from app.core.config import Settings
+
+#: How code that is not a request reaches the database: by opening a short,
+#: RLS-scoped session, one per unit of database work.
+#:
+#: A factory rather than a connection, and the distinction is ADR-005 §4 rather
+#: than a preference. A worker's claim commits *before* the long work runs, so
+#: that work must execute with no transaction of its own left open -- and a
+#: caller holding one connection across a multi-minute render would hold locks
+#: through an upstream call, which is exactly what `c8f1a3d54e29` rejected.
+#:
+#: Defined here, beside the only thing that satisfies it, so the job contract and
+#: the workflow runner name one type rather than two that must be kept identical.
+TenantSessionFactory = Callable[[], AbstractContextManager[psycopg.Connection]]
 
 # The role every request runs as. The STEP-09 policies are written
 # `TO authenticated`, so a session in any other role matches no policy.

@@ -3,7 +3,7 @@ title: API Conventions
 category: Architecture
 status: stable
 version: "1.3"
-last_updated: 2026-08-08
+last_updated: 2026-08-20
 tags: [backend, api, standards, security, observability]
 aliases: ["API Contract", "Error Envelope", "API Middleware"]
 ---
@@ -58,6 +58,7 @@ A 422 carries a third key, `errors`, listing `field` / `message` / `type`. Field
 | `LastOwnerError` | 409 | Permission held; the workspace's *state* refuses. |
 | `IllegalTransitionError` | **409** | Permission held; the *resource's* state refuses. |
 | `RunNotResumableError` | **409** | The same, for a run's own state. |
+| `WorkflowStateConflictError` | **409** | A protected command refused the run or step's state under its row locks. |
 | `WorkflowError` | **422** | The run could never have formed — unknown workflow, changed definition. |
 | `BudgetExceededError` / `ExecutionLimitExceededError` | **402** | Well-formed and authorized; the workspace has spent its allowance. |
 | `AIShutdownError` / `SpendBreakerOpenError` | **503** + `Retry-After` | Operational and temporary; nothing about the caller is at fault. |
@@ -72,7 +73,18 @@ Registered by [[STEP-18 AI Cost Governance Controls]] **before any route can rai
 
 **404 for a resource, 403 for a tenant** ([[STEP-21 Projects UI]]), and the two look inconsistent until the question each answers is named. A **workspace** id answers 403 whether the caller is a non-member or under-privileged, because they supplied that id as the thing they claim access to and a 404 would confirm which ids exist. A resource id *inside* a workspace they do belong to answers 404, because an invisible resource and an absent one are the same fact from their side and the tenant gate has already refused outsiders. The rule underneath both: **one answer per question, regardless of cause.**
 
-**A failed *operation* is not a failed *request*** ([[STEP-22 Minimum Workflow Engine]]). A workflow run whose step fails returns **201 with the run in `failed`** — the request was understood, executed and recorded. Answering 500 would tell the client its call did not happen when it did, and would lose the identifier they need to investigate. The same reasoning applies to any future long-running operation this API exposes: an error status describes the *request*, and a resource's own state describes the outcome.
+**A failed *operation* is not a failed *request*** ([[STEP-22 Minimum Workflow Engine]]). A workflow run whose step fails is reported as `status: failed` on the run — the request was understood, accepted and recorded. Answering 500 would tell the client its call did not happen when it did, and would lose the identifier they need to investigate. **An error status describes the *request*; a resource's own state describes the outcome.**
+
+### Accepted, not finished: 202 and `Location`
+
+[[STEP-31 Workflow Async Execution]] made that distinction concrete. An operation this API **accepts but does not complete** answers **202**, and carries `Location` naming the resource that will hold the outcome:
+
+- **202, not 201**, even where a row is created. A workflow run row exists the moment `POST …/runs` returns, so 201 would not be false — but the operation is not complete, and 202 is the only code that says so. Sibling endpoints on one resource answer with **one** code for one semantic.
+- **`Location` names a status monitor**, which is the resource itself: `GET …/runs/{run_id}`. Not a queue entry, not a job.
+- **No queue identifier is ever exposed.** The queue is an implementation this API reserves the right to replace; a job id in a response would make it a public contract.
+- **The outcome is learned by polling** until [[STEP-34 Notifications Domain]] offers something better. A 202 with no way to find out what happened is not an accepted operation, it is a lost one.
+
+`RunNotResumableError` and `WorkflowStateConflictError` both answer **409**: the caller holds every permission the action needs, and the resource's own state refuses.
 
 **409 and 422 are different refusals**, and the projects lifecycle is where the distinction first becomes routine. 422 says *the value is not a member of the vocabulary*; 409 says *the value is valid but the resource's current state refuses it*. `LastOwnerError` and `IllegalTransitionError` are the same shape — permission held, state says no — differing only in whose state refuses. Collapsing either into 422 would send a client debugging a typo through a state diagram; collapsing into 403 would send them to the permission model.
 

@@ -41,6 +41,7 @@ makes a user-reported failure findable without weakening either property.
 | `LastOwnerError`       | 409    | Permission held; workspace state refuses.   |
 | `IllegalTransitionError`| 409   | Permission held; resource state refuses.    |
 | `RunNotResumableError` | 409    | The same, for a run's own state.            |
+| `WorkflowStateConflictError` | 409 | A command refused the run or step's state.|
 | `WorkflowError`        | 422    | The run could never have formed — see below.|
 | Validation             | 422    | The request never formed a valid operation. |
 
@@ -97,7 +98,12 @@ from app.storage.errors import (
     StorageError,
     StorageUnavailableError,
 )
-from app.workflows.models import RunNotFoundError, RunNotResumableError, WorkflowError
+from app.workflows.models import (
+    RunNotFoundError,
+    RunNotResumableError,
+    WorkflowError,
+    WorkflowStateConflictError,
+)
 
 logger = get_logger(__name__)
 
@@ -567,6 +573,11 @@ EXCEPTION_HANDLERS: tuple[tuple[type[Exception] | int, Any], ...] = (
     # for the contract to drift.
     (RunNotFoundError, _resource_not_found),
     (RunNotResumableError, _illegal_transition),
+    # A run or step whose own state refuses a transition, raised by the
+    # protected commands under their row locks. The same answer as
+    # `RunNotResumableError` for the same reason -- the caller holds every
+    # permission the action needs and the resource still says no.
+    (WorkflowStateConflictError, _illegal_transition),
     (WorkflowError, _workflow_refused),
     (LastOwnerError, _last_owner_conflict),
     (RateLimitExceededError, _rate_limit_exceeded),

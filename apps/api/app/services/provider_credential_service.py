@@ -20,6 +20,7 @@ plaintext key is exactly two -- this module and the adapter it hands the key to.
 from __future__ import annotations
 
 import uuid
+from typing import Protocol
 
 from app.ai.crypto import CredentialCipher, CredentialEncryptionError
 from app.ai.errors import NoProviderAvailableError
@@ -39,6 +40,31 @@ _LAST_FOUR = 4
 #: would reject a valid new-format key and be discovered only by a user unable
 #: to save one. The provider's own 401 is the authoritative rejection.
 _MINIMUM_KEY_LENGTH = 8
+
+
+class CredentialReader(Protocol):
+    """The two credential reads an AI completion performs.
+
+    `AIService` needs to know which providers a workspace has keys for, and to
+    decrypt one of them at the moment a provider is actually chosen. It never
+    stores, lists or deletes, so it asks for nothing that can.
+
+    A Protocol rather than the concrete service, because **the two callers own
+    their connections differently**. A request owns one connection for its whole
+    life and hands it over; a workflow step must not, because its execution spans
+    a provider call and a connection held across that call is an open transaction
+    held across a network round trip (ADR-005 §4). The concrete
+    `ProviderCredentialService` satisfies this as written, so the request path is
+    unchanged; `app/workflows/execution.py` satisfies it with a session per call.
+    """
+
+    def configured_providers(self, workspace_id: uuid.UUID) -> tuple[str, ...]:
+        """Return which providers this workspace holds keys for."""
+        ...
+
+    def key_for(self, workspace_id: uuid.UUID, provider: str) -> str:
+        """Return the plaintext key for one provider."""
+        ...
 
 
 class ProviderCredentialService:

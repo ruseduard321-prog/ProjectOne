@@ -2,15 +2,18 @@
 title: Workflow Execution
 category: Architecture
 status: stable
-version: "1.0"
-last_updated: 2026-08-08
+version: "2.0"
+last_updated: 2026-08-20
 tags: [architecture, ai, workflow, backend, standards]
 aliases: ["Workflow Runner", "Run Execution", "Approval Gate"]
 ---
 
 # Workflow Execution
 
-**How a workflow run actually executes**, and where each of [[Workflow Engine]]'s five execution principles lives in code. Implemented by `apps/api/app/workflows/` ([[STEP-22 Minimum Workflow Engine]]).
+**How a workflow run actually executes**, and where each of [[Workflow Engine]]'s five execution principles lives in code. Implemented by `apps/api/app/workflows/` ([[STEP-22 Minimum Workflow Engine]]), moved onto the worker by [[STEP-31 Workflow Async Execution]] under [[ADR-006 Workflow Async Execution and Run Reconciliation]].
+
+> [!important] A run executes in a worker, not in the request that asked for it
+> Starting a run, approving a step and continuing a stopped run all **enqueue** and answer `202 Accepted`. What executes is a job, and the run row is the status monitor a client polls. The engine's *semantics* did not change; where they run, and what fences them, did.
 
 [[Workflow Engine]] gives the lifecycle and the principles; it does not say how they are achieved. This note records the mechanisms, because each one is a decision that a later step could accidentally undo.
 
@@ -72,9 +75,17 @@ Approving clears the gate for **the step the run is currently waiting on**. The 
 
 There is no "approve everything from here", deliberately: that is autonomous execution, which §15 requires to be an explicitly configured, documented opt-in rather than a side effect of clicking approve once.
 
+### The grant is durable, single-use, and spent at admission
+
+Synchronously the approving request *was* the executing request, so `approved=True` could be an in-memory parameter. Asynchronously the decision has to reach a different process, so it is **persisted**: `workflow_step_runs.approved_by`, non-null meaning *granted and unspent*, written only by `app_approve_workflow_step` and pinned to `auth.uid()`.
+
+- **The grant and the job are inseparable.** The command writes the grant and enqueues the job that will spend it in one transaction. A grant without its job would be a live entitlement some later, differently authorized path could spend.
+- **Admission consumes it**, not the claim — so a step that is gated *and* replayable still spends its grant exactly once.
+- **An interrupted gated step has therefore already spent its approval**, and no later delivery can execute it without a fresh one. **Approval is never inferred**, because the persisted model contains nothing to infer it from.
+
 ### Resuming is not approving
 
-`resume` **refuses** a run in `awaiting_approval` with a 409. Otherwise anyone able to restart a run — including an automated retry — could bypass the human §15 put behind the gate.
+`resume` **refuses** a run in `awaiting_approval` with a 409. Otherwise anyone able to restart a run — including an automatic redelivery — could bypass the human §15 put behind the gate.
 
 ### Who may approve
 
@@ -84,7 +95,7 @@ Starting, reading and resuming a run are `VIEW_WORKSPACE`, matching projects: a 
 
 ## Failure Is a Run State, Not an HTTP Error
 
-A run whose step fails comes back as **201 with the run in `failed`**. The request succeeded: the run was created, executed, and recorded its outcome.
+A run whose step fails is **not** an error response. The request succeeded: the run was accepted, queued, executed by a worker, and its outcome recorded.
 
 Reporting it as a 500 would tell the client its call did not happen when it did, and would lose the run id they need to investigate.
 
@@ -92,18 +103,21 @@ What *is* an error status is a request that could never have produced a run:
 
 | Condition | Status |
 |---|---|
+| Start, approve or continue accepted | **202**, with `Location` naming `GET .../runs/{run_id}` |
 | Unknown workflow type | **422** |
 | Run absent, or hidden by RLS | **404** |
 | Run's state refuses the action | **409** |
-| A step failed mid-run | **201/200 with `status: failed`** |
+| A step failed mid-run | **`status: failed` on the run**, read by polling |
 
-### `failed` is resumable; `completed` is not
+**No job identifier is exposed.** Doing so would make the queue a public contract and turn [[ADR-005 Async Job Queue and Worker Execution Model]] §1's broker-migration escape hatch into a breaking client change. `workflow_runs` is authoritative for everything a user sees; `jobs` is operational delivery state and no client surface joins the two.
+
+### `failed` is recoverable; `completed` is not
 
 [[Workflow Engine]]'s Failure Recovery allows a failed run to retry or resume from a checkpoint. A `resume` refusing failed runs would leave every transient provider outage as a run the user must recreate from scratch, losing the steps that already succeeded.
 
-Retrying picks up **at the failed step**, because `next_step_index` counts completed steps and the failed one never recorded completion.
+Recovery picks up **at the interrupted step**, because `next_step_index` counts completed steps and that step never recorded completion.
 
-`completed` is refused because there is nothing to continue.
+`completed` is refused because there is nothing to continue, and so is every other non-`failed` state: under the async model a live run always has a live job, so there is nothing for a second caller to restart.
 
 ### A definition that loses steps fails loudly
 
@@ -143,15 +157,68 @@ Bump a definition's version when the **step sequence** changes — adding, remov
 
 Editing a step's internals without changing the sequence does not require a bump: the run executed that step, and the row says so.
 
+## Duplicate Delivery, and the Four Problems Behind One Symptom
+
+Delivery is at-least-once ([[ADR-005 Async Job Queue and Worker Execution Model]] §6): a job's lease can lapse under a worker that is still running it. Four different problems wear the symptom "a run executed twice", and each has a different answer.
+
+| Problem | Mechanism | Guarantee |
+|---|---|---|
+| **Duplicate enqueue** — two requests create two jobs for one run | partial unique index on `jobs.workflow_run_id`, plus the INSERT policy and the type/link CHECK | no two live jobs for one run |
+| **Replayable-step redelivery** — a pure step runs twice | none needed; the step declares `replayable = True` | duplicate execution has no external effect |
+| **Non-replayable redelivery** — two executions in one paid step | a durable step claim plus three-predicate fenced settlement | at most one execution can *persist* the step |
+| **Provider completed before persistence** — the worker died after the call was billed | **nothing closes this** | no automatic re-invocation; a deliberate recovery may repeat the call |
+
+**`next_step_index` alone is not an answer to any of the last three.** It makes a *sequential* redelivery resume rather than restart, and says nothing about two deliveries alive at once.
+
+### `replayable` defaults to `False`
+
+The identical defaulting decision `requires_approval` makes, for the identical reason: a step author who never considered whether re-running their step costs money ships the guarded behaviour.
+
+| Step | `replayable` | Why |
+|---|---|---|
+| `ValidateProjectStep` | `True` | reads one project row and returns; no external effect for a claim to protect |
+| `QualityCheckStep` | `True` | deterministic over values already in memory |
+| `PlanningAgent` | `False` (inherited) | reaches a paid provider |
+
+### The claim, and the three predicates behind a write
+
+A non-replayable step is entered by winning a **durable claim** exactly one execution can hold — written by `app_admit_workflow_step`, which commits *before* the provider is called, so the long work runs with no row locked underneath it.
+
+Persisting a result then requires all three of:
+
+1. the step's `claim_token` is the caller's;
+2. the caller's job is still `running` on the lease that took the claim;
+3. the run is not already terminally reconciled.
+
+All three are evaluated with the run, the step and the job already locked. **A settlement that fails writes nothing at all** — it does not retry, does not fail the run and does not touch the step row, because the claim is the record of what was in flight and erasing it would re-open the double call.
+
+### No expiry, no stealing, no automatic recovery
+
+A claim held by a dead process is never released by elapsed time, by a replacement worker, or by reconciliation. `c8f1a3d54e29` states the reasoning for chat turns and it transfers unchanged: **stuck is honest; silently double-charging is not.**
+
+A replacement worker that finds a claim held is **terminally interrupted** — its job dead-letters and the run is reconciled to `failed` in the same statement. It must never report success: it cannot prove the holder is alive, and a false success would leave a succeeded job, a `running` run and nothing able to advance it.
+
+### Recovery is an explicit user action
+
+`POST .../runs/{run_id}/resume` on a `failed` run supersedes the stale claim and completes one of two transitions, never neither:
+
+- **the interrupted step is not gated** → it becomes claimable again, the run returns to `pending`, and a replacement job is enqueued;
+- **the interrupted step is gated** → the gate is re-armed with no job, and continuing needs a fresh approval from an owner or admin.
+
+The supersession is written to `audit_log` — run, step, actor, replacement job, and the *fact* of supersession, never the token value. A recovery that may cause a second provider charge is exactly the sensitive action [[CLAUDE|CLAUDE.md]] §16 requires auditing.
+
+**There is no exactly-once provider execution, and nothing here claims one.** A provider that accepted and billed a request before its worker died has already been paid, and nothing records it. That window closes only with provider-side idempotency keys, which ADR-005 §Scope Boundaries leaves open.
+
 ## Known Limitations
 
 Stated rather than left to be discovered:
 
-- **Execution is synchronous**, on the request thread. A background queue is infrastructure needing its own ADR ([[CLAUDE|CLAUDE.md]] §10/§28). The run's wall-clock ceiling (300s) bounds how long a request can take meanwhile. **The persistence model is already the one a queue would need**, so moving execution off the request thread later changes where `_execute_from` is called from and nothing else.
 - **No branching, scheduling or parallel execution.** Explicitly out of [[STEP-22 Minimum Workflow Engine]]'s scope.
-- **No UI.** Runs are reachable over HTTP only.
+- **No completion notification.** A client learns the outcome by polling `GET .../runs/{run_id}`; [[STEP-34 Notifications Domain]] is where that changes.
+- **No UI for approving or continuing a run.** Runs are reachable over HTTP only.
 - **One workflow and one AI agent.** The interface is the deliverable; the agent chain [[Agent Architecture]] describes is later work.
-- **A resumed run re-executes an interrupted step.** Step execution is effectively at-least-once. Every current step is safe under that — validation and quality checks are pure reads, and planning produces a new outline rather than mutating anything — but a future step with an external side effect needs idempotency of its own.
+- **Not every interrupted run resumes automatically**, and that is a deliberate narrowing rather than a shortfall. Automatic redelivery resumes replayable work; an interrupted claimed non-replayable step fails safely and waits for a person. A platform that silently re-spends a user's money to avoid showing them a failure has made the user's decision for them ([[CLAUDE|CLAUDE.md]] §40).
+- **The privileged spend connection is held across a provider call, deliberately.** `AISpendService.guard` keeps one connection for a guarded call rather than opening eight, and holds it *idle* rather than mid-transaction. A **step** holds nothing: it reads through readers that open and close a session per call, so no `projectone_api` backend exists while a provider is being called. The remaining hold is a decision about the AI service as a whole rather than about workflows, and it is measured rather than assumed — see [[Async Job Execution#What a running step occupies]].
 
 ---
 
@@ -160,4 +227,4 @@ Stated rather than left to be discovered:
 - **Previous:** [[Project Lifecycle]]
 - **Next:** [[Async Job Execution]]
 - **Parent:** [[Architecture MOC]]
-- **Related Notes:** [[Workflow Engine]] · [[Agent Architecture]] · [[AI Cost Governance]] · [[Async Job Execution]] · [[Project Lifecycle]] · [[Table - workflow_runs]] · [[API Endpoints]]
+- **Related Notes:** [[Workflow Engine]] · [[Agent Architecture]] · [[AI Cost Governance]] · [[Async Job Execution]] · [[Project Lifecycle]] · [[Table - workflow_runs]] · [[Table - jobs]] · [[API Endpoints]] · [[ADR-006 Workflow Async Execution and Run Reconciliation]]

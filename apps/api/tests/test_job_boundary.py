@@ -38,6 +38,7 @@ from pathlib import Path
 from app.jobs import contract, handlers, registry, service, worker
 from app.jobs.contract import ClaimedJob, JobContext
 from app.repositories import job_dispatch
+from app.workflows import execution
 
 #: tests/ -> api/
 _API_ROOT = Path(__file__).resolve().parents[1]
@@ -115,37 +116,123 @@ def _sql_literals(module: object) -> list[str]:
     ]
 
 
-class TestConstraintOneOneTable:
-    """The dispatcher reaches `public.jobs` and nothing else."""
+#: The reconciliation leg's required shape, clause by clause.
+#:
+#: Each is load-bearing and each is asserted separately, so a statement that
+#: loses one fails here rather than in production: the workspace match is what
+#: keeps a forged link from writing across a tenant boundary, `deleted_at IS
+#: NULL` keeps an erased run erased, and the terminal guard is what stops a
+#: dead-letter overwriting a run that already completed or already failed with a
+#: more specific reason.
+_RECONCILIATION_CLAUSES = (
+    "r.workspace_id = s.workspace_id",
+    "r.deleted_at IS NULL",
+    "r.status NOT IN ('completed', 'failed')",
+    "RETURNING r.id",
+)
+
+
+def _statements_naming(module: object, table: str) -> list[str]:
+    """Return every SQL literal in `module` that names `table`."""
+    pattern = rf"\b(public\.)?{table}\b"
+
+    return [literal for literal in _sql_literals(module) if re.search(pattern, literal.lower())]
+
+
+class TestConstraintOneTwoTables:
+    """ADR-005 §5 constraint 1, as [[ADR-006]] D6 restates it.
+
+    **The bound widened by exactly one statement shape, and this class is what
+    holds it there.** The dispatcher may now update `public.workflow_runs` in
+    the reconciliation leg of its two dead-letter paths -- and in nothing else.
+    The count is asserted, so a third statement naming the table fails the
+    build, and so does deleting one.
+    """
 
     def test_no_statement_mentions_a_tenant_table(self) -> None:
-        """The whole of constraint 1, asserted against the SQL itself.
+        """Every tenant table except `workflow_runs` appears zero times.
 
-        The failure this prevents is quiet: someone adds a join to `projects` to
-        "enrich the claim for logging", the code works perfectly, and the one
-        documented cross-tenant path in the platform silently becomes a general
-        one. Convention does not catch that, and neither does review a year from
-        now.
+        `workflow_runs` has its own tests below, which are stricter than this
+        one rather than an exemption from it: this asserts absence, and those
+        assert an exact count and an exact shape.
         """
         offenders: list[str] = []
 
-        for literal in _sql_literals(job_dispatch):
-            lowered = literal.lower()
-            for table in _TENANT_TABLES:
-                if re.search(rf"\b(public\.)?{table}\b", lowered):
-                    offenders.append(f"{table}: {' '.join(literal.split())[:80]}")
+        for table in _TENANT_TABLES - {"workflow_runs"}:
+            for literal in _statements_naming(job_dispatch, table):
+                offenders.append(f"{table}: {' '.join(literal.split())[:80]}")
 
         assert not offenders, (
-            "The job dispatcher references a tenant table. ADR-005 §5 constraint 1 "
-            "bounds the privileged path to `public.jobs` alone — a join here is a "
-            "cross-tenant read that no route test would catch:\n" + "\n".join(offenders)
+            "The job dispatcher references a tenant table. ADR-005 §5 constraint 1, "
+            "as restated by ADR-006 D6, bounds the privileged path to `public.jobs` "
+            "plus one `workflow_runs` UPDATE — a join here is a cross-tenant read "
+            "that no route test would catch:\n" + "\n".join(offenders)
         )
 
-    def test_every_statement_names_the_jobs_table(self) -> None:
-        """The positive half: the module does reach `public.jobs`.
+    def test_the_step_table_is_never_named(self) -> None:
+        """`workflow_step_runs` appears **zero** times, and that is load-bearing.
 
-        Without this, deleting the SQL would make the test above pass. A guard
-        that passes on an empty module is a guard that proves nothing.
+        Reconciliation must never clear a step claim. The stale claim is the
+        evidence of what was in flight, the live fence against the worker that
+        took it, and the only thing standing between the next delivery and a
+        provider that has already been paid (ADR-006 D5, I10). A dispatcher that
+        could reach that table could undo all three.
+        """
+        assert _statements_naming(job_dispatch, "workflow_step_runs") == []
+
+    def test_exactly_two_statements_name_the_run_table(self) -> None:
+        """Two dead-letter paths, two reconciliation legs, and no third.
+
+        The reap inside `claim` and the terminal branch of `record_outcome`.
+        **The count is the assertion**: deleting either leg fails this test, and
+        so does adding a statement that reaches the run table for any other
+        reason.
+        """
+        naming = _statements_naming(job_dispatch, "workflow_runs")
+
+        assert len(naming) == 2, (
+            f"{len(naming)} dispatcher statements name public.workflow_runs; "
+            "ADR-006 D6 permits exactly two — the reap leg and the settle leg"
+        )
+
+    def test_each_run_statement_is_a_guarded_update_returning_only_an_id(self) -> None:
+        """The shape, clause by clause, on both legs.
+
+        An UPDATE, matched on the job's own workspace, skipping erased runs,
+        never overwriting a terminal one, and returning `r.id` and nothing else.
+        A reconciliation returning a run's `detail` or `triggered_by` would be a
+        cross-tenant read wearing an UPDATE's clothes.
+        """
+        for literal in _statements_naming(job_dispatch, "workflow_runs"):
+            collapsed = " ".join(literal.split())
+
+            assert "UPDATE public.workflow_runs r" in collapsed, (
+                f"a run statement is not the accepted UPDATE: {collapsed[:120]}"
+            )
+
+            for clause in _RECONCILIATION_CLAUSES:
+                assert clause in collapsed, (
+                    f"the reconciliation leg is missing `{clause}`: {collapsed[:200]}"
+                )
+
+    def test_no_statement_reads_the_run_table(self) -> None:
+        """Never a `SELECT`. The dispatcher writes a terminal state and reads nothing.
+
+        A read would return tenant data across the boundary; the widening ADR-006
+        accepted is a write that returns one id.
+        """
+        for literal in _sql_literals(job_dispatch):
+            collapsed = " ".join(literal.split()).lower()
+
+            assert not re.search(r"select\b[^;]*?\bfrom\s+(public\.)?workflow_runs\b", collapsed), (
+                f"a dispatcher statement reads public.workflow_runs: {collapsed[:120]}"
+            )
+
+    def test_every_statement_names_the_jobs_table(self) -> None:
+        """The queue is still what the dispatcher is for.
+
+        Every statement it sends touches `public.jobs`; the run table is only
+        ever reached from a row that statement just settled.
         """
         statements = [
             literal
@@ -161,7 +248,7 @@ class TestConstraintOneOneTable:
             )
 
     def test_the_tenant_table_list_is_not_empty(self) -> None:
-        """Emptying the list must not become the way to silence this file."""
+        """A shrinking list would make every test above quietly weaker."""
         assert len(_TENANT_TABLES) >= 15, (
             "_TENANT_TABLES has shrunk. If a table was genuinely dropped, remove it "
             "deliberately — do not clear the list to make this file quiet."
@@ -197,6 +284,14 @@ class TestConstraintThreeNoPrivilegedConnection:
         fields = set(JobContext.__dataclass_fields__)
 
         assert "tenant_session" in fields, "a handler must have a way to reach the database"
+
+        # New in STEP-31, and deliberately not on the forbidden list. A lease
+        # token is an opaque identifier that opens nothing: it grants no access
+        # and names no data, and what it buys is the ability to put "do I still
+        # hold this job?" inside a database predicate (ADR-006 D8).
+        assert "lease_token" in fields
+        assert "workflow_run_id" in fields
+
         assert not fields & forbidden, (
             f"JobContext exposes {sorted(fields & forbidden)}; a handler must reach "
             "the database only through an RLS-subject session"
@@ -220,6 +315,26 @@ class TestConstraintThreeNoPrivilegedConnection:
             assert forbidden not in source, (
                 f"app/jobs/handlers.py references `{forbidden}`; a handler must not be "
                 "able to open a connection of its own (ADR-005 §5 constraint 3)"
+            )
+
+    def test_the_composition_module_opens_no_connection_of_its_own(self) -> None:
+        """The one module that holds `Settings` on the worker's behalf is bounded too.
+
+        A handler is *given* a definitions factory rather than building one,
+        because building one needs configuration a handler must not be able to
+        reach. That configuration has to live somewhere, and it lives in
+        `app/workflows/execution.py` -- so the boundary moves there rather than
+        disappearing.
+
+        What it may do: construct services against a connection **it was
+        handed**. What it may not: open one, or reach the privileged dispatcher.
+        """
+        source = _code_without_docstrings(execution)
+
+        for forbidden in ("JobDispatchRepository", "job_dispatch", "psycopg.connect"):
+            assert forbidden not in source, (
+                f"app/workflows/execution.py references `{forbidden}`; the worker's "
+                "composition root may build services, never connections"
             )
 
     def test_the_dispatcher_closes_its_connection_on_every_path(self) -> None:
