@@ -166,8 +166,15 @@ The grant is written column by column rather than as "everything except two", so
 | `ix_jobs_workspace_id_status` | Filtering that listing by state |
 | `uq_jobs_one_live_job_per_workflow_run` | **The final concurrency authority for enqueue.** Unique on `workflow_run_id`, partial on live rows (`pending`, `running`) and `deleted_at IS NULL`. No command decides whether a second live job may exist; they attempt the insert and let PostgreSQL serialise |
 | `uq_jobs_id_workspace_id` | Bookkeeping for the composite FK `workflow_step_runs.claimed_by_job_id` needs. Constrains no data — `id` is already the primary key |
+| `ix_jobs_workflow_run_id_workspace_id` | Referential maintenance for `fk_jobs_workflow_run_id_workflow_runs`. Partial on `workflow_run_id IS NOT NULL`, which covers every row the constraint can match |
 
 `lease_expires_at` is deliberately **not** in the poll index's predicate: it is compared against `now()`, which is not immutable and therefore not indexable in a partial predicate.
+
+### Why the live-job index does not serve the foreign key
+
+They look interchangeable and are not. `uq_jobs_one_live_job_per_workflow_run` is partial on `status IN ('pending','running')`, so **a job leaves it the moment it succeeds or dead-letters** — and terminal jobs are exactly the rows that accumulate. `ON DELETE RESTRICT` still has to answer "does any job point at this run", including those.
+
+PostgreSQL indexes the *referenced* side of a foreign key automatically and never the referencing side, which is why an unindexed child foreign key is the most common finding a database advisor reports. `ix_jobs_workflow_run_id_workspace_id` is that index, and `ix_workflow_step_runs_claimed_by_job_id_workspace_id` is its counterpart for the step claim's reference back into this table.
 
 ## Teardown ordering
 

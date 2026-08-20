@@ -50,7 +50,6 @@ from app.ai.governance import ExecutionBudget, ExecutionLimitExceededError
 from app.repositories.workflows import WorkflowRepository, WorkflowRun, WorkflowStepRun
 from app.workflows.models import (
     RunNotFoundError,
-    RunNotResumableError,
     RunStatus,
     StepApprovalRequiredError,
     StepContext,
@@ -1079,17 +1078,32 @@ def test_an_incomplete_steps_output_is_not_carried_forward(
     assert outputs == {"first": "real"}
 
 
-def test_a_finished_run_is_never_re_entered(workspace_id: uuid.UUID, user_id: uuid.UUID) -> None:
-    """Completed is terminal, and re-entering it would re-run the whole workflow."""
+def test_a_finished_run_is_never_re_executed(workspace_id: uuid.UUID, user_id: uuid.UUID) -> None:
+    """Completed is terminal, and a redelivery of it is a **success**, not a failure.
+
+    Re-entering would re-run the whole workflow, so nothing is executed. But
+    refusing is not the same as failing: delivery is at-least-once, so the
+    ordinary way to arrive here is a job whose earlier delivery finished the run
+    -- its lease lapsed after the work was done rather than before.
+
+    Raising would dead-letter that job, marking a genuinely completed run as
+    having a failed job against it, and D5's reconciliation would then be the
+    only thing between that and the run being rewritten to `failed`. So the run
+    comes back untouched and the delivery settles cleanly.
+    """
     runner, repository = _runner()
-    definition = _definition(RecordingStep("a"))
+    step = RecordingStep("a")
+    definition = _definition(step)
 
     run = _start(runner, repository, workspace_id, user_id, definition)
 
     assert run.status == RunStatus.COMPLETED
+    assert len(step.calls) == 1
 
-    with pytest.raises(RunNotResumableError):
-        _execute(runner, workspace_id, run.id, definition)
+    again = _execute(runner, workspace_id, run.id, definition)
+
+    assert again.status == RunStatus.COMPLETED
+    assert len(step.calls) == 1, "a redelivery re-executed a completed run"
 
 
 def test_executing_an_unknown_run_is_not_found(workspace_id: uuid.UUID) -> None:

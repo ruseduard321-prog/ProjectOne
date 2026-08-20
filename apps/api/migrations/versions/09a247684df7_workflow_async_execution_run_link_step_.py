@@ -156,6 +156,34 @@ CREATE UNIQUE INDEX uq_jobs_one_live_job_per_workflow_run
       AND status IN ('pending', 'running');
 """
 
+# Child-side indexes for the two new foreign keys.
+#
+# **`uq_jobs_one_live_job_per_workflow_run` does not cover this**, and the reason
+# is the whole point of adding these. That index is partial on
+# `status IN ('pending','running')`, so the moment a job succeeds or
+# dead-letters its row leaves the index -- and terminal jobs are exactly the rows
+# that accumulate. A referential action on `workflow_runs` would then have to
+# sequentially scan `jobs` to find them, holding locks while it did.
+#
+# `ON DELETE RESTRICT` still has to answer "does any child row point at this
+# parent", including the terminal ones, and the same applies to the claim's
+# reference into `jobs`. PostgreSQL indexes the *referenced* side automatically
+# and never the referencing side, which is why an unindexed child FK is the
+# single most common finding a database advisor reports.
+#
+# Both are partial on `IS NOT NULL` because both columns are null for most rows:
+# only workflow jobs carry a run link, and only claimed steps carry a job. The
+# workspace column comes second to match the foreign key's own column order.
+_FK_CHILD_INDEXES = """
+CREATE INDEX ix_jobs_workflow_run_id_workspace_id
+    ON public.jobs (workflow_run_id, workspace_id)
+    WHERE workflow_run_id IS NOT NULL;
+
+CREATE INDEX ix_workflow_step_runs_claimed_by_job_id_workspace_id
+    ON public.workflow_step_runs (claimed_by_job_id, workspace_id)
+    WHERE claimed_by_job_id IS NOT NULL;
+"""
+
 # The INSERT policy gains one clause. A workflow job is created only by a
 # command, which runs as the table owner and is not bound by this policy.
 _JOBS_INSERT_POLICY = """
@@ -343,11 +371,22 @@ _PREVIOUS_ACTIONS = (
     "'budget.updated'",
 )
 
-#: Recovering an interrupted run may cause a second provider charge. That is
-#: exactly the consequential action CLAUDE.md §16 requires auditing, and the
-#: record is what makes "who decided to pay again, and for which step" a
-#: question with an answer.
-_ADDED_ACTIONS = ("'workflow.recovered'",)
+#: Two consequential workflow decisions, both of which authorize provider spend
+#: and both of which CLAUDE.md §16 therefore requires auditing.
+#:
+#: `workflow.approved` is the load-bearing one, and the reason is that
+#: `approved_by` is **enforcement state, not history**: admission clears it, so
+#: the moment the approved step runs, the column stops answering "who approved
+#: this". Without an audit row the answer is gone -- which is precisely the
+#: property ADR-006 §Column Necessity relies on when it declines to add an
+#: `approved_at` column ("'when' is history and belongs in `audit_log`, which
+#: survives consumption"). That sentence is only true if something writes the
+#: row, so `app_approve_workflow_step` writes it in the same transaction that
+#: grants and enqueues.
+#:
+#: `workflow.recovered` records the decision to pay a second time for an
+#: interrupted step: "who decided to pay again, and for which step".
+_ADDED_ACTIONS = ("'workflow.approved'", "'workflow.recovered'")
 
 
 def _action_constraint(values: Sequence[str]) -> str:
@@ -575,6 +614,23 @@ BEGIN
         (p_workspace_id, auth.uid(), '{WORKFLOW_JOB_TYPE}', jsonb_build_object(),
          'pending', {WORKFLOW_JOB_MAX_ATTEMPTS}, p_correlation_id, p_run_id)
     RETURNING id INTO v_job_id;
+
+    -- The grant, the job and the record of who authorized them commit together
+    -- or not at all. `approved_by` is cleared at admission, so this row is the
+    -- only lasting answer to "who approved this step, and when" -- and
+    -- `audit_log.created_at` is that "when", which is why no `approved_at`
+    -- column exists (ADR-006 §Column Necessity).
+    --
+    -- No claim token and no lease token: a fencing value in an audit table is a
+    -- value some future grant can expose (I17).
+    INSERT INTO public.audit_log
+        (workspace_id, actor_id, action, target_id, detail)
+    VALUES
+        (p_workspace_id, auth.uid(), 'workflow.approved', p_run_id,
+         jsonb_build_object(
+             'step_index', v_awaited,
+             'job_id', v_job_id
+         ));
 
     RETURN v_job_id;
 END;
@@ -1087,6 +1143,9 @@ def upgrade() -> None:
 
     op.execute(_STEP_STATE)
 
+    # After both link columns exist, because one index is on each.
+    op.execute(_FK_CHILD_INDEXES)
+
     op.execute(_action_constraint(_PREVIOUS_ACTIONS + _ADDED_ACTIONS))
 
     op.execute(_START_RUN)
@@ -1125,6 +1184,10 @@ def downgrade() -> None:
     safely stranded becomes an ordinary `running` row that a redelivery will
     re-enter -- **re-invoking a provider that has already been paid**.
 
+    **Dropping the two foreign-key child indexes** costs nothing on the way down:
+    they support referential maintenance for constraints this downgrade also
+    removes, so nothing is left that needed them.
+
     **Dropping `workflow_run_id`** destroys reconciliation and the live-job
     uniqueness guard. Any workflow job still queued loses the only thing naming
     its run, and `ON DELETE RESTRICT` refuses while one exists.
@@ -1133,11 +1196,21 @@ def downgrade() -> None:
     stranded run into an automatically replayable one.** That is a cost event,
     not a schema event: it is a decision, taken with the queue drained.
 
-    The audit vocabulary narrows on the way down, so any `workflow.recovered`
-    row would fail the recreated CHECK. That is correct rather than a flaw -- a
-    downgrade that silently dropped audit rows to make itself succeed would
-    destroy exactly the records the table exists to keep, and an operator
-    hitting it needs to decide what happens to them.
+    **The audit vocabulary narrows on the way down**, so any `workflow.approved`
+    or `workflow.recovered` row would fail the recreated CHECK and the downgrade
+    stops. That is correct rather than a flaw -- a downgrade that silently
+    dropped audit rows to make itself succeed would destroy exactly the records
+    the table exists to keep, and an operator hitting it needs to decide what
+    happens to them.
+
+    The two are not equally replaceable, and an operator deciding should know
+    which is which. A `workflow.recovered` row records a decision to re-spend on
+    an interrupted step; the run's own state still shows that it was recovered.
+    A **`workflow.approved` row is the only durable record that a gated step was
+    ever approved, and by whom** -- `approved_by` is cleared at admission, so
+    once the approved step has run there is nothing else to read it from.
+    Discarding those rows to force a downgrade through erases the approval
+    history for every run that has already executed its gated step.
     """
     op.execute(_STEP_GRANTS_BEFORE)
     op.execute(_JOB_GRANTS_BEFORE)
@@ -1156,7 +1229,13 @@ def downgrade() -> None:
 
     op.execute(_jobs_write_guard(with_workflow_run_id=False))
     op.execute(_JOBS_INSERT_POLICY_BEFORE)
-    op.execute("DROP INDEX IF EXISTS public.uq_jobs_one_live_job_per_workflow_run;")
+    op.execute(
+        """
+        DROP INDEX IF EXISTS public.uq_jobs_one_live_job_per_workflow_run;
+        DROP INDEX IF EXISTS public.ix_jobs_workflow_run_id_workspace_id;
+        DROP INDEX IF EXISTS public.ix_workflow_step_runs_claimed_by_job_id_workspace_id;
+        """
+    )
     op.execute(
         """
         ALTER TABLE public.jobs

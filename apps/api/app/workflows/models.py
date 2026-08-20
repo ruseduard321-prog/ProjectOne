@@ -429,3 +429,71 @@ class WorkflowDefinition:
             )
 
         return self.steps[index]
+
+
+#: What a client is told when a run outlives the definition that started it.
+#:
+#: Fixed and public-safe. It names neither version, because a version number is
+#: deployment detail a user cannot act on, and it says explicitly that the run is
+#: preserved -- the failure a user fears here is that their work was discarded.
+DEFINITION_CHANGED_MESSAGE = (
+    "This workflow's definition has changed since this run started, so the run "
+    "cannot continue. It has been preserved unchanged."
+)
+
+
+def ensure_definition_matches(
+    definition: WorkflowDefinition,
+    workflow_type: str,
+    definition_version: int,
+) -> None:
+    """Refuse to advance a run against a definition it did not start under.
+
+    **A run records `definition_version` at creation and it is never re-read**
+    (the migration `f3c82b19d4a7` note). Synchronously that was bookkeeping: the
+    definition that started a run was necessarily the one that finished it,
+    within a single request. Asynchronously it is not -- a run can sit at an
+    approval gate, or interrupted awaiting recovery, across a deploy that adds a
+    step, reorders two, or changes whether one is gated or replayable.
+
+    Continuing such a run against current code is not a smaller version of
+    correct behaviour, it is a different execution: `next_step_index` counts
+    completed rows, so an inserted step shifts every index after it, and a step
+    that stopped being `replayable` would be re-entered without a claim -- a
+    second provider charge with nothing to prevent it.
+
+    **This fails closed and preserves the run.** Emulating an old definition with
+    current code would mean keeping every historical step sequence executable
+    forever, which is the second source of truth `WorkflowDefinition` exists to
+    avoid. What happens to an incompatible run is a product decision -- migrate
+    it, abandon it, restart it -- and this makes it one somebody takes on purpose.
+
+    Called before **every** mutation of a run: execution, recovery and approval.
+    Approval matters as much as the other two, because an approval that enqueues
+    a job the worker will refuse turns an owner's decision into a dead-lettered
+    job and a run stuck at a gate that has already been spent.
+
+    Args:
+        definition: the definition this deployment would execute.
+        workflow_type: the type recorded on the run.
+        definition_version: the version recorded on the run.
+
+    Raises:
+        WorkflowError: on either mismatch. No provider is called, no step is
+            admitted, and no claim or approval is consumed, because this runs
+            before any of them.
+    """
+    if definition.workflow_type != workflow_type:
+        raise WorkflowError(
+            f"Run records workflow type '{workflow_type}' but the definition "
+            f"supplied is '{definition.workflow_type}'",
+            public_message=DEFINITION_CHANGED_MESSAGE,
+        )
+
+    if definition.version != definition_version:
+        raise WorkflowError(
+            f"Run of '{workflow_type}' recorded definition version "
+            f"{definition_version}, and this deployment executes version "
+            f"{definition.version}",
+            public_message=DEFINITION_CHANGED_MESSAGE,
+        )

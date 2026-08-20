@@ -72,6 +72,7 @@ from app.workflows.models import (
     StepStatus,
     WorkflowDefinition,
     WorkflowStateConflictError,
+    ensure_definition_matches,
 )
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/workflows", tags=["workflows"])
@@ -251,6 +252,8 @@ def approve_run(
     run_id: uuid.UUID,
     http_request: Request,
     response: Response,
+    projects: ProjectRepositoryDep,
+    ai: AIServiceDep,
     workflows: WorkflowRepositoryDep,
     _role: _MayApprove,
 ) -> WorkflowRunResponse:
@@ -272,6 +275,17 @@ def approve_run(
 
     if run is None:
         raise RunNotFoundError()
+
+    # Before the grant, not after it. An approval that enqueued a job the worker
+    # will refuse would turn an owner's decision into a dead-lettered job and a
+    # gate whose grant has already been spent -- so a run that outlived its
+    # definition is refused here, with `approved_by` untouched and no job
+    # created.
+    ensure_definition_matches(
+        _definition(run.workflow_type, projects, ai),
+        run.workflow_type,
+        run.definition_version,
+    )
 
     awaited = workflows.first_incomplete_step(workspace_id, run_id)
 
@@ -348,6 +362,12 @@ def resume_run(
     # row, so the route reads it and the command re-derives *which* step is
     # interrupted under its lock, refusing if that is not the one named.
     definition = _definition(run.workflow_type, projects, ai)
+
+    # Checked **before** `requires_approval` is read off it. Whether a step is
+    # gated is a property of the definition, so reading it from a definition the
+    # run did not start under would re-arm the wrong gate -- or skip one.
+    ensure_definition_matches(definition, run.workflow_type, run.definition_version)
+
     gated = definition.step_at(interrupted.step_index).requires_approval
 
     workflows.recover_run(

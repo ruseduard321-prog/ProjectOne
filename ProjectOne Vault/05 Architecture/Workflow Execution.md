@@ -41,6 +41,18 @@ The runner writes each step's outcome **before starting the next one**. The last
 
 The cost is one round trip per step. That is the correct trade: an engine batching its writes would lose exactly the runs worth investigating.
 
+### A step's outcome and the run transition it causes are one transaction
+
+**Writing them separately leaves a gap, and a job's lease can rotate inside it.** Three things follow, and two of them cost money:
+
+- the final step commits `completed` while its run is still `running`, so a replacement seeing every step complete can reconcile that run to `failed`;
+- a failed non-replayable step commits with its **claim cleared**, and a replacement arriving before the run turns `failed` can admit and re-execute a step that has already been paid for;
+- any observer — a poll, the UI, a support query — can read a step and a run that contradict each other.
+
+So the pair is written in one transaction. `app_settle_workflow_step` locks the run, the step and the job, and PostgreSQL holds those locks until the *transaction* ends rather than until the function returns, so both writes happen with every relevant row still locked. If the run transition cannot be written, the step settlement rolls back with it.
+
+Three outcomes are pairs — gated pause, ordinary failure, and the final successful step. An **intermediate** successful step moves no run state and writes none: the run is `running` and stays there.
+
 There is deliberately **no in-memory registry of running workflows**. A process holding run state loses every in-flight run when it restarts, and "resumable" would then mean "resumable as long as nothing goes wrong".
 
 ### Step outputs are persisted, and this is not optional
@@ -156,6 +168,12 @@ What *is* stored is which definition and which version a run executed.
 Bump a definition's version when the **step sequence** changes — adding, removing or reordering steps — so a stored run keeps describing what actually happened.
 
 Editing a step's internals without changing the sequence does not require a bump: the run executed that step, and the row says so.
+
+**The stored version is enforced, not recorded.** Before a run is executed, recovered or approved, the definition this deployment would use must match the run's `workflow_type` and `definition_version`. Synchronously this could not diverge — the definition that started a run necessarily finished it inside one request. Asynchronously a run can sit at a gate, or interrupted awaiting recovery, across a deploy.
+
+Continuing such a run is not a degraded version of correct behaviour but a different execution: `next_step_index` counts completed rows, so an inserted step shifts every index after it, and a step that stopped being `replayable` would be re-entered without a claim.
+
+So it **fails closed and preserves the run**, with a fixed message that says so. Approval is checked as well as execution and recovery, because an approval that enqueues work the worker will refuse spends the grant and dead-letters the job. What happens to an incompatible run — migrate it, restart it, abandon it — is a product decision somebody takes on purpose.
 
 ## Duplicate Delivery, and the Four Problems Behind One Symptom
 

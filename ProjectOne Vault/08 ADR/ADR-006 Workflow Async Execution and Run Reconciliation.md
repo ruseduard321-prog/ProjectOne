@@ -2,7 +2,7 @@
 title: "ADR-006: Workflow Async Execution and Run Reconciliation"
 category: ADR
 status: accepted
-version: "1.6"
+version: "1.7"
 last_updated: 2026-08-21
 tags: [adr, decision, backend, api, workflow, jobs, security, database]
 adr_number: "0006"
@@ -16,8 +16,10 @@ adr_number: "0006"
 
 This decision is now binding, and [[STEP-31 Workflow Async Execution]] may build against it ([[CLAUDE|CLAUDE.md]] §7). **Changing the caller-identity boundary, the execution-claim model, the approval model, or the cross-tenant reconciliation boundary requires a new ADR that supersedes this one** — this note is not amended in place.
 
-> [!note] v1.6 is a clarification, not a re-decision
-> **The accepted architecture and authority model are unchanged.** v1.6 rewrites wording that contradicted itself — an invariant that forbade what its own grant block permitted, normative sections still naming two functions v1.4 consolidated away, and a state diagram naming a token its own caption says is never written. Nothing it touches is on the list above: no boundary moves, no predicate is removed, no gate is relaxed, and every enforced rule is the one v1.5 already specified. It records what [[STEP-31 Workflow Async Execution]] found while implementing v1.5, and states the resolution in the ADR rather than in a Pull Request description the next reader will not open.
+> [!note] v1.6 and v1.7 are corrections, not re-decisions
+> **The accepted architecture and authority model are unchanged by both.** v1.6 rewrites wording that contradicted itself. v1.7 goes further in kind but not in authority: it corrects three places where **the implementation did not conform to what this ADR already required**, and states the requirement precisely enough to be testable.
+>
+> Nothing either version touches is on the list above: no boundary moves, no predicate is removed, no gate is relaxed, and no product decision is revisited. They record what [[STEP-31 Workflow Async Execution]] found while building v1.5, and state the resolutions in the ADR rather than in a Pull Request description the next reader will not open.
 
 ### What the owner accepted, explicitly
 
@@ -39,6 +41,16 @@ Drafted and revised through five versions on 2026-08-20, each revision closing a
 **No open owner decisions remain.** Every question raised across v1.0–v1.5 is answered in this note; §Owner Decisions records Q1–Q5 and the acceptance conditions on D9 and D11 are met by D11 and §The Caller-Identity Boundary respectively.
 
 ### Revision history
+
+**v1.7 — 2026-08-21.** **Conformance correction**, raised by independent review of [[STEP-31 Workflow Async Execution]]. **Status remains `accepted`. No authority boundary, product decision or security gate changes.** Each row below is a place where the implementation failed to do what this ADR already required, or where the ADR asserted a property nothing enforced.
+
+| Input | Change |
+|---|---|
+| **Approval history was not persisted.** §Column Necessity declines an `approved_at` column because "'when' is history and belongs in `audit_log`, which survives consumption" — but nothing wrote that row. `approved_by` is enforcement state and is cleared at admission, so **the moment an approved step ran, who approved it was gone.** The ADR described a property the schema did not have. | **`workflow.approved` joins the audit vocabulary**, and `app_approve_workflow_step` writes one row in the same transaction as the grant and the job. It records workspace, actor (`auth.uid()`), run, step index and the created job id, and no token of any kind. `audit_log.created_at` is the durable approval time. New **I22**; new proofs **P42–P44**. |
+| **A step outcome and its run transition were two transactions.** The runner settled the step, committed, and then moved the run. A job's lease can rotate inside that gap, and two of the three consequences are expensive: a final step committing `completed` under a run still `running` can be reconciled to `failed` by a replacement, and a failed non-replayable step committing with its claim cleared can be **admitted and re-executed by a replacement before the run turns `failed`** — a second charge for work already paid for. | **One transaction.** The run transition is written inside the same session as `app_settle_workflow_step`, so the run, step and job locks that command takes are held across both writes; a run transition that cannot be written rolls the step settlement back with it. **No sixth command was needed.** New **I23**; new proofs **P45–P48**. |
+| **A redelivery of a completed run was a failure.** The runner refused re-entry by raising, which dead-letters the job — marking a genuinely completed run as having a failed job against it, with D5's reconciliation the only thing between that and the run being rewritten to `failed`. | **An idempotent success.** No provider call, no state change, and the delivery settles `succeeded`. Refusing to re-execute and reporting failure are different things. New proof **P49**. |
+| **The stored definition version was never checked.** A run records `definition_version` and the worker built the current definition without comparing them, while the recovery route read `requires_approval` off the current definition before mutating a failed run. A run parked at a gate across a deploy could continue against a **different step sequence, or a step that had stopped being gated or replayable** — and `next_step_index` counts completed rows, so an inserted step shifts every index after it. | **Checked before every mutation** — execution, recovery **and** approval — failing closed with a fixed public-safe message and preserving the run untouched. Approval is included because an approval that enqueues work the worker will refuse spends the grant and dead-letters the job. New **I24**; new proofs **P50–P53**. |
+| **Two new child foreign keys had no usable index.** `uq_jobs_one_live_job_per_workflow_run` is partial on `status IN ('pending','running')`, so terminal jobs — the ones that accumulate — leave it, while `ON DELETE RESTRICT` still has to find them. | Two partial indexes covering every non-null referencing row, `ix_jobs_workflow_run_id_workspace_id` and `ix_workflow_step_runs_claimed_by_job_id_workspace_id`, with downgrade removal. New proof **P54**. |
 
 **v1.6 — 2026-08-21.** Implementation clarification, raised by [[STEP-31 Workflow Async Execution]] while building v1.5. **Status remains `accepted`; the approved architecture and authority model are unchanged.** Three internal inconsistencies are resolved in favour of what v1.5 actually specified, and one grant is decided on evidence rather than left ambiguous.
 
@@ -825,7 +837,7 @@ Owner requirement 9. Recovery is a user's decision, and the state change is atom
 3. **Branch on whether the interrupted step is gated:**
    - **Not gated** → step `status = 'failed'` (claimable), run → `pending`, **enqueue the replacement job**. One user action; execution follows.
    - **Gated** → step `status = 'awaiting_approval'`, `approved_by` remains `NULL` (the grant was consumed at admission), run → `awaiting_approval`, **no job is enqueued**. Continuing requires a *second*, separately authorized action.
-4. Write an `audit_log` entry naming the run, step index, superseded token and actor. A recovery that may cause a second provider charge is exactly the sensitive action §16 requires auditing.
+4. Write an `audit_log` entry naming the run, the step index, the actor and **the fact that a stale claim was superseded** — never the token itself (I17). A recovery that may cause a second provider charge is exactly the sensitive action §16 requires auditing.
 
 Steps 1–3 commit together. The replacement enqueue is admitted by D4's index because the old job is `dead_lettered` and therefore outside the live set.
 
@@ -904,6 +916,10 @@ STEP-31's proof list is updated by P13 (narrowed) and P14–P21 (new) below. Cor
 - **I19.** Every client-callable command completes its whole domain transition or changes nothing. No granted function exposes a grant without its job, a supersession without its next state, or an enqueue on its own.
 - **I20.** A handler's run target is `jobs.workflow_run_id`. No code path reads a run id from `jobs.payload`.
 - **I21.** **The immutable login boundary is part of the security model.** Every workflow execution command refuses any session whose `session_user` is not the dedicated ProjectOne application login, before any read or write. The accepted login is a literal in each function body — never a parameter, a GUC, a table lookup or an allowlist — and `authenticator` is never accepted. **This invariant must be revalidated whenever the request-path or worker connection role changes, whenever Supabase's connection roles or pooler configuration change, and whenever a second application login is proposed.** A change to any of those is a change to this ADR's security model, not a configuration detail.
+
+- **I22.** **An approval leaves a record that outlives the grant.** `app_approve_workflow_step` writes exactly one `workflow.approved` audit row in the same transaction as the grant and the job, naming the workspace, the actor from `auth.uid()`, the run, the step index and the created job id — and no fencing token of any kind. `audit_log.created_at` is the durable approval time, which is why no `approved_at` column exists. A refused or rolled-back approval leaves no row, and concurrent approvals leave exactly one grant, one job and one row.
+- **I23.** **A step outcome and the run transition it causes are one transaction.** Settling a step and moving its run commit together or not at all, with the run, step and job locks the settlement takes held across both writes. No observer can see a completed final step under a non-terminal run, and no execution can act on a step between the two writes. A run transition that cannot be written rolls its step settlement back with it. An intermediate successful step moves no run state and writes none.
+- **I24.** **No run is advanced against a definition it did not start under.** Before execution, recovery **and** approval, the definition this deployment would use must match the run's recorded `workflow_type` and `definition_version`. A mismatch fails closed with a fixed public-safe message: no provider is called, no step is admitted, and no claim or approval is consumed. The run is preserved unchanged, because what happens to it is a product decision rather than a runtime one.
 
 ---
 
@@ -1184,6 +1200,22 @@ Proven by test, against a real database wherever the claim is about the database
 - **P39.** **Duplicate approval RPC.** Two concurrent calls for one run consume **one** grant and create **one** live job; the loser raises and rolls its grant back. Repeated serially: the second call is refused because `approved_by` is already consumed.
 - **P40.** **Duplicate resume RPC.** Two concurrent `app_recover_workflow_run` calls create **one** live job.
 - **P41.** **A forged payload run id is unreachable.** A workflow job whose `payload` names run B while its `workflow_run_id` names run A advances **run A only**; run B is untouched. Asserted on persisted state.
+
+**Added in v1.7**, and every one of them proves a property this ADR already asserted:
+
+- **P42.** **An approval is audited.** `app_approve_workflow_step` writes exactly one `workflow.approved` row naming the workspace, `auth.uid()`, the run, the step index and the created job id, with `created_at` as the approval time. No lease or claim token appears in it.
+- **P43.** **A refused approval writes nothing.** A member's refusal and an approval named at the wrong step each leave the audit table exactly as they found it. Four concurrent approvals leave one grant, one job and one audit row.
+- **P44.** **The history survives consumption.** After admission clears `approved_by`, the `workflow.approved` row and its actor are still readable. This is the property §Column Necessity relies on when it declines an `approved_at` column.
+- **P45.** **No observer sees every step complete under a live run.** With the settling transaction held open, a second connection sees neither write; after commit it sees both. The contradictory state is unobservable at every instant.
+- **P46.** **A failed claimed step cannot be re-entered across the boundary.** An execution attempting admission while the settlement is uncommitted blocks on the locks the settlement holds, and after commit is refused by the terminal run. It never admits.
+- **P47.** **A failed run transition rolls its step settlement back.** Driven through the real runner against a real database: the step row the pair would have written does not exist, while an unrelated intermediate step committed earlier is untouched.
+- **P48.** **The lock order is uniform.** Every command takes run, then step, then job — asserted against the installed function bodies, not the migration source.
+- **P49.** **A redelivery after completion is a success.** It calls no provider, changes no workflow state, settles `succeeded`, and is never dead-lettered.
+- **P50.** **The worker refuses a run whose version moved.** No provider call and no step admitted.
+- **P51.** **Recovery refuses before reading `requires_approval`.** The failed run is left exactly as it was; 422 with the fixed message.
+- **P52.** **Approval refuses rather than enqueueing work the worker will reject.** `approved_by` stays null and no job is created.
+- **P53.** **A matching version is unaffected.** The ordinary path is unchanged, asserted on a completed run and one provider call.
+- **P54.** **Both new child foreign keys lead a covering index**, and the index is not narrowed by `status` — terminal linked rows are exactly the ones referential maintenance must still find. The whole-schema advisor check runs alongside it against a recorded baseline of pre-existing findings.
 - **P42.** **Authorization boundaries on the approval command.** A member is refused; an owner/admin is refused for a run that is not `awaiting_approval`, for a step index the run is not waiting on, and for a step whose grant is already consumed. Each refusal changes nothing.
 - **P43.** **Commands return no tenant data.** Each of the five returns only a uuid, a boolean or `NULL` — asserted against `pg_proc.prorettype`, so a future change returning a row or a `SETOF` fails the guard.
 - **P44.** **The index is still the final authority.** With every command's checks passing concurrently, the partial unique index alone decides: exactly one live job survives, proven with concurrent sessions against real PostgreSQL.

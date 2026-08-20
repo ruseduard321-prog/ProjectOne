@@ -2422,3 +2422,516 @@ class TestTheGrantsThemselves:
                 _reset_session(connection, tenants.member.user_id)
         finally:
             connection.close()
+
+
+# ------------------------------------------------ foreign keys and indexes --
+#: The child-side foreign keys STEP-31 adds, and the index each one needs.
+_STEP_31_FOREIGN_KEYS = {
+    "fk_jobs_workflow_run_id_workflow_runs": "ix_jobs_workflow_run_id_workspace_id",
+    "fk_workflow_step_runs_claimed_by_job_id_jobs": (
+        "ix_workflow_step_runs_claimed_by_job_id_workspace_id"
+    ),
+}
+
+#: Finds every foreign key whose *referencing* columns lead no index.
+#:
+#: PostgreSQL indexes the referenced side automatically and never the
+#: referencing side, so an unindexed child foreign key is the single most common
+#: finding a database advisor reports. This is the query behind that finding,
+#: written out because the Supabase CLI is not installed here -- see the class
+#: docstring.
+#:
+#: A **partial** index counts, provided its predicate cannot exclude a row the
+#: constraint cares about. `WHERE col IS NOT NULL` is exactly that: a null
+#: referencing column matches no parent, so those rows are never scanned for.
+_UNINDEXED_FOREIGN_KEYS = """
+SELECT c.conname,
+       c.conrelid::regclass::text AS child_table,
+       (SELECT array_agg(a.attname ORDER BY k.ord)
+          FROM unnest(c.conkey) WITH ORDINALITY AS k(attnum, ord)
+          JOIN pg_attribute a
+            ON a.attrelid = c.conrelid AND a.attnum = k.attnum) AS child_columns
+  FROM pg_constraint c
+ WHERE c.contype = 'f'
+   AND c.connamespace = 'public'::regnamespace
+   AND NOT EXISTS (
+       SELECT 1
+         FROM pg_index i
+        WHERE i.indrelid = c.conrelid
+          AND i.indisvalid
+          AND (i.indkey::smallint[])[0:array_length(c.conkey, 1) - 1] @> c.conkey
+          AND c.conkey @> (i.indkey::smallint[])[0:array_length(c.conkey, 1) - 1]
+   )
+ ORDER BY 1
+"""
+
+
+#: Child foreign keys that already lacked a covering index before STEP-31.
+#:
+#: Every one is defined in a migration that predates this step -- `e5a91c34d7f2`,
+#: `a7d24e91f3b6`, `c8f1a3d54e29` and `f3c82b19d4a7` -- so none is this step's to
+#: fix (CLAUDE.md §29). They are pinned so that a *new* unindexed foreign key
+#: fails, and so that fixing one of these is a deliberate edit here rather than a
+#: silent change.
+_UNINDEXED_BASELINE = frozenset(
+    {
+        "fk_assets_project_id_projects",
+        "fk_conversations_project_id_projects",
+        "fk_messages_conversation_id_conversations",
+        "fk_messages_reply_to_messages",
+        "fk_workflow_runs_project_id_projects",
+        "fk_workflow_step_runs_run_id_workflow_runs",
+    }
+)
+
+
+class TestForeignKeysAreIndexedOnTheChildSide:
+    """Every referencing foreign key leads an index that covers its rows.
+
+    **Run as the fallback for a database advisor, and kept as a test.** The
+    Supabase CLI is not installed in this environment, so the missing-FK-index
+    check an advisor would perform is written out here instead -- which is the
+    better home for it anyway: an advisor run is a moment, and this fails the
+    next migration that forgets one.
+
+    The reason it matters for STEP-31 specifically is that the obvious candidate
+    does not qualify. `uq_jobs_one_live_job_per_workflow_run` is partial on
+    `status IN ('pending','running')`, so a job leaves it the moment it succeeds
+    or dead-letters -- and terminal jobs are exactly the rows that accumulate.
+    `ON DELETE RESTRICT` still has to find them.
+    """
+
+    def test_the_two_new_foreign_keys_have_covering_indexes(
+        self, admin_connection: psycopg.Connection
+    ) -> None:
+        """Each new child foreign key is led by the index named for it."""
+        with admin_connection.cursor() as cursor:
+            for constraint, index in _STEP_31_FOREIGN_KEYS.items():
+                cursor.execute(
+                    "SELECT indexdef FROM pg_indexes "
+                    "WHERE schemaname = 'public' AND indexname = %s",
+                    (index,),
+                )
+                row = cursor.fetchone()
+
+                assert row is not None, f"{constraint} has no index {index}"
+
+                definition = row[0]
+
+                # Partial on IS NOT NULL only -- anything narrower would exclude
+                # rows the constraint still has to find.
+                assert "IS NOT NULL" in definition
+                assert "status" not in definition, (
+                    f"{index} is narrowed by status and would drop terminal rows: {definition}"
+                )
+
+    def test_no_new_foreign_key_is_unindexed_on_the_child_side(
+        self, admin_connection: psycopg.Connection
+    ) -> None:
+        """The advisor check itself, run over the whole schema against a baseline.
+
+        Scoped to *new* findings rather than to STEP-31's tables, because a check
+        that only ever looked at this step's constraints would pass while the
+        schema degraded around it.
+
+        The baseline is the six findings that already existed when STEP-31 was
+        written. **They are recorded rather than fixed**, because indexing six
+        foreign keys across `assets`, `conversations`, `messages` and
+        `workflow_runs` is unrelated work in a step about workflow execution
+        ([[CLAUDE|CLAUDE.md]] §29), and each deserves its own judgement about
+        whether the write cost is worth paying. Writing them down is what turns
+        them from invisible into a decision somebody can take.
+        """
+        with admin_connection.cursor() as cursor:
+            cursor.execute(_UNINDEXED_FOREIGN_KEYS)
+            unindexed = {name for name, _table, _columns in cursor.fetchall()}
+
+        assert unindexed - _UNINDEXED_BASELINE == set(), (
+            "a foreign key was added with no index leading its referencing columns: "
+            f"{sorted(unindexed - _UNINDEXED_BASELINE)}"
+        )
+
+        assert _UNINDEXED_BASELINE - unindexed == set(), (
+            "a baseline finding was fixed without updating the baseline: "
+            f"{sorted(_UNINDEXED_BASELINE - unindexed)}"
+        )
+
+
+# ------------------------------------------------------- approval, audited --
+
+
+def _approval_rows(connection: psycopg.Connection, workspace_id: uuid.UUID) -> list[tuple]:
+    """Return every `workflow.approved` audit row in a workspace, oldest first."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT actor_id, target_id, detail::text, created_at FROM public.audit_log "
+            "WHERE action = 'workflow.approved' AND workspace_id = %s "
+            "ORDER BY created_at, id",
+            (workspace_id,),
+        )
+        return list(cursor.fetchall())
+
+
+class TestApprovalLeavesAHistory:
+    """Who approved a gated step, and when, survives the grant being spent.
+
+    **`approved_by` is enforcement state, not history.** Admission clears it --
+    that is what makes the grant single-use -- so the column stops answering
+    "who approved this" at the exact moment the approved step begins to run.
+
+    ADR-006 §Column Necessity declines to add an `approved_at` column on the
+    grounds that "'when' is history and belongs in `audit_log`, which survives
+    consumption". That sentence is only true if something writes the row. Before
+    this correction nothing did, so the approval history vanished at admission
+    and the ADR described a property the schema did not have.
+    """
+
+    def test_approving_writes_one_audit_row_with_the_grant_and_the_job(
+        self,
+        request_database_url: str,
+        admin_connection: psycopg.Connection,
+        tenants: Workspace,
+        dispatch: JobDispatchRepository,
+    ) -> None:
+        """The row names the workspace, actor, run, step and created job."""
+        run_id = _paused_at_gate(request_database_url, admin_connection, tenants, dispatch)
+        job_id = approve(request_database_url, tenants.owner, run_id, 0, workspace=tenants.id)
+
+        rows = _approval_rows(admin_connection, tenants.id)
+
+        assert len(rows) == 1
+
+        actor_id, target_id, detail, created_at = rows[0]
+
+        assert actor_id == tenants.owner.user_id, "the actor is not auth.uid()"
+        assert target_id == run_id
+        assert '"step_index": 0' in detail
+        assert str(job_id) in detail, "the audit row does not name the job it authorized"
+        assert created_at is not None, "audit_log.created_at is the durable approval time"
+
+    def test_no_fencing_token_reaches_the_audit_row(
+        self,
+        request_database_url: str,
+        admin_connection: psycopg.Connection,
+        tenants: Workspace,
+        dispatch: JobDispatchRepository,
+    ) -> None:
+        """I17, asserted against the values themselves rather than the column list.
+
+        A claim token does not exist yet at approval time, and a lease token
+        belongs to a job nobody has claimed. Both are checked anyway, because the
+        cost of this row quietly gaining one later is that a fencing value sits
+        in a table some future grant may expose.
+        """
+        run_id = _paused_at_gate(request_database_url, admin_connection, tenants, dispatch)
+        job_id = approve(request_database_url, tenants.owner, run_id, 0, workspace=tenants.id)
+
+        with admin_connection.cursor() as cursor:
+            cursor.execute("SELECT lease_token FROM public.jobs WHERE id = %s", (job_id,))
+            row = cursor.fetchone()
+
+        assert row is not None
+
+        detail = _approval_rows(admin_connection, tenants.id)[0][2]
+
+        assert "lease_token" not in detail
+        assert "claim_token" not in detail
+
+        if row[0] is not None:  # pragma: no cover - a fresh job holds no lease
+            assert str(row[0]) not in detail
+
+    def test_a_refused_approval_leaves_no_audit_row(
+        self,
+        request_database_url: str,
+        admin_connection: psycopg.Connection,
+        tenants: Workspace,
+        dispatch: JobDispatchRepository,
+    ) -> None:
+        """The row is part of the transaction, not a side effect beside it.
+
+        A member's refused approval, and an approval named at the wrong step,
+        must both leave the audit table exactly as they found it -- otherwise the
+        log records approvals that never happened, which is worse than recording
+        none.
+        """
+        run_id = _paused_at_gate(request_database_url, admin_connection, tenants, dispatch)
+
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            approve(request_database_url, tenants.member, run_id, 0, workspace=tenants.id)
+
+        assert _approval_rows(admin_connection, tenants.id) == []
+
+        with pytest.raises(psycopg.Error):
+            approve(request_database_url, tenants.owner, run_id, 7, workspace=tenants.id)
+
+        assert _approval_rows(admin_connection, tenants.id) == []
+
+    def test_concurrent_approvals_leave_one_grant_one_job_and_one_row(
+        self,
+        request_database_url: str,
+        admin_connection: psycopg.Connection,
+        tenants: Workspace,
+        dispatch: JobDispatchRepository,
+    ) -> None:
+        """Four approvals at once produce exactly one of each.
+
+        The audit row is inside the same transaction as the grant and the job, so
+        the losers roll all three back together. A log showing four approvals of
+        one step would describe a race rather than a decision.
+        """
+        run_id = _paused_at_gate(request_database_url, admin_connection, tenants, dispatch)
+
+        results, errors = concurrently(
+            4,
+            lambda _index: approve(
+                request_database_url, tenants.owner, run_id, 0, workspace=tenants.id
+            ),
+        )
+
+        assert len(results) == 1, f"{len(results)} approvals succeeded"
+        assert len(errors) == 3
+
+        assert live_jobs(admin_connection, run_id) == [results[0]]
+        assert len(_approval_rows(admin_connection, tenants.id)) == 1
+
+    def test_the_history_survives_admission_clearing_the_grant(
+        self,
+        request_database_url: str,
+        admin_connection: psycopg.Connection,
+        tenants: Workspace,
+        dispatch: JobDispatchRepository,
+    ) -> None:
+        """**The whole point.** The column empties; the record does not.
+
+        This is the property ADR-006 asserts when it declines an `approved_at`
+        column, and the one that was untrue before this correction: once the
+        approved step is admitted, `approved_by` is null and the audit row is the
+        only remaining answer to who authorized the spend.
+        """
+        run_id = _paused_at_gate(request_database_url, admin_connection, tenants, dispatch)
+        job_id = approve(request_database_url, tenants.owner, run_id, 0, workspace=tenants.id)
+        claimed = claim_job(dispatch)
+
+        assert claimed.id == job_id
+
+        admit(
+            request_database_url,
+            tenants.owner,
+            run_id,
+            claimed.id,
+            claimed.lease_token,
+            step_index=0,
+            requires_approval=True,
+        )
+
+        assert step_row(admin_connection, run_id, 0)["approved_by"] is None, (
+            "admission must consume the grant, or this test proves nothing"
+        )
+
+        rows = _approval_rows(admin_connection, tenants.id)
+
+        assert len(rows) == 1
+        assert rows[0][0] == tenants.owner.user_id
+        assert rows[0][3] is not None
+
+
+# -------------------------------------- the step outcome and the run, as one --
+
+
+def _all_steps_done_but_run_live(
+    connection: psycopg.Connection, run_id: uuid.UUID, expected_steps: int
+) -> bool:
+    """Return whether an observer would see every step finished under a live run."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT count(*) FILTER (WHERE status = 'completed'), "
+            "       (SELECT status FROM public.workflow_runs WHERE id = %s) "
+            "  FROM public.workflow_step_runs WHERE run_id = %s AND deleted_at IS NULL",
+            (run_id, run_id),
+        )
+        completed, run_status = cursor.fetchone()  # type: ignore[misc]
+
+    return completed == expected_steps and run_status not in ("completed", "failed")
+
+
+class TestTheStepOutcomeAndTheRunMoveTogether:
+    """A step's outcome and the run transition it causes are one transaction.
+
+    **Two transactions with a commit between them leave a gap, and the gap is
+    reachable**, because a job's lease can rotate inside it. Three losses follow,
+    and the first two are the expensive ones:
+
+    - the final step commits `completed` while its run is still `running`, so a
+      replacement seeing every step complete can reconcile that run to `failed`;
+    - a non-replayable step commits `failed` with its claim cleared, and a
+      replacement arriving before the run turns `failed` can admit and
+      **re-execute a step that has already been paid for**.
+
+    These force the boundary directly: the settling transaction is held open
+    while a second connection tries to observe or act, which is the state a
+    lease rotation would otherwise have to be raced into existence.
+    """
+
+    def test_no_observer_sees_every_step_complete_under_a_live_run(
+        self,
+        request_database_url: str,
+        admin_connection: psycopg.Connection,
+        tenants: Workspace,
+        dispatch: JobDispatchRepository,
+    ) -> None:
+        """The contradictory state is unobservable, before and after commit.
+
+        Held open deliberately. If the two writes were separate transactions the
+        first would already be visible here, which is exactly what a replacement
+        worker would find.
+        """
+        run_id = start_run(request_database_url, tenants.owner)
+        claimed = claim_job(dispatch)
+        claim = admit(request_database_url, tenants.owner, run_id, claimed.id, claimed.lease_token)
+        settling = open_session(request_database_url, tenants.owner.user_id)
+
+        try:
+            with settling.cursor() as cursor:
+                cursor.execute(
+                    "SELECT public.app_settle_workflow_step("
+                    "%s::uuid, %s::uuid, 0::integer, %s::text, %s::text, NULL::text, "
+                    "NULL::jsonb, 0::integer, %s::uuid, %s::uuid, %s::uuid)",
+                    (
+                        tenants.id,
+                        run_id,
+                        "plan",
+                        StepStatus.COMPLETED,
+                        claimed.id,
+                        claimed.lease_token,
+                        claim,
+                    ),
+                )
+
+                assert cursor.fetchone()[0] is True  # type: ignore[index]
+
+                cursor.execute(
+                    "UPDATE public.workflow_runs SET status = %s, finished_at = now() "
+                    "WHERE id = %s AND workspace_id = %s",
+                    (RunStatus.COMPLETED, run_id, tenants.id),
+                )
+
+                # Mid-transaction: an outside reader must see neither write.
+                assert not _all_steps_done_but_run_live(admin_connection, run_id, 1)
+
+            settling.commit()
+        finally:
+            settling.close()
+
+        # After commit: both, and therefore still never the contradiction.
+        assert not _all_steps_done_but_run_live(admin_connection, run_id, 1)
+        assert run_row(admin_connection, run_id)["status"] == RunStatus.COMPLETED
+        assert step_row(admin_connection, run_id, 0)["status"] == StepStatus.COMPLETED
+
+    def test_a_failed_claimed_step_cannot_be_re_entered_across_the_boundary(
+        self,
+        request_database_url: str,
+        admin_connection: psycopg.Connection,
+        tenants: Workspace,
+        dispatch: JobDispatchRepository,
+    ) -> None:
+        """**The expensive one.** A replacement must not admit the failed step.
+
+        The failing settlement clears the claim, so between the two writes there
+        is a step with no claim under a run that is still `running` -- which is
+        precisely an admissible step. Holding both writes in one transaction
+        means the step row stays locked until the run is `failed`, so a
+        replacement blocks and then finds a terminal run.
+        """
+        run_id = start_run(request_database_url, tenants.owner)
+        first = claim_job(dispatch)
+        claim = admit(request_database_url, tenants.owner, run_id, first.id, first.lease_token)
+
+        assert claim is not None, "a non-replayable step must take a claim"
+
+        outcome: dict[str, object] = {}
+
+        def try_to_admit() -> None:
+            # A redelivery of the same job -- the shape a lease rotation
+            # produces. It is refused after the pair commits because the run is
+            # terminal; the half being proven here is that it cannot act
+            # *during*, which is where separate transactions left a door.
+            try:
+                outcome["claim"] = admit(
+                    request_database_url, tenants.owner, run_id, first.id, first.lease_token
+                )
+            except BaseException as error:  # noqa: BLE001 - asserted on below
+                outcome["error"] = error
+
+        settling = open_session(request_database_url, tenants.owner.user_id)
+
+        try:
+            with settling.cursor() as cursor:
+                cursor.execute(
+                    "SELECT public.app_settle_workflow_step("
+                    "%s::uuid, %s::uuid, 0::integer, %s::text, %s::text, %s::text, "
+                    "NULL::jsonb, 0::integer, %s::uuid, %s::uuid, %s::uuid)",
+                    (
+                        tenants.id,
+                        run_id,
+                        "plan",
+                        StepStatus.FAILED,
+                        "it failed",
+                        first.id,
+                        first.lease_token,
+                        claim,
+                    ),
+                )
+
+                assert cursor.fetchone()[0] is True  # type: ignore[index]
+
+                cursor.execute(
+                    "UPDATE public.workflow_runs SET status = %s, finished_at = now() "
+                    "WHERE id = %s AND workspace_id = %s",
+                    (RunStatus.FAILED, run_id, tenants.id),
+                )
+
+                # Started while the pair is still uncommitted. It blocks on the
+                # step row's lock rather than reading a half-applied outcome.
+                thread = threading.Thread(target=try_to_admit)
+                thread.start()
+                thread.join(timeout=1.0)
+
+                assert thread.is_alive(), "the replacement did not block on the step lock"
+
+            settling.commit()
+            thread.join(timeout=10.0)
+        finally:
+            settling.close()
+
+        assert "claim" not in outcome, "a replacement admitted a step that had already failed"
+        assert isinstance(outcome.get("error"), psycopg.Error)
+        assert step_row(admin_connection, run_id, 0)["status"] == StepStatus.FAILED
+        assert run_row(admin_connection, run_id)["status"] == RunStatus.FAILED
+
+    def test_the_lock_order_is_run_then_step_then_job_in_every_command(
+        self, admin_connection: psycopg.Connection
+    ) -> None:
+        """One order everywhere, asserted on the command bodies.
+
+        Two orders is a deadlock between a stale worker settling and a
+        replacement admitting -- a shape this codebase would meet in production
+        and not in review. Now that the run transition shares the settlement's
+        transaction, the locks are also held longer, which makes a second
+        ordering more expensive rather than less.
+        """
+        for name, args in COMMANDS:
+            body = _body(admin_connection, name, args)
+            order = re.findall(r"FROM public\.(workflow_runs|workflow_step_runs|jobs)\b", body)
+            first_seen: list[str] = []
+
+            for table in order:
+                if table not in first_seen:
+                    first_seen.append(table)
+
+            expected = [
+                table
+                for table in ("workflow_runs", "workflow_step_runs", "jobs")
+                if table in first_seen
+            ]
+
+            assert first_seen == expected, f"{name} takes locks out of order: {first_seen}"

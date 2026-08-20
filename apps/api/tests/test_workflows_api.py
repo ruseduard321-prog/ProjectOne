@@ -55,6 +55,7 @@ from app.repositories.workflows import WorkflowRepository
 from app.services.token_service import AuthenticatedUser
 from app.workflows.execution import build_workflow_definitions
 from app.workflows.models import RunStatus, StepStatus
+from app.workflows.runner import WorkflowRunner
 from tests.conftest import _REQUEST_ROLE_NAME, TEST_BYOK_KEY, Identity, seed_identity
 from tests.test_health import StubDatabase
 
@@ -248,6 +249,7 @@ def client(
 
     with TestClient(app) as test_client:
         test_client.worker = worker  # type: ignore[attr-defined]
+        test_client.provider = provider  # type: ignore[attr-defined]
         test_client.settings = configured  # type: ignore[attr-defined]
         test_client.dispatch = JobDispatchRepository(configured)  # type: ignore[attr-defined]
 
@@ -1346,3 +1348,291 @@ class TestTheProviderCallHoldsNoTenantConnection:
         assert mid_transaction == [], (
             f"a connection was mid-transaction across the provider call: {mid_transaction}"
         )
+
+
+# ------------------------------------- the step outcome and the run, as one --
+
+
+class TestSettlementAndRunTransitionAreOneTransaction:
+    """The step outcome and the run transition it causes commit together.
+
+    `test_workflow_commands.py` proves the database half by holding a settling
+    transaction open and watching what a second connection can see and do. These
+    prove the half that lives in the runner: that it puts both writes in one
+    transaction, and that failing the second rolls back the first.
+    """
+
+    def test_a_failed_run_transition_rolls_the_step_back_with_it(
+        self, client: TestClient, tenants: Tenants, admin_connection: psycopg.Connection
+    ) -> None:
+        """**The rollback proof, driven through the real runner.**
+
+        `update_run_status` is made to fail after `app_settle_workflow_step` has
+        already succeeded in the same transaction. If the two were separate
+        transactions the step would be committed and stranded: `completed` under
+        a run still `running`, with the claim released. In one transaction it is
+        as if neither happened.
+        """
+        settings: Settings = client.settings  # type: ignore[attr-defined]
+        sessions = RequestSessionFactory(settings)
+
+        class RefusesTheRunTransition:
+            """The real repository, refusing exactly the paired run transition.
+
+            **Only the transitions that share a settlement's transaction.** The
+            run is moved to `running` once at the start of an execution, on its
+            own and with no step beside it; failing that would abort before
+            anything settled and the test would pass without proving a thing.
+            """
+
+            def __init__(self, connection: psycopg.Connection) -> None:
+                self._real = WorkflowRepository(connection)
+
+            def __getattr__(self, name: str) -> Any:
+                return getattr(self._real, name)
+
+            def update_run_status(
+                self, workspace_id: Any, run_id: Any, status: Any, **kwargs: Any
+            ) -> Any:
+                if status == RunStatus.RUNNING:
+                    return self._real.update_run_status(workspace_id, run_id, status, **kwargs)
+
+                raise RuntimeError("the run transition could not be written")
+
+        project_id = _project(client, tenants)
+        run = _start(client, tenants, project_id, execute=False)
+        run_id = uuid.UUID(str(run["id"]))
+        workspace_id = uuid.UUID(str(tenants.workspace_id))
+
+        dispatch: JobDispatchRepository = client.dispatch  # type: ignore[attr-defined]
+        claimed, _reaped = dispatch.claim("rollback-worker", 300)
+
+        assert claimed is not None
+
+        runner = WorkflowRunner(
+            lambda: sessions.authenticated_as(tenants.owner.user_id),
+            RefusesTheRunTransition,  # type: ignore[arg-type]
+        )
+
+        with pytest.raises(RuntimeError):
+            runner.execute(
+                workspace_id=workspace_id,
+                run_id=run_id,
+                definitions=build_workflow_definitions(
+                    settings,
+                    (client.provider,),  # type: ignore[attr-defined]
+                ),
+                job_id=claimed.id,
+                lease_token=claimed.lease_token,
+            )
+
+        with admin_connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT step_index, status FROM public.workflow_step_runs "
+                "WHERE run_id = %s ORDER BY step_index",
+                (run_id,),
+            )
+            steps = cursor.fetchall()
+
+        # `validate` is an intermediate success: it moves no run state, settles
+        # alone, and is legitimately committed. `plan` is the gated step whose
+        # pause is paired with the run's move to `awaiting_approval` -- and that
+        # pair failed, so neither half may survive.
+        assert steps == [(0, StepStatus.COMPLETED)], (
+            "a paired step settlement survived a run transition that failed; "
+            f"the two are not one transaction: {steps}"
+        )
+
+    def test_a_redelivery_after_completion_is_a_success_not_a_dead_letter(
+        self, client: TestClient, tenants: Tenants, admin_connection: psycopg.Connection
+    ) -> None:
+        """**An idempotent no-op.** No provider call, no state change, no dead letter.
+
+        Delivery is at-least-once, so a job whose earlier delivery finished the
+        run can arrive again -- its lease lapsed after the work was done rather
+        than before. Dead-lettering that would mark a genuinely completed run as
+        having a failed job against it, and D5's reconciliation is then the only
+        thing standing between that and a `completed` run being rewritten to
+        `failed`.
+        """
+        provider: StubProvider = client.provider  # type: ignore[attr-defined]
+        project_id = _project(client, tenants)
+        run = _start(client, tenants, project_id)
+
+        _approve(client, tenants, run["id"])
+
+        assert _read(client, tenants, run["id"])["status"] == RunStatus.COMPLETED
+
+        calls_before = provider.calls
+
+        # A fresh delivery of the completed run, enqueued the way a redelivery
+        # arrives: same run, same handler, nothing left to do.
+        with admin_connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO public.jobs "
+                "(workspace_id, enqueued_by, job_type, payload, max_attempts, workflow_run_id) "
+                "VALUES (%s, %s, 'workflow.execute', '{}'::jsonb, 2, %s) RETURNING id",
+                (tenants.workspace_id, tenants.owner.user_id, run["id"]),
+            )
+            redelivered = cursor.fetchone()[0]  # type: ignore[index]
+
+        assert _drain(client) == 1
+
+        with admin_connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT status, dead_lettered_at FROM public.jobs WHERE id = %s",
+                (redelivered,),
+            )
+            status, dead_lettered_at = cursor.fetchone()  # type: ignore[misc]
+
+        assert status == "succeeded", f"a redelivery of a completed run settled {status}"
+        assert dead_lettered_at is None
+        assert provider.calls == calls_before, "a redelivery called the provider again"
+        assert _read(client, tenants, run["id"])["status"] == RunStatus.COMPLETED
+
+
+# --------------------------------------------- the definition a run started --
+
+
+def run_status(admin_connection: psycopg.Connection, run_id: str) -> str:
+    """Return a run's stored status, read past every route and policy."""
+    with admin_connection.cursor() as cursor:
+        cursor.execute("SELECT status FROM public.workflow_runs WHERE id = %s", (run_id,))
+        row = cursor.fetchone()
+
+    assert row is not None
+
+    return str(row[0])
+
+
+def _rewrite_stored_version(
+    admin_connection: psycopg.Connection, run_id: str, version: int
+) -> None:
+    """Make a run claim it started under a different definition version.
+
+    Written directly rather than through a route, because there is deliberately
+    no way for a caller to change it: the version is stamped at creation and
+    never re-read. What this simulates is the deploy, not a request.
+    """
+    with admin_connection.cursor() as cursor:
+        cursor.execute(
+            "UPDATE public.workflow_runs SET definition_version = %s WHERE id = %s",
+            (version, run_id),
+        )
+
+
+class TestARunCannotOutliveItsDefinition:
+    """A run records `definition_version`, and it is now checked before every mutation.
+
+    **Synchronously this could not happen.** The definition that started a run
+    was necessarily the one that finished it, inside a single request. A run can
+    now sit at an approval gate, or interrupted awaiting recovery, across a
+    deploy that adds a step, reorders two, or changes whether one is gated or
+    replayable.
+
+    Continuing such a run is not a degraded version of correct behaviour, it is a
+    different execution: `next_step_index` counts completed rows, so an inserted
+    step shifts every index after it, and a step that stopped being `replayable`
+    would be re-entered with no claim -- a second provider charge with nothing to
+    prevent it. So this fails closed and preserves the run for a person to decide
+    about.
+    """
+
+    def test_the_worker_refuses_a_run_whose_version_moved(
+        self,
+        client: TestClient,
+        tenants: Tenants,
+        provider: StubProvider,
+        admin_connection: psycopg.Connection,
+    ) -> None:
+        """No provider call, no step admitted, and the run's steps untouched."""
+        project_id = _project(client, tenants)
+        run = _start(client, tenants, project_id, execute=False)
+
+        _rewrite_stored_version(admin_connection, run["id"], 99)
+        _drain(client)
+
+        assert provider.calls == 0, "an incompatible definition reached the provider"
+
+        with admin_connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT count(*) FROM public.workflow_step_runs WHERE run_id = %s",
+                (run["id"],),
+            )
+
+            assert cursor.fetchone()[0] == 0, "a step was admitted under a changed definition"
+
+    def test_recovery_refuses_before_it_reads_requires_approval(
+        self, client: TestClient, tenants: Tenants, admin_connection: psycopg.Connection
+    ) -> None:
+        """The check runs before the gate is re-armed from the wrong definition.
+
+        Whether a step is gated is a property of the definition, so deriving it
+        from one the run did not start under would re-arm the wrong gate -- or
+        skip one that should have stopped the run.
+        """
+        project_id = _project(client, tenants)
+        run = _start(client, tenants, project_id)
+
+        with admin_connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE public.workflow_runs SET status = 'failed' WHERE id = %s",
+                (run["id"],),
+            )
+
+        _rewrite_stored_version(admin_connection, run["id"], 99)
+
+        refused = _resume(client, tenants, run["id"], execute=False)
+
+        assert refused.status_code == 422, refused.text
+        assert "definition has changed" in refused.json()["detail"]
+        assert run_status(admin_connection, run["id"]) == "failed", "the run was mutated anyway"
+
+    def test_approval_refuses_rather_than_enqueueing_work_the_worker_will_reject(
+        self, client: TestClient, tenants: Tenants, admin_connection: psycopg.Connection
+    ) -> None:
+        """**The one that is easy to miss.**
+
+        An approval that enqueued a job the worker then refused would turn an
+        owner's decision into a dead-lettered job and a gate whose grant has
+        already been spent. So it is refused here, with `approved_by` untouched
+        and no job created.
+        """
+        project_id = _project(client, tenants)
+        run = _start(client, tenants, project_id)
+
+        _rewrite_stored_version(admin_connection, run["id"], 99)
+
+        refused = _approve(client, tenants, run["id"], execute=False)
+
+        assert refused.status_code == 422, refused.text
+
+        with admin_connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT approved_by FROM public.workflow_step_runs "
+                "WHERE run_id = %s AND status = 'awaiting_approval'",
+                (run["id"],),
+            )
+            granted = cursor.fetchone()
+
+            assert granted is not None and granted[0] is None, "a grant was written anyway"
+
+            cursor.execute(
+                "SELECT count(*) FROM public.jobs WHERE workflow_run_id = %s "
+                "AND status IN ('pending', 'running')",
+                (run["id"],),
+            )
+
+            assert cursor.fetchone()[0] == 0, "a job was enqueued for an unexecutable run"
+
+    def test_a_matching_version_is_unaffected(
+        self, client: TestClient, tenants: Tenants, provider: StubProvider
+    ) -> None:
+        """The control. Nothing about the ordinary path changed."""
+        project_id = _project(client, tenants)
+        run = _start(client, tenants, project_id)
+
+        _approve(client, tenants, run["id"])
+
+        assert _read(client, tenants, run["id"])["status"] == RunStatus.COMPLETED
+        assert provider.calls == 1

@@ -243,6 +243,22 @@ Recorded while building, not after. The Step Completion Record below stays open 
 
 5. **The test teardown order became load-bearing again.** `workflow_step_runs` → `jobs` → `workflow_runs`, because a claim names its job and a job names its run, both `ON DELETE RESTRICT`. Deleting jobs first fails whenever a claim survives a test — which is exactly what a deliberately stranded run leaves behind.
 
+### Four conformance defects found by independent review — resolved in ADR-006 v1.7
+
+Every one is a place where the implementation did not do what ADR-006 already required, or where the ADR asserted a property nothing enforced. **None changed an authority boundary, a product decision or a security gate.**
+
+1. **Approval left no history.** §Column Necessity declines an `approved_at` column because "'when' is history and belongs in `audit_log`, which survives consumption" — and nothing wrote that row. Since `approved_by` is cleared at admission, *who approved a gated step vanished the moment the step ran*. `workflow.approved` now joins the audit vocabulary and `app_approve_workflow_step` writes one row in the same transaction as the grant and the job, with `audit_log.created_at` as the approval time and no token of any kind.
+
+2. **A step outcome and its run transition were two transactions**, and a lease can rotate in the gap. Two of the three consequences cost money: a final step committing `completed` under a still-`running` run can be reconciled to `failed` by a replacement, and a failed non-replayable step committing with its claim cleared can be **admitted and re-executed** before the run turns `failed`. Both writes now share one transaction, so the run, step and job locks the settlement takes are held across the pair, and a run transition that cannot be written rolls the step back with it. **No sixth command was needed** — the run update is an ordinary tenant write inside the settlement's own session.
+
+3. **A redelivery of a completed run was dead-lettered.** Refusing to re-execute is right; reporting it as a failure is not — it marks a genuinely completed run as having a failed job against it. It is now an idempotent success: no provider call, no state change, job `succeeded`.
+
+4. **The stored `definition_version` was never checked.** A run parked at a gate across a deploy could continue against a different step sequence, or a step that had stopped being gated or replayable — and `next_step_index` counts completed rows, so an inserted step shifts every index after it. One canonical check now runs before execution, recovery **and** approval. Approval is included because an approval that enqueues work the worker will refuse spends the grant and dead-letters the job. It fails closed with a fixed public-safe message and preserves the run, because what happens to an incompatible run is a product decision.
+
+A fifth finding was structural rather than behavioural: **the two new child foreign keys had no usable index.** `uq_jobs_one_live_job_per_workflow_run` is partial on `status IN ('pending','running')`, so terminal jobs — the ones that accumulate — leave it while `ON DELETE RESTRICT` still has to find them. Two partial indexes now cover every non-null referencing row.
+
+**The Supabase CLI is not installed here**, so the advisor's missing-FK-index check is written out as a test instead, which is the better home: an advisor run is a moment, and a test fails the next migration that forgets one. It reported **six pre-existing unindexed child foreign keys** across `assets`, `conversations`, `messages` and `workflow_runs`, none of them this step's. They are recorded as a pinned baseline rather than fixed — indexing them is unrelated work ([[CLAUDE|CLAUDE.md]] §29) and each deserves its own judgement about write cost — so a *new* one fails while the existing debt is visible instead of invisible.
+
 ### Two things ADR-006 said that the implementation read differently — now resolved in ADR-006 v1.6
 
 Reported first, then taken to the owner and written into the ADR rather than left in a Pull Request description. **[[ADR-006 Workflow Async Execution and Run Reconciliation]] is now v1.6, still `accepted`**: an implementation clarification that changes no boundary, removes no predicate and relaxes no gate.
@@ -299,7 +315,7 @@ What replaces a browser check is real HTTP against a real database with the real
 
 ## Risks and Governance Gates
 
-**Critical** — a public API contract change, the multi-tenancy boundary, database schema, and a new privileged principal. Every one of these is decided in [[ADR-006 Workflow Async Execution and Run Reconciliation]]; the risk here is implementing them incompletely, not re-deciding them.
+**Critical** — a public API contract change, the multi-tenancy boundary, and database schema. **No new principal is created**: the five commands are `SECURITY DEFINER` functions owned by the existing database owner, which is a constrained command boundary rather than a new identity — and each refuses any caller whose `session_user` is not the application login that already existed. Every one of these is decided in [[ADR-006 Workflow Async Execution and Run Reconciliation]]; the risk here is implementing them incompletely, not re-deciding them.
 
 - **Settling `succeeded` when a claim is found held.** The single most dangerous mistake available in this step: it would leave a succeeded job, a `running` run and nothing able to advance or reconcile it. Dead-letter, always.
 - **Releasing a claim on any automatic path.** No expiry, no stealing, and reconciliation must not touch `workflow_step_runs`.
