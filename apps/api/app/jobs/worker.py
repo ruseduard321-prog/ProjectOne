@@ -84,9 +84,16 @@ from app.jobs.contract import (
     classify,
 )
 from app.jobs.registry import JobHandlerRegistry, build_registry
-from app.repositories.job_dispatch import JobDispatchRepository, JobOutcome
+from app.repositories.job_dispatch import (
+    RUN_ABANDONED_DETAIL,
+    RUN_INTERRUPTED_DETAIL,
+    JobDispatchRepository,
+    JobOutcome,
+)
 from app.repositories.memberships import MembershipRepository
 from app.repositories.session import RequestSessionFactory
+from app.workflows.execution import build_workflow_definitions
+from app.workflows.models import StepInterruptedError, StepOwnershipLostError
 
 logger = get_logger(__name__)
 
@@ -318,6 +325,8 @@ class JobWorker:
                     job_type=job.job_type,
                     workspace_id=job.workspace_id,
                     attempts=job.attempts,
+                    workflow_run_id=job.workflow_run_id,
+                    run_reconciled=job.workflow_run_id is not None,
                     reason="lease_expired_with_attempts_exhausted",
                 )
             )
@@ -406,6 +415,12 @@ class JobWorker:
             attempt=claimed.attempt,
             max_attempts=claimed.max_attempts,
             tenant_session=lambda: self._sessions.authenticated_as(claimed.enqueued_by),
+            # Both come straight off the claimed row. Neither is a connection
+            # and neither opens one: the lease token is an opaque value a
+            # handler can put inside a database predicate, and the run id is the
+            # relational link a handler drives instead of trusting its payload.
+            lease_token=claimed.lease_token,
+            workflow_run_id=claimed.workflow_run_id,
         )
 
         heartbeat = LeaseHeartbeat(
@@ -435,6 +450,16 @@ class JobWorker:
         retryable = classify(error)
         attempts_left = claimed.attempt < claimed.max_attempts
         message = getattr(error, "public_message", None)
+
+        # Chosen by the failure's *type*, never from its text. A run whose step
+        # was still held when delivery ended is a run a person can continue, and
+        # saying so is what lets them; anything else gets the generic sentence
+        # (ADR-006 D7).
+        run_detail = (
+            RUN_INTERRUPTED_DETAIL
+            if isinstance(error, (StepInterruptedError, StepOwnershipLostError))
+            else RUN_ABANDONED_DETAIL
+        )
 
         if message is None:
             # Genuinely unexpected: log the traceback, store nothing from it.
@@ -477,7 +502,7 @@ class JobWorker:
             )
         )
 
-        return JobOutcome(status=JobStatus.DEAD_LETTERED, last_error=message)
+        return JobOutcome(status=JobStatus.DEAD_LETTERED, last_error=message, run_detail=run_detail)
 
     def _settle(self, claimed: ClaimedJob, outcome: JobOutcome, elapsed: float) -> None:
         """Record the outcome, or report that the lease was lost.
@@ -488,9 +513,9 @@ class JobWorker:
         that. Saying so, with the state the job actually reached, is what turns a
         confusing silence into a readable log line.
         """
-        held = self._dispatch.record_outcome(claimed.id, claimed.lease_token, outcome)
+        settled = self._dispatch.record_outcome(claimed.id, claimed.lease_token, outcome)
 
-        if not held:
+        if not settled.held:
             logger.warning(
                 log_context(
                     event="job_outcome_discarded",
@@ -503,6 +528,22 @@ class JobWorker:
                 )
             )
             return
+
+        if settled.run_reconciled:
+            # Reported on its own line rather than folded into the dead-letter
+            # event, because "the run was closed too" is the fact that makes the
+            # dead-letter safe -- and its absence is what a stranded run looks
+            # like in a log (CLAUDE.md §26).
+            logger.warning(
+                log_context(
+                    event="workflow_run_reconciled",
+                    job_id=claimed.id,
+                    job_type=claimed.job_type,
+                    workspace_id=claimed.workspace_id,
+                    workflow_run_id=claimed.workflow_run_id,
+                    reason="job_dead_lettered",
+                )
+            )
 
         if outcome.status is JobStatus.SUCCEEDED:
             logger.info(
@@ -527,7 +568,7 @@ def build_worker(settings: Settings) -> JobWorker:
     return JobWorker(
         dispatch=JobDispatchRepository(settings),
         sessions=RequestSessionFactory(settings),
-        registry=build_registry(),
+        registry=build_registry(build_workflow_definitions(settings)),
         lease_seconds=settings.job_lease_seconds,
         poll_interval_seconds=settings.job_poll_interval_seconds,
     )

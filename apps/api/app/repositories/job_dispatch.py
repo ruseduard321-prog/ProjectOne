@@ -16,10 +16,10 @@ matches no policy and reads nothing at all.
 
 ## The six constraints, and where each is met
 
-1. **One table.** `public.jobs`, never joined to a tenant table -- every
-   statement below.
+1. **Two tables, one of them by exactly one statement shape.** Restated by
+   [[ADR-006 Workflow Async Execution and Run Reconciliation]] D6 -- see below.
 2. **Three operations, not a connection handed out.** `claim`, `extend_lease`,
-   `record_outcome`.
+   `record_outcome`. Two of them carry the reconciliation leg.
 3. **No privileged connection passed to, reachable from, or held open during
    handler code.** `_connect` closes on every exit path, and `ClaimedJob`
    carries no connection.
@@ -32,6 +32,41 @@ matches no policy and reads nothing at all.
 (`tests/test_job_boundary.py`), because ADR-005 §5 requires it: a boundary
 asserted only in prose is one the next handler's author can cross without
 noticing.
+
+## The one widening, and exactly how far it goes
+
+ADR-006 D6 replaces constraint 1 with:
+
+> **Two tables, one of them by exactly one statement shape.** The dispatcher
+> reads and updates `public.jobs`. It additionally updates
+> `public.workflow_runs` in the single reconciliation leg below -- never in any
+> other statement, never as a `SELECT`, never returning any column beyond
+> `r.id`, and only where the run is named by `jobs.workflow_run_id` and matched
+> on the job's own `workspace_id`. It joins to no other tenant table and returns
+> no tenant data. **It never touches `workflow_step_runs`.**
+
+**Why this widening and not a narrower one.** A job that dies carrying a
+workflow run leaves that run non-terminal with nothing left to advance it -- a
+stranded run nobody would notice, which is the CLAUDE.md §26 failure this exists
+to remove. Three narrower options were considered and each fails against the
+code: reconciling over the *actor's* session cannot work for the case it exists
+for (a revoked member's session cannot see the run at all), a second privileged
+repository would land the two writes in different transactions, and a sweeper is
+not atomic by definition. Widening a stated bound on a connection that already
+holds the access was the smaller change than inventing a principal to avoid it.
+
+**Why a data-modifying CTE rather than two statements.** Both are
+durable-atomic, but a CTE is atomic *structurally*: there is no ordering to get
+right, no early return that can skip the second write, and no future edit that
+separates them without visibly rewriting one statement into two.
+
+**What reconciliation never does.** It never touches `workflow_step_runs`, so a
+stale claim survives -- as evidence of what was in flight, as a live fence
+against the worker that took it, and as the thing standing between the next
+delivery and a provider that has already been paid (ADR-006 D5, I10).
+
+`tests/test_job_boundary.py` asserts the count, the shape and the exclusions, so
+a third statement naming `workflow_runs` fails the build.
 
 ## What leaves this module
 
@@ -75,6 +110,47 @@ from app.jobs.contract import ClaimedJob, JobStatus
 logger = get_logger(__name__)
 
 
+#: What a reconciled run's `detail` says when the platform gave up delivering it.
+#:
+#: **A fixed sentence, never a copy of `jobs.last_error` and never an
+#: exception's message.** This column is tenant-readable, and an internal
+#: message written for an engineer reaching a user is the defect CLAUDE.md §24
+#: exists to prevent (ADR-006 D7).
+#:
+#: The revoked-actor case is covered by this generic wording for a second reason
+#: beyond §24: "the account that started this job no longer has access" is a
+#: statement about another member's status, shown to everyone who can see the
+#: run. The cause stays in the dead-letter log line.
+RUN_ABANDONED_DETAIL = "This run stopped before it finished and could not be completed"
+
+#: The same, for a run whose step was still held when delivery ended.
+#:
+#: It names the *situation* rather than the cause -- a run that stopped before
+#: its last step completed, and can be continued -- because that is what a user
+#: needs in order to act.
+RUN_INTERRUPTED_DETAIL = (
+    "This run stopped before it finished. Resume it to continue from the last completed step."
+)
+
+
+@dataclass(frozen=True)
+class SettledOutcome:
+    """What settling a job did.
+
+    Two facts rather than one boolean, because "the job was settled" and "a run
+    was reconciled with it" answer different questions and the worker logs both
+    (ADR-005 §5 constraint 5). `run_reconciled` is a count of rows, never a run's
+    data -- the reconciliation leg returns `r.id` and nothing else, and even that
+    does not leave this module.
+    """
+
+    #: False when this worker no longer held the lease, so nothing was written.
+    held: bool
+
+    #: True when a linked workflow run was moved to `failed` in the same commit.
+    run_reconciled: bool
+
+
 @dataclass(frozen=True)
 class DeadLetteredJob:
     """A job the dispatcher retired without a worker settling it.
@@ -91,6 +167,11 @@ class DeadLetteredJob:
     job_type: str
     attempts: int
 
+    #: The run this job was delivering, or None. Reported so the dead-letter log
+    #: line says whether a run was reconciled alongside it, rather than leaving
+    #: an operator to join two tables to find out (ADR-005 §5 constraint 5).
+    workflow_run_id: uuid.UUID | None = None
+
 
 @dataclass(frozen=True)
 class JobOutcome:
@@ -105,6 +186,13 @@ class JobOutcome:
     status: JobStatus
     result: Any = None
     last_error: str | None = None
+
+    #: What a linked run's `detail` should say if this outcome ends delivery.
+    #:
+    #: Chosen by the worker from the two fixed sentences above, by the *type* of
+    #: the failure -- never from its text. Ignored unless this outcome
+    #: dead-letters a job carrying a `workflow_run_id`.
+    run_detail: str = RUN_ABANDONED_DETAIL
 
 
 class JobDispatchRepository:
@@ -187,35 +275,61 @@ class JobDispatchRepository:
         token = uuid.uuid4()
 
         with self._connect() as connection, connection.cursor() as cursor:
+            # The reap and its reconciliation, as one statement. A job abandoned
+            # by a worker that died is exactly the case that used to strand a
+            # run: there is no identity here to reconcile it under, and no
+            # later delivery to notice.
             cursor.execute(
                 """
-                UPDATE public.jobs
-                SET status = %s,
-                    dead_lettered_at = now(),
-                    finished_at = now(),
-                    last_error = coalesce(
-                        last_error,
-                        'The worker holding this job stopped without recording an outcome'
-                    ),
-                    claimed_by = NULL,
-                    claimed_at = NULL,
-                    lease_expires_at = NULL,
-                    lease_token = NULL
-                WHERE deleted_at IS NULL
-                  AND status IN (%s, %s)
-                  AND attempts >= max_attempts
-                  AND (status = %s OR lease_expires_at IS NULL OR lease_expires_at < now())
-                RETURNING id, workspace_id, job_type, attempts
+                WITH settled AS (
+                    UPDATE public.jobs
+                    SET status = %s,
+                        dead_lettered_at = now(),
+                        finished_at = now(),
+                        last_error = coalesce(
+                            last_error,
+                            'The worker holding this job stopped without recording an outcome'
+                        ),
+                        claimed_by = NULL,
+                        claimed_at = NULL,
+                        lease_expires_at = NULL,
+                        lease_token = NULL
+                    WHERE deleted_at IS NULL
+                      AND status IN (%s, %s)
+                      AND attempts >= max_attempts
+                      AND (status = %s OR lease_expires_at IS NULL OR lease_expires_at < now())
+                    RETURNING id, workspace_id, job_type, attempts, workflow_run_id
+                ),
+                reconciled AS (
+                    UPDATE public.workflow_runs r
+                    SET status = 'failed',
+                        detail = %s,
+                        finished_at = now()
+                    FROM settled s
+                    WHERE r.id = s.workflow_run_id
+                      AND r.workspace_id = s.workspace_id
+                      AND r.deleted_at IS NULL
+                      AND r.status NOT IN ('completed', 'failed')
+                    RETURNING r.id
+                )
+                SELECT id, workspace_id, job_type, attempts, workflow_run_id FROM settled
                 """,
                 (
                     JobStatus.DEAD_LETTERED,
                     JobStatus.PENDING,
                     JobStatus.RUNNING,
                     JobStatus.PENDING,
+                    RUN_ABANDONED_DETAIL,
                 ),
             )
             reaped = tuple(
-                DeadLetteredJob(id=row[0], workspace_id=row[1], job_type=row[2], attempts=row[3])
+                DeadLetteredJob(
+                    id=row[0],
+                    workspace_id=row[1],
+                    job_type=row[2],
+                    attempts=row[3],
+                    workflow_run_id=row[4],
+                )
                 for row in cursor.fetchall()
             )
 
@@ -252,7 +366,7 @@ class JobDispatchRepository:
                     lease_token = %s
                 WHERE id = %s
                 RETURNING id, workspace_id, enqueued_by, job_type, payload,
-                          attempts, max_attempts, correlation_id
+                          attempts, max_attempts, correlation_id, workflow_run_id
                 """,
                 (JobStatus.RUNNING, worker_id, lease_seconds, token, selected[0]),
             )
@@ -271,6 +385,10 @@ class JobDispatchRepository:
             max_attempts=row[6],
             correlation_id=row[7],
             lease_token=token,
+            # Still one table: this column is on `jobs`, read by the same
+            # statement that claimed it. What the handler does with it is
+            # bounded by its own tenant session, not by this connection.
+            workflow_run_id=row[8],
         )
 
         # ADR-005 §5 constraint 5: an audited path, not a raw query that skips
@@ -324,7 +442,7 @@ class JobDispatchRepository:
         job_id: uuid.UUID,
         lease_token: uuid.UUID,
         outcome: JobOutcome,
-    ) -> bool:
+    ) -> SettledOutcome:
         """Settle one attempt, releasing the lease.
 
         Writes whatever it is given: whether a failure was retryable, and whether
@@ -342,46 +460,82 @@ class JobDispatchRepository:
         that is not running it, which is precisely the confusion an operator
         looking at a stuck queue does not need.
 
+        **A dead-letter carrying a workflow run reconciles that run in the same
+        statement** (ADR-006 D5). Every dead-lettered job with a link, not only
+        the ones that failed before a handler ran: this connection cannot know
+        where a job failed, only that delivery is over, and a run left
+        non-terminal when its job is abandoned was abandoned whatever stage it
+        reached.
+
+        **The terminal-state guard is the whole safety of that rule.** A run
+        already `completed` or `failed` is never touched -- a job that succeeds
+        while its run waits at an approval gate is a healthy pause, and a run the
+        runner already failed keeps its own, more specific `detail`.
+
         Returns:
-            True when this claim still held the job.
+            Whether this claim still held the job, and whether a run was
+            reconciled with it.
         """
         finished = outcome.status in (JobStatus.SUCCEEDED, JobStatus.DEAD_LETTERED)
+        dead_lettered = outcome.status is JobStatus.DEAD_LETTERED
 
         with self._connect() as connection, connection.cursor() as cursor:
             cursor.execute(
                 """
-                UPDATE public.jobs
-                SET status = %s,
-                    -- `::jsonb` explicitly: psycopg sends a `Json` wrapper as
-                    -- `json`, and `coalesce` refuses to unify `json` with the
-                    -- column's `jsonb`. An INSERT casts on assignment and hides
-                    -- this; `coalesce` does not, which is where it surfaced.
-                    result = coalesce(%s::jsonb, result),
-                    last_error = %s,
-                    dead_lettered_at = CASE WHEN %s THEN now() ELSE dead_lettered_at END,
-                    finished_at = CASE WHEN %s THEN now() ELSE finished_at END,
-                    claimed_by = NULL,
-                    claimed_at = NULL,
-                    lease_expires_at = NULL,
-                    lease_token = NULL
-                WHERE id = %s
-                  AND lease_token = %s
-                  AND status = %s
-                RETURNING id
+                WITH settled AS (
+                    UPDATE public.jobs
+                    SET status = %s,
+                        -- `::jsonb` explicitly: psycopg sends a `Json` wrapper
+                        -- as `json`, and `coalesce` refuses to unify `json`
+                        -- with the column's `jsonb`. An INSERT casts on
+                        -- assignment and hides this; `coalesce` does not, which
+                        -- is where it surfaced.
+                        result = coalesce(%s::jsonb, result),
+                        last_error = %s,
+                        dead_lettered_at = CASE WHEN %s THEN now() ELSE dead_lettered_at END,
+                        finished_at = CASE WHEN %s THEN now() ELSE finished_at END,
+                        claimed_by = NULL,
+                        claimed_at = NULL,
+                        lease_expires_at = NULL,
+                        lease_token = NULL
+                    WHERE id = %s
+                      AND lease_token = %s
+                      AND status = %s
+                    RETURNING id, workspace_id, workflow_run_id, status
+                ),
+                reconciled AS (
+                    UPDATE public.workflow_runs r
+                    SET status = 'failed',
+                        detail = %s,
+                        finished_at = now()
+                    FROM settled s
+                    WHERE s.status = 'dead_lettered'
+                      AND r.id = s.workflow_run_id
+                      AND r.workspace_id = s.workspace_id
+                      AND r.deleted_at IS NULL
+                      AND r.status NOT IN ('completed', 'failed')
+                    RETURNING r.id
+                )
+                SELECT s.id, (SELECT count(*) FROM reconciled) > 0 FROM settled s
                 """,
                 (
                     outcome.status,
                     Json(outcome.result) if outcome.result is not None else None,
                     outcome.last_error,
-                    outcome.status is JobStatus.DEAD_LETTERED,
+                    dead_lettered,
                     finished,
                     job_id,
                     lease_token,
                     JobStatus.RUNNING,
+                    outcome.run_detail,
                 ),
             )
+            row = cursor.fetchone()
 
-            return cursor.fetchone() is not None
+        if row is None:
+            return SettledOutcome(held=False, run_reconciled=False)
+
+        return SettledOutcome(held=True, run_reconciled=bool(row[1]))
 
     def status_of(self, job_id: uuid.UUID) -> str | None:
         """Return a job's current state, for the worker's own logging.

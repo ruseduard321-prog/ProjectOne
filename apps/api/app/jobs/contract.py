@@ -54,14 +54,10 @@ from __future__ import annotations
 
 import uuid
 from abc import ABC, abstractmethod
-from collections.abc import Callable
-from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
 from typing import Any
-
-import psycopg
 
 from app.ai.governance import (
     DEFAULT_MAX_CHAINED_INVOCATIONS,
@@ -69,6 +65,7 @@ from app.ai.governance import (
 )
 from app.ai.router import DEFAULT_MAX_ATTEMPTS_PER_PROVIDER, DEFAULT_MAX_PROVIDERS_TRIED
 from app.core.security import AuthorizationError
+from app.repositories.session import TenantSessionFactory
 from app.workflows.models import WorkflowError
 
 # ---------------------------------------------------------------- ceilings --
@@ -267,7 +264,6 @@ class Job:
     max_attempts: int
     claimed_by: str | None
     claimed_at: datetime | None
-    lease_expires_at: datetime | None
     result: Any
     last_error: str | None
     dead_lettered_at: datetime | None
@@ -302,16 +298,19 @@ class ClaimedJob:
     #: describes, made survivable rather than merely acknowledged.
     lease_token: uuid.UUID
 
-
-#: How a handler reaches the database: by opening a short, RLS-scoped session.
-#:
-#: A factory rather than a connection, and that is ADR-005 §4 rather than a
-#: preference. The claim commits *before* the handler runs, so the long work
-#: executes with no transaction open and no row locked -- and a handler holding
-#: one connection across a multi-minute render would hold locks through an
-#: upstream call, which is exactly what `c8f1a3d54e29` rejected. The handler
-#: opens a session per unit of database work instead.
-TenantSessionFactory = Callable[[], AbstractContextManager[psycopg.Connection]]
+    #: Which workflow run this job advances, or None for every other job type.
+    #:
+    #: **A relational fact, not a payload claim.** `jobs.payload` is
+    #: client-writable on INSERT -- the write guard is `BEFORE UPDATE` only --
+    #: so a run id carried in the payload would be an assertion a member could
+    #: forge. This column is created only by a protected command, is immutable
+    #: afterwards, and is checked against the run's workspace by a composite
+    #: foreign key (ADR-006 D4, I20).
+    #:
+    #: Reading it does not widen the dispatch boundary: it comes from the
+    #: `RETURNING` clause of a statement that already names `public.jobs` and
+    #: nothing else (ADR-005 §5 constraint 1, as restated by ADR-006 D6).
+    workflow_run_id: uuid.UUID | None = None
 
 
 @dataclass(frozen=True)
@@ -345,6 +344,28 @@ class JobContext:
 
     tenant_session: TenantSessionFactory = field(repr=False)
 
+    #: Proof that this delivery still owns the job, for a handler whose work
+    #: needs a fence of its own.
+    #:
+    #: **An opaque identifier that opens nothing.** It grants no access and
+    #: names no data; what it does is let a handler ask "do I still hold this
+    #: job?" as part of a database predicate, which is what makes a durable
+    #: claim checkable at the moment of writing rather than at the moment of
+    #: taking (ADR-006 D8). A handler that has no external effect can ignore it.
+    #:
+    #: It is never logged, never returned in a job result, and never written to
+    #: a tenant-readable column: `authenticated` holds no `SELECT` grant on
+    #: `jobs.lease_token`, and a fencing token a client can read is a capability
+    #: rather than a fence (ADR-006 I15, I17).
+    lease_token: uuid.UUID | None = None
+
+    #: The run this job advances, taken from `jobs.workflow_run_id`.
+    #:
+    #: A handler that drives a run reads this and **never** a run id from the
+    #: payload. A forged payload run id is therefore not so much rejected as
+    #: unreachable: there is no code path that would consult it (ADR-006 I20).
+    workflow_run_id: uuid.UUID | None = None
+
 
 @dataclass(frozen=True)
 class JobResult:
@@ -353,7 +374,7 @@ class JobResult:
     `output` is stored on `jobs.result` as JSON, so a job's outcome is
     inspectable without attaching a debugger. It must be JSON-serializable: a
     value that cannot be stored fails the job loudly rather than being silently
-    dropped, which is the same choice `WorkflowRepository.record_step` makes
+    dropped, which is the same choice `WorkflowRepository.settle_step` makes
     about a step's output.
     """
 

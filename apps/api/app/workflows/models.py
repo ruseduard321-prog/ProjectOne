@@ -141,6 +141,85 @@ class RunNotFoundError(WorkflowError):
         super().__init__(message)
 
 
+class WorkflowStateConflictError(WorkflowError):
+    """The run or step is not in a state that accepts this transition.
+
+    **409, not 422.** The request was well-formed and the caller holds every
+    permission it needs; the resource's own state is what refuses -- the same
+    distinction `IllegalTransitionError` draws for a project.
+
+    Raised when a protected command refuses under its row locks: a run that is
+    not waiting for an approval, a step index the run is not waiting on, a grant
+    that has already been spent, a run that is not `failed` and therefore has
+    nothing to recover. The command's own message is kept as the internal one;
+    what reaches a client is the fixed sentence below (ADR-006 D7).
+    """
+
+    public_message = "This run is not in a state that allows this action"
+
+
+class StepApprovalRequiredError(WorkflowError):
+    """This step needs a fresh, unspent approval before it can execute.
+
+    Raised by admission, under the step's row lock, when a gated step's grant is
+    absent or has already been consumed. **It never reaches a client**: the
+    runner catches it, records the step and its run as `awaiting_approval`, and
+    returns -- which is what a workflow pausing at a gate *is*.
+
+    A separate type from `WorkflowStateConflictError` because the runner has to
+    tell "pause and wait for a person" apart from "this transition is refused",
+    and telling them apart by message text would be a decision that drifts.
+    """
+
+    public_message = "This step is waiting for an approval"
+
+
+class StepInterruptedError(WorkflowError):
+    """Another execution holds this step's durable claim.
+
+    Raised by admission when a non-replayable step is already claimed -- a
+    replacement worker reaching a step the original worker took and did not
+    release ([[ADR-006 Workflow Async Execution and Run Reconciliation]] D8).
+
+    **This is terminal, and it must never be reported as success.** A
+    `WorkflowError` subclass, so `app.jobs.contract.classify` dead-letters it
+    without spending another attempt, and the run is reconciled to `failed` in
+    the same statement that dead-letters the job (D5).
+
+    The reasoning for terminating rather than succeeding is worth keeping next
+    to the exception: **a replacement worker cannot prove the claim holder is
+    alive.** Reporting success on a dead holder would leave a job terminally
+    `succeeded`, a run still `running`, the original worker gone, and nothing
+    left that could ever advance or reconcile that run -- a stranded run nobody
+    would notice, which is the CLAUDE.md §26 failure this design exists to
+    remove. Between two unprovable states, the safe assumption is interruption,
+    and interruption has an honest terminal outcome available.
+    """
+
+    public_message = (
+        "This run stopped before it finished. Resume it to continue from the last completed step."
+    )
+
+
+class StepOwnershipLostError(WorkflowError):
+    """This execution no longer owns the job it is running, so it wrote nothing.
+
+    Raised when a fenced settlement matches nothing: the step's claim is not
+    ours, the job's lease has rotated to another worker, or the run has already
+    been terminally reconciled (ADR-006 D8, the three predicates).
+
+    Terminal, and deliberately silent about the outside world: whatever this
+    execution already did, none of it will land. The queue's own lease fence
+    means this worker's dead-letter attempt is itself refused when another
+    worker holds the job, so raising here cannot fail a run someone else is
+    legitimately executing.
+    """
+
+    public_message = (
+        "This run stopped before it finished. Resume it to continue from the last completed step."
+    )
+
+
 class RunNotResumableError(WorkflowError):
     """A run was asked to continue from a state that does not permit it.
 
@@ -252,6 +331,34 @@ class WorkflowStep(ABC):
         """
         return True
 
+    @property
+    def replayable(self) -> bool:
+        """Return whether re-executing this step is free of external effect.
+
+        **Defaults to `False`, and is inherited rather than written** -- the
+        identical defaulting decision `requires_approval` above makes, for the
+        identical reason: a step author who did not consider the question ships
+        the safe behaviour.
+
+        A step declared `replayable = True` is asserting that running it twice
+        costs nothing and changes nothing outside this database -- a pure read,
+        a computation over values already in memory, or a write that converges.
+        It owes that reasoning in its docstring, exactly as a
+        `requires_approval = False` exemption does.
+
+        What the answer decides: a non-replayable step is entered only by
+        winning a durable claim that exactly one execution can hold, and its
+        result is persisted only while that execution still owns its job and its
+        run is not already reconciled (ADR-006 D8). A replayable step skips the
+        claim, because a claim would buy nothing and would strand a run on a
+        step that was safe to repeat.
+
+        **Declaring a step replayable when it is not is the most expensive
+        mistake available here**: it removes the only thing standing between a
+        lapsed job lease and a provider being paid twice for one step.
+        """
+        return False
+
     @abstractmethod
     def execute(self, context: StepContext) -> StepResult:
         """Perform the step's work and return what it produced.
@@ -322,3 +429,96 @@ class WorkflowDefinition:
             )
 
         return self.steps[index]
+
+
+#: What a client is told when a run outlives the definition that started it.
+#:
+#: Fixed and public-safe. It names neither version, because a version number is
+#: deployment detail a user cannot act on and naming it would leak what this
+#: deployment runs.
+#:
+#: **"Remains available for review" rather than "preserved unchanged"**, because
+#: the second is not true on every path. A worker refusing mid-delivery
+#: dead-letters its job, and D5 then reconciles the run to `failed` -- so the
+#: run's *status* does change there, while its steps, outputs and history do
+#: not. The wording has to be true of both paths, and what is true of both is
+#: that nothing executed and the record is still readable.
+DEFINITION_CHANGED_MESSAGE = (
+    "This workflow's definition has changed since this run started, so it "
+    "cannot continue automatically. The run remains available for review."
+)
+
+
+def ensure_definition_matches(
+    definition: WorkflowDefinition,
+    workflow_type: str,
+    definition_version: int,
+) -> None:
+    """Refuse to advance a run against a definition it did not start under.
+
+    **A run's `definition_version` is stamped at creation and never silently
+    rewritten** (migration `f3c82b19d4a7`). Synchronously that was bookkeeping:
+    the definition that started a run was necessarily the one that finished it,
+    within a single request. Asynchronously it is not -- a run can sit at an
+    approval gate, or interrupted awaiting recovery, across a deploy that adds a
+    step, reorders two, or changes whether one is gated or replayable.
+
+    Continuing such a run against current code is not a smaller version of
+    correct behaviour, it is a different execution: `next_step_index` counts
+    completed rows, so an inserted step shifts every index after it, and a step
+    that stopped being `replayable` would be re-entered without a claim -- a
+    second provider charge with nothing to prevent it.
+
+    Emulating an old definition with current code would mean keeping every
+    historical step sequence executable forever, which is the second source of
+    truth `WorkflowDefinition` exists to avoid. What happens to an incompatible
+    run is a product decision -- migrate it, abandon it, restart it -- and this
+    makes it one somebody takes on purpose.
+
+    ## What is guaranteed on every path, and what is not
+
+    Guaranteed wherever this is called: **no mismatched definition executes or
+    derives workflow state.** No provider is called, no step is admitted, and no
+    approval or claim is consumed -- this runs before any of them. The run's
+    persisted steps, outputs and history stay readable either way.
+
+    **The run's status is a different question, and the paths differ.** Do not
+    read this as "the run is left untouched":
+
+    - **Approval and recovery** call this in the route, *before* the protected
+      command runs, so nothing is written at all and the run keeps the state it
+      had.
+    - **A worker** has already been handed a job. Refusing raises, the job
+      dead-letters, and ADR-006 D5 then reconciles the linked
+      non-terminal run to `failed` in the same statement. That is D5 working as
+      specified, and it is deliberately given no exception here: a dead-lettered
+      job against a live run is precisely the stranded pair D5 exists to prevent.
+
+    Called before **every** mutation of a run: execution, recovery and approval.
+    Approval matters as much as the other two, because an approval that enqueues
+    a job the worker will refuse turns an owner's decision into a dead-lettered
+    job and a run stuck at a gate whose grant has already been spent.
+
+    Args:
+        definition: the definition this deployment would execute.
+        workflow_type: the type recorded on the run.
+        definition_version: the version recorded on the run.
+
+    Raises:
+        WorkflowError: on either mismatch, carrying a fixed public-safe message
+            that names no version.
+    """
+    if definition.workflow_type != workflow_type:
+        raise WorkflowError(
+            f"Run records workflow type '{workflow_type}' but the definition "
+            f"supplied is '{definition.workflow_type}'",
+            public_message=DEFINITION_CHANGED_MESSAGE,
+        )
+
+    if definition.version != definition_version:
+        raise WorkflowError(
+            f"Run of '{workflow_type}' recorded definition version "
+            f"{definition_version}, and this deployment executes version "
+            f"{definition.version}",
+            public_message=DEFINITION_CHANGED_MESSAGE,
+        )

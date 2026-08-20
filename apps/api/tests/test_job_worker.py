@@ -530,7 +530,7 @@ class TestAtLeastOnceDelivery:
                 claimed.id,
                 claimed.lease_token,
                 JobOutcome(status=JobStatus.PENDING, last_error="late"),
-            )
+            ).held
             is False
         )
         assert read_job(admin_connection, job_id)["status"] == JobStatus.SUCCEEDED
@@ -748,3 +748,84 @@ def test_a_job_id_is_a_uuid_the_worker_never_invents() -> None:
         "the worker generates a UUID; job and lease identifiers are the "
         "dispatcher's to mint, so this is either a bug or a boundary change"
     )
+
+
+class TestReconciliationReachesTheWorkflowLayer:
+    """A dead-lettered job carrying a run leaves no non-terminal run behind.
+
+    STEP-30 could not assert this: the link between a job and a run did not
+    exist. [[ADR-006 Workflow Async Execution and Run Reconciliation]] D5 adds
+    it, and the case that matters most is the one where **no tenant identity is
+    available to do it** -- a revoked actor, or a worker that died.
+    """
+
+    def test_a_revoked_actors_job_leaves_its_run_failed(
+        self,
+        request_database_url: str,
+        admin_connection: psycopg.Connection,
+        tenants: tuple[Identity, Identity],
+        dispatch: JobDispatchRepository,
+        sessions: RequestSessionFactory,
+    ) -> None:
+        """**The case reconciliation exists for, and the one it could not serve.**
+
+        The actor's own session cannot see this run at all --
+        `app_current_user_workspaces()` filters removed memberships, so a
+        reconciliation over the actor's identity would match zero rows and the
+        run would sit `pending` forever with nothing left to advance it.
+
+        The dispatcher's connection is what closes it, in the same statement that
+        dead-letters the job.
+        """
+        alice, _bob = tenants
+
+        colleague = seed_identity(admin_connection, "reconciled-colleague")
+
+        with admin_connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO public.workspace_members (workspace_id, user_id, role) "
+                "VALUES (%s, %s, 'member')",
+                (alice.workspace_id, colleague.user_id),
+            )
+            cursor.execute(
+                "INSERT INTO public.workflow_runs "
+                "(workspace_id, workflow_type, definition_version, status, triggered_by) "
+                "VALUES (%s, 'project_planning', 1, 'pending', %s) RETURNING id",
+                (alice.workspace_id, colleague.user_id),
+            )
+            row = cursor.fetchone()
+
+        assert row is not None
+        run_id = row[0]
+
+        with admin_connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO public.jobs "
+                "(workspace_id, enqueued_by, job_type, max_attempts, workflow_run_id) "
+                "VALUES (%s, %s, 'workflow.execute', 2, %s)",
+                (alice.workspace_id, colleague.user_id, run_id),
+            )
+            cursor.execute(
+                "UPDATE public.workspace_members SET deleted_at = now() "
+                "WHERE workspace_id = %s AND user_id = %s",
+                (alice.workspace_id, colleague.user_id),
+            )
+
+        admin_connection.commit()
+
+        worker = build_worker_with(dispatch, sessions, _RecordingHandler("workflow.execute"))
+
+        assert worker.run_once() is True
+
+        with admin_connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT status, detail FROM public.workflow_runs WHERE id = %s", (run_id,)
+            )
+            stored = cursor.fetchone()
+
+        assert stored is not None
+        assert stored[0] == "failed", "a revoked actor's job left a stranded run"
+        assert stored[1] is not None
+        assert "access" not in stored[1].lower(), (
+            "the run's detail names another member's status; the cause belongs in the log line"
+        )

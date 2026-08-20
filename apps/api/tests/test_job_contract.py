@@ -38,12 +38,12 @@ from app.jobs.contract import (
     classify,
 )
 from app.jobs.registry import (
-    REGISTERED_HANDLERS,
     JobHandlerRegistry,
     JobRegistrationError,
     build_registry,
 )
 from app.workflows.models import RunNotFoundError, WorkflowError
+from tests.fakes import unusable_workflow_definitions
 
 
 class _Handler(JobHandler):
@@ -223,18 +223,37 @@ class TestTheRegistry:
     def test_every_shipped_handler_declares_a_ceiling_within_the_bound(self) -> None:
         """The real registry, not a fixture.
 
-        `build_registry()` performs the same validation, so this would fail at
-        import — but asserting it here names the offending handler rather than
-        failing somewhere unrelated during collection.
+        `build_registry` performs the same validation, so this would fail at
+        construction — but asserting it here names the offending handler rather
+        than failing somewhere unrelated.
+
+        The definitions factory is the one that refuses to build anything: this
+        asserts what handlers *declare*, and building a workflow definition would
+        be a different test needing a database.
         """
-        registry = build_registry()
+        registry = build_registry(unusable_workflow_definitions)
 
         assert registry.job_types, "a deployment with no handlers can run no jobs"
 
-        for handler in REGISTERED_HANDLERS:
+        for job_type in registry.job_types:
+            handler = registry.get(job_type)
+
             assert 1 <= handler.max_attempts <= MAX_JOB_ATTEMPTS, (
                 f"{type(handler).__name__} declares max_attempts={handler.max_attempts}"
             )
+
+    def test_the_workflow_handler_is_registered(self) -> None:
+        """A deployment that cannot run `workflow.execute` cannot run a workflow.
+
+        The registry is the checklist: a handler absent from it is a job type
+        that dead-letters visibly. Asserted here because the commands that
+        enqueue a workflow job write this exact type as a literal, and a
+        deployment where the two disagree queues work nothing will ever run.
+        """
+        registry = build_registry(unusable_workflow_definitions)
+
+        assert registry.knows("workflow.execute")
+        assert registry.get("workflow.execute").max_attempts == MAX_JOB_ATTEMPTS
 
     def test_a_handler_must_declare_a_ceiling_at_all(self) -> None:
         """`max_attempts` is abstract, so omitting it fails at import.

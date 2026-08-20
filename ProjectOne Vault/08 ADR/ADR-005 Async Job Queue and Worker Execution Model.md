@@ -1,9 +1,9 @@
 ---
 title: "ADR-005: Async Job Queue and Worker Execution Model"
 category: ADR
-status: accepted
-version: "1.2"
-last_updated: 2026-08-17
+status: superseded
+version: "1.3"
+last_updated: 2026-08-20
 tags: [adr, decision, backend, infrastructure, security, workflow, jobs]
 adr_number: "0005"
 ---
@@ -12,9 +12,41 @@ adr_number: "0005"
 
 ## Status
 
+**Superseded** by [[ADR-006 Workflow Async Execution and Run Reconciliation]], accepted 2026-08-20.
+
+This note remains the record of how ProjectOne's job queue, worker and tenancy model were decided, and **everything below is preserved exactly as it was accepted on 2026-08-17**. Superseded here means *restated with two constraints changed*, not withdrawn.
+
+### What ADR-006 changed, and what it did not
+
+ADR-006 exercised precisely the clause below — a change to the cross-tenant dispatch boundary requires a superseding ADR — and changed nothing else.
+
+**Changed:** §5 constraints 1 and 2 only.
+
+- **Constraint 1, "one table",** becomes **two tables, one of them by exactly one statement shape.** The dispatcher may additionally `UPDATE public.workflow_runs` in a single reconciliation leg, matched on the job's own `workspace_id`, guarded so it never overwrites a `completed` or `failed` run, returning nothing but the run id. It still never reads that table, never joins to any other tenant table, and never touches `workflow_step_runs`.
+- **Constraint 2, "three statements",** becomes **three operations**, two of which carry that reconciliation leg.
+
+This is the smallest widening that makes a dead-lettered job and the workflow run it was for reach their terminal states in one commit. Without it a run whose actor lost membership — the case §4 and §7 below classify as a permanent failure — would sit in `pending` or `running` with nothing left to advance it.
+
+**Carried forward unchanged and still binding**, through ADR-006's own §What of ADR-005 Remains Binding:
+
+- §1 the PostgreSQL-table queue, `FOR UPDATE SKIP LOCKED`, polling rather than push.
+- §2 no task framework; the job contract is ProjectOne's own.
+- §3 the worker as a second entrypoint of the API application, one job at a time, strict startup validation.
+- §4 **every tenant protection** — tenancy as the enqueuing user's identity replayed through RLS, the revoked-membership case failing permanently, short discrete transactions, and system actors deferred to [[STEP-74 Workflow Scheduling and Triggers]].
+- §5 constraints 3, 4, 5 and 6 — no privileged connection passed to, reachable from or held open during handler code; the RLS context established before execution begins; every claim logged; `jobs` still carrying RLS.
+- §6 **the at-least-once delivery model in full**, including the lease, the lapse, and the obligation that a handler with a non-idempotent external effect hold its own durable claim. ADR-006 does not relax that obligation — it is where the workflow handler finally *discharges* it.
+- §7 **every retry ceiling**, including `MAX_JOB_ATTEMPTS = 2` and the **60-request composed ceiling per enqueue**, unchanged and re-asserted by ADR-006's own proofs.
+- §Scope Boundaries in full, including provider-side idempotency keys remaining open and out of scope.
+
+**Read ADR-006 for the current boundary. Read this note for why the queue is what it is** — its context, its rejected alternatives and its implementation record are not restated there and are not superseded by it.
+
+---
+
+### The decision as accepted on 2026-08-17
+
 **Accepted** — approved by the project owner on 2026-08-17.
 
-This decision is now binding, and [[STEP-30 Async Job Infrastructure]] may build against it ([[CLAUDE|CLAUDE.md]] §7). **Changing the queue technology, the worker's tenancy mechanism, or the cross-tenant dispatch boundary requires a new ADR that supersedes this one** — this note is not amended in place.
+This decision was binding from that date, and [[STEP-30 Async Job Infrastructure]] built against it ([[CLAUDE|CLAUDE.md]] §7). **Changing the queue technology, the worker's tenancy mechanism, or the cross-tenant dispatch boundary requires a new ADR that supersedes this one** — this note is not amended in place. [[ADR-006 Workflow Async Execution and Run Reconciliation]] is that ADR.
 
 ### Final review — 2026-08-17
 
@@ -258,6 +290,7 @@ The zero-infrastructure option, worth naming because it is what the platform doe
 ## Related
 
 - Implements the first task of: [[STEP-30 Async Job Infrastructure]]
+- **Superseded by:** [[ADR-006 Workflow Async Execution and Run Reconciliation]] — §5 constraints 1 and 2 only
 - Unblocks: [[STEP-31 Workflow Async Execution]] · [[STEP-32 Media Processing Pipeline]]
 - Builds on: [[ADR-001 Technology Stack]] · [[ADR-004 Object Storage Provider and Tenant-Safe Key Construction]]
 - Governed by: [[CLAUDE|CLAUDE.md]] §7 · §13 · §15a · §16 · §21 · §39
@@ -267,6 +300,6 @@ The zero-infrastructure option, worth naming because it is what the platform doe
 ## Navigation
 
 - **Previous:** [[ADR-004 Object Storage Provider and Tenant-Safe Key Construction]]
-- **Next:** —
+- **Next:** [[ADR-006 Workflow Async Execution and Run Reconciliation]]
 - **Parent:** [[Home]]
 - **Related Notes:** [[STEP-30 Async Job Infrastructure]] · [[Workflow Engine]] · [[Infrastructure]] · [[Security Architecture]] · [[Backend Architecture]]

@@ -3,7 +3,7 @@ title: API Endpoints
 category: Architecture
 status: stable
 version: "1.4"
-last_updated: 2026-08-16
+last_updated: 2026-08-20
 tags: [backend, api, standards, documentation]
 aliases: ["Endpoint Reference", "API Reference"]
 ---
@@ -231,14 +231,22 @@ Added by [[STEP-22 Minimum Workflow Engine]]. **The first routes that cause AI s
 |---|---|---|---|
 | `GET /api/v1/workspaces/{id}/workflows/catalog` | Bearer | `VIEW_WORKSPACE` | Workflow names this deployment can run. Served from the registry so a client picker cannot offer one the server lacks. |
 | `GET /api/v1/workspaces/{id}/workflows/runs` | Bearer | `VIEW_WORKSPACE` | Recent runs, newest first, each with its steps. Bounded by a repository limit — run count grows with automation, not human effort. |
-| `POST /api/v1/workspaces/{id}/workflows/runs` | Bearer | `VIEW_WORKSPACE` | **201.** Body: `{"workflow_type", "project_id"?}`. Executes until the run finishes, pauses or fails. **422** for an unknown workflow, **404** for another tenant's project. Rate limited **20/min** per user. |
+| `POST /api/v1/workspaces/{id}/workflows/runs` | Bearer | `VIEW_WORKSPACE` | **202**, with `Location: …/runs/{run_id}`. Body: `{"workflow_type", "project_id"?}`. **Queues the run; a worker executes it.** The response carries the run in `pending`. **422** for an unknown workflow, **404** for another tenant's project. Rate limited **20/min** per user. |
 | `GET /api/v1/workspaces/{id}/workflows/runs/{run_id}` | Bearer | `VIEW_WORKSPACE` | One run with its full step history. **404** when absent *or* hidden by RLS. |
-| `POST /api/v1/workspaces/{id}/workflows/runs/{run_id}/approval` | Bearer | **`UPDATE_WORKSPACE`** | Approves the step the run is waiting on and continues. **409** when the run is not awaiting approval. |
-| `POST /api/v1/workspaces/{id}/workflows/runs/{run_id}/resume` | Bearer | `VIEW_WORKSPACE` | Continues an interrupted or failed run. **409** for a completed run, and **409** for one awaiting approval — resuming is not approving. |
+| `POST /api/v1/workspaces/{id}/workflows/runs/{run_id}/approval` | Bearer | **`UPDATE_WORKSPACE`** | **202**, with `Location`. Writes a durable, single-use grant **and** queues the continuation in one transaction. **409** when the run is not awaiting approval, or when a grant is already unspent. Rate limited **20/min** per user. |
+| `POST /api/v1/workspaces/{id}/workflows/runs/{run_id}/resume` | Bearer | `VIEW_WORKSPACE` | **202**, with `Location`. **The recovery endpoint**: supersedes a stale claim on a `failed` run and either queues a replacement or re-arms the approval gate with no job. **409** for any run that is not `failed` — including one awaiting approval, because resuming is not approving. **May cause a second provider call for the interrupted step**, which is why it is explicit. Rate limited **20/min** per user. |
 
-### A failed run is a 201, not a 500
+### All three write routes answer 202, and the outcome is learned by polling
 
-The least obvious rule on this surface and the most important. A run whose step fails returns **201 with the run in `failed`**, because the request succeeded: the run was created, executed, and recorded its outcome. Reporting it as a server error would tell the client its call did not happen when it did, and would lose the run id they need to investigate.
+[[STEP-31 Workflow Async Execution]] moved execution onto the worker ([[ADR-006 Workflow Async Execution and Run Reconciliation]] D1). A run row *is* created by `POST …/runs`, so 201 would not be false — but the operation is not complete, and **202 is the only code that says so**. Three sibling endpoints answering with one code for one semantic is the point.
+
+`Location` names `GET …/runs/{run_id}`, which is exactly what a 202's status monitor is here: `workflow_runs` is authoritative for everything a user sees.
+
+**No job identifier appears in any response.** Exposing one would make the queue a public contract and turn [[ADR-005 Async Job Queue and Worker Execution Model]] §1's broker-migration escape hatch into a breaking client change.
+
+### A failed run is not a 500
+
+The least obvious rule on this surface and the most important. A run whose step fails is reported as **`status: failed` on the run**, because the request succeeded: the run was accepted, queued, executed and recorded. Reporting it as a server error would tell the client its call did not happen when it did, and would lose the run id they need to investigate.
 
 What *is* an error status is a request that could never have produced a run — an unknown workflow (422), a run that cannot be seen (404), a run whose state refuses the action (409).
 
@@ -247,6 +255,12 @@ What *is* an error status is a request that could never have produced a run — 
 The project owner's decision on 2026-08-08. A gated step is by definition one that spends money, publishes, or acts externally — the same class of consequence already guarding AI keys and spend ceilings, so it reuses `UPDATE_WORKSPACE`.
 
 Starting, reading and resuming are `VIEW_WORKSPACE`, matching projects: a member who cannot run a workflow on their own project cannot use the product. **No new permission was added** — `workflow:approve` would change the role model, which is an authorization decision rather than a detail of this step.
+
+**Resume stays `VIEW_WORKSPACE` under the async model, and for a gated step it grants nothing**: it only re-arms the gate. The consequential half is still behind `UPDATE_WORKSPACE` on the approval route, and an interrupted gated step has already spent its grant, so continuing needs a fresh one.
+
+### The rate limiter is now the only entrance
+
+`limit_by_user("workflow-run", 20/min)` is unchanged on all three routes and is **genuinely load-bearing** rather than nominally so. The commands these routes call refuse any caller that did not arrive over the application's own database login, so the route is the only way in and its limiter is the only gate anyone passes through — see [[RLS Policy Pattern#The caller-identity boundary]].
 
 ### Resuming is not approving
 

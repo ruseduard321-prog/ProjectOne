@@ -325,3 +325,22 @@ class FakeSpendRepository:
         )
 
         return SpendSummary(total_usd=total, call_count=len(matching), total_tokens=tokens)
+
+
+def unusable_workflow_definitions(workflow_type: str) -> object:
+    """A `WorkflowDefinitionsFactory` for suites that never execute a workflow.
+
+    `build_registry` requires one, because a real default would either close an
+    import cycle or hand a handler the configuration it must not be able to
+    reach. A suite asserting registration, ceilings or dispatch never builds a
+    definition, so the honest stand-in is one that fails loudly if it is ever
+    called rather than one that quietly returns something plausible.
+    """
+
+    def build(connection: object) -> object:
+        raise AssertionError(
+            f"This suite built a workflow definition for '{workflow_type}'. "
+            "If that is intentional, pass a real definitions factory instead."
+        )
+
+    return build

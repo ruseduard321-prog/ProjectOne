@@ -44,9 +44,15 @@ from app.jobs.contract import Job, JobStatus
 # Stated once rather than repeated in three queries, so a column added to the
 # dataclass and forgotten in one of them is impossible. Column order matches
 # `_job_from_row` positionally.
+#
+# `lease_expires_at` is deliberately absent. `authenticated` has no column
+# grant for it (ADR-006 §D11), because nothing on this path consumed it --
+# it was selected into a field no caller read. Lease arithmetic belongs to
+# `job_dispatch.py` on the privileged connection. Adding it back here means
+# granting it back first, which is the decision that should be visible.
 _JOB_COLUMNS = (
     "id, workspace_id, enqueued_by, job_type, payload, status, attempts, max_attempts, "
-    "claimed_by, claimed_at, lease_expires_at, result, last_error, dead_lettered_at, "
+    "claimed_by, claimed_at, result, last_error, dead_lettered_at, "
     "correlation_id, created_at, finished_at"
 )
 
@@ -64,13 +70,12 @@ def _job_from_row(row: tuple[Any, ...]) -> Job:
         max_attempts=row[7],
         claimed_by=row[8],
         claimed_at=row[9],
-        lease_expires_at=row[10],
-        result=row[11],
-        last_error=row[12],
-        dead_lettered_at=row[13],
-        correlation_id=row[14],
-        created_at=row[15],
-        finished_at=row[16],
+        result=row[10],
+        last_error=row[11],
+        dead_lettered_at=row[12],
+        correlation_id=row[13],
+        created_at=row[14],
+        finished_at=row[15],
     )
 
 

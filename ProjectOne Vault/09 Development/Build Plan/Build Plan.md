@@ -77,7 +77,7 @@ Status appears in two places — the step note and the row below — and they mu
 | STEP-28 | [[STEP-28 Asset Upload and Download]] | Done | full |
 | STEP-29 | [[STEP-29 Asset Management UI]] | Done | full |
 | STEP-30 | [[STEP-30 Async Job Infrastructure]] | Done | full |
-| STEP-31 | [[STEP-31 Workflow Async Execution]] | Not Started | full |
+| STEP-31 | [[STEP-31 Workflow Async Execution]] | In Progress | full |
 | STEP-32 | [[STEP-32 Media Processing Pipeline]] | Not Started | outline |
 | STEP-33 | [[STEP-33 Storage Quotas and Lifecycle]] | Not Started | outline |
 | STEP-34 | [[STEP-34 Notifications Domain]] | Not Started | outline |

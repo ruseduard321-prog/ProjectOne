@@ -24,7 +24,8 @@ model is what makes that true rather than hopeful.
 from __future__ import annotations
 
 from app.jobs.contract import MAX_JOB_ATTEMPTS, HandlerNotRegisteredError, JobHandler
-from app.jobs.handlers import TenantProbeHandler
+from app.jobs.handlers import TenantProbeHandler, WorkflowExecutionHandler
+from app.workflows.runner import WorkflowDefinitionsFactory
 
 
 class JobRegistrationError(Exception):
@@ -117,25 +118,35 @@ class JobHandlerRegistry:
         return tuple(sorted(self._handlers))
 
 
-#: Every handler this deployment can run.
+#: Every handler this deployment can run that needs nothing constructed for it.
 #:
 #: The registry is the checklist, in the same spirit as `REGISTERED_STORES`: a
 #: handler absent from it is a job type that dead-letters, visibly, rather than
 #: one that fails in some subtler way.
 #:
-#: [[STEP-30 Async Job Infrastructure]] ships exactly one handler, deliberately.
-#: The step's scope is the infrastructure "proved on a trivial handler"; making
-#: workflow runs asynchronous is [[STEP-31 Workflow Async Execution]], and adding
-#: a second handler here now would be building against a step that has not run.
-REGISTERED_HANDLERS: tuple[JobHandler, ...] = (TenantProbeHandler(),)
+#: `WorkflowExecutionHandler` is deliberately **not** here. It needs a factory
+#: that builds a workflow definition against a live tenant connection, and a
+#: module-level instance would either have to import that factory -- closing an
+#: import cycle through `app/core/dependencies.py` -- or reach `Settings` for
+#: itself, which is the one thing a handler must not be able to do (ADR-005 §5
+#: constraint 3). It is constructed by `build_registry` from what its caller
+#: supplies instead.
+STATELESS_HANDLERS: tuple[JobHandler, ...] = (TenantProbeHandler(),)
 
 
-def build_registry() -> JobHandlerRegistry:
+def build_registry(definitions: WorkflowDefinitionsFactory) -> JobHandlerRegistry:
     """Return the registry both processes use.
 
     A function rather than a module-level instance so a test can build a registry
     of its own without patching module state -- the same reason every other
     collaborator in this codebase is constructed rather than imported
     ([[CLAUDE|CLAUDE.md]] §12).
+
+    Args:
+        definitions: how a workflow handler builds a run's definition. Required
+            rather than defaulted: a default would have to name a real factory,
+            and the only honest alternative -- one that raises when used --
+            would turn a wiring mistake into a dead-lettered job in production
+            instead of an error at construction.
     """
-    return JobHandlerRegistry(REGISTERED_HANDLERS)
+    return JobHandlerRegistry((*STATELESS_HANDLERS, WorkflowExecutionHandler(definitions)))

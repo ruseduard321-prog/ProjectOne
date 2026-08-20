@@ -7,11 +7,17 @@ workflows through this module rather than by constructing a definition.
 
 ## Definitions are built per request, not held as constants
 
-A definition holds *steps*, and steps hold the services they need -- a repository
-over the request's tenant connection, an `AIService` wired to that request's
-settings. A module-level constant would therefore have to hold a connection from
-whichever request happened to import it first, which is a cross-tenant leak
-wearing the shape of a performance optimization.
+A definition holds *steps*, and steps hold the services they need -- a reader
+scoped to one tenant, an `AIService` wired to that caller's settings. A
+module-level constant would therefore have to hold whichever tenant's services
+happened to build it first, which is a cross-tenant leak wearing the shape of a
+performance optimization.
+
+Steps depend on **readers**, not on connection-bound repositories, so how long a
+connection lives is the caller's decision rather than the step's. The request path
+passes repositories over the request connection; the worker passes readers that
+open a short session per call, which is what keeps a provider call from running
+inside an open transaction (ADR-005 §4).
 
 Construction is cheap: a definition is a tuple of small objects.
 
@@ -28,7 +34,7 @@ bump: the run executed that step, and the row says so.
 
 from __future__ import annotations
 
-from app.repositories.projects import ProjectRepository
+from app.repositories.projects import ProjectReader
 from app.services.ai_service import AIService
 from app.workflows.agents import (
     PROJECT_PLANNING_WORKFLOW,
@@ -44,7 +50,7 @@ from app.workflows.models import WorkflowDefinition, WorkflowError
 PROJECT_PLANNING_VERSION = 1
 
 
-def project_planning(projects: ProjectRepository, ai: AIService) -> WorkflowDefinition:
+def project_planning(projects: ProjectReader, ai: AIService) -> WorkflowDefinition:
     """Build the project-planning workflow.
 
     Three steps covering the Validation, Agent Execution and Quality Checks
@@ -81,7 +87,7 @@ AVAILABLE_WORKFLOWS: tuple[str, ...] = tuple(sorted(_BUILDERS))
 
 def build_definition(
     workflow_type: str,
-    projects: ProjectRepository,
+    projects: ProjectReader,
     ai: AIService,
 ) -> WorkflowDefinition:
     """Return the definition for a workflow name.

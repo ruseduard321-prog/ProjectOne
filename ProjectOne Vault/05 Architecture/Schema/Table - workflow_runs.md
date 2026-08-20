@@ -2,15 +2,15 @@
 title: Table - workflow_runs
 category: Architecture/Schema
 status: stable
-version: "1.0"
-last_updated: 2026-08-08
+version: "2.0"
+last_updated: 2026-08-20
 tags: [database, schema, multi-tenancy, workflow, ai]
 aliases: ["workflow_runs", "workflow_step_runs", "Workflow Run Tables"]
 ---
 
 # Table - workflow_runs
 
-**A workflow run and its step history.** Created by [[STEP-22 Minimum Workflow Engine]] in migration `f3c82b19d4a7`, covering two tables that only make sense together.
+**A workflow run and its step history.** Created by [[STEP-22 Minimum Workflow Engine]] in migration `f3c82b19d4a7`, covering two tables that only make sense together. [[STEP-31 Workflow Async Execution]] added four execution-control columns to `workflow_step_runs` in `09a247684df7`, under the accepted [[ADR-006 Workflow Async Execution and Run Reconciliation]].
 
 These are the first tables recording **what the platform did on a user's behalf**, rather than what a user made. Everything before was either platform machinery or user-created content.
 
@@ -48,8 +48,33 @@ These are the first tables recording **what the platform did on a user's behalf*
 | `output` | `jsonb` | **What the step produced** — see below |
 | `tokens_used` | `integer` NOT NULL | Defaults to 0 |
 | `started_at` / `finished_at` | `timestamptz` | |
+| `claim_token` | `uuid` | **Not client-readable.** The durable claim on a non-replayable step, rotated on every acquisition |
+| `claimed_by_job_id` | `uuid` | Which job holds the claim. Composite FK → `jobs(id, workspace_id)` |
+| `claimed_by_lease_token` | `uuid` | **Not client-readable.** Which *lease of that job* took the claim |
+| `approved_by` | `uuid` | The durable, single-use approval grant. Non-null means granted and unspent. **Not** an FK |
 
 Both follow [[Table Conventions]] in full.
+
+## The four execution-control columns, and what each enforces
+
+A column survives here only if it *independently enforces* a guarantee. Debugging convenience is not a reason, which is why `claimed_at`, `approved_at` and a superseded-token column were all considered and dropped.
+
+| Column | Invariant it enforces | Written by |
+|---|---|---|
+| `claim_token` | At most one execution may **persist** a non-replayable step | `app_admit_workflow_step` |
+| `claimed_by_job_id` | Locates the job whose lease must still be current — without it the lease cannot be checked at all | `app_admit_workflow_step` |
+| `claimed_by_lease_token` | The lease that was current at admission; the job's *present* token alone cannot detect rotation | `app_admit_workflow_step` |
+| `approved_by` | A gated step runs only on a fresh, pinned, unspent grant, and carries the granter's identity | `app_approve_workflow_step`, cleared by `app_admit_workflow_step` |
+
+A claim is **all three of its columns or none** (`ck_workflow_step_runs_claim_complete`): a partial claim would satisfy the token predicate with no lease to check against.
+
+### `authenticated` cannot write any of them, and cannot read two
+
+The client grant is `SELECT` on everything except the two fencing tokens, plus `UPDATE (deleted_at)` for erasure, and **no `INSERT` at all**. Every other write goes through the protected commands.
+
+The reason is not that no endpoint exposes these columns — PostgREST is an endpoint the application does not control, and a member holding their own Supabase JWT reaches this table as `authenticated` whatever the routes do. **The application runner and that member are the same database principal**, so no policy, trigger or column grant can tell "the runner writing a claim" from "a member writing one". The rule had to move into the database and the direct write had to be taken away.
+
+`approved_by` stays readable: it names a workspace member the reader can already see, and knowing that a step was approved is not a capability to approve one. The two tokens do not, because a fence a client can read is a capability rather than a fence.
 
 ## `output` is what makes resumption correct
 
@@ -76,7 +101,7 @@ There is no `workflows` table. Definitions are declared in code (`app/workflows/
 
 `uq_workflow_step_runs_run_id_step_index` makes it impossible for one run to hold two rows for the same step.
 
-Without it, a resumed run that re-executed a step would insert a second row, the run's history would show that step twice with no indication which one counted, and the "resume from the last completed step" query would have to guess. The engine's `record_step` is an upsert on this constraint for exactly that reason.
+Without it, a resumed run that re-executed a step would insert a second row, the run's history would show that step twice with no indication which one counted, and the "resume from the last completed step" query would have to guess. `app_admit_workflow_step` and `app_settle_workflow_step` both create the row if it is absent and update it otherwise, keyed on this constraint for exactly that reason.
 
 ## Composite foreign keys, twice
 
@@ -108,7 +133,9 @@ Worth contrasting with `audit_log`, which is deliberately **un**-erasable: an au
 
 Both are registered in `_WORKSPACE_DEPENDANTS`, and **STEP-22 is where that list stopped being alphabetical**. `workflow_runs` references `projects`, so it must be deleted first — but sorts after it. `workflow_step_runs` references `workflow_runs` for the same reason.
 
-[[STEP-20 Projects Schema and Lifecycle]] recorded that `assets` before `projects` was satisfied by alphabetical order as *luck rather than design*. This is where that luck ran out. See [[Table Conventions#A `RESTRICT` foreign key to `workspaces` is also a test-teardown obligation]].
+[[STEP-20 Projects Schema and Lifecycle]] recorded that `assets` before `projects` was satisfied by alphabetical order as *luck rather than design*. This is where that luck ran out.
+
+**STEP-31 extended the chain.** `workflow_step_runs.claimed_by_job_id` references `jobs`, and `jobs.workflow_run_id` references `workflow_runs`, both `ON DELETE RESTRICT` — so the order is now `workflow_step_runs` → `jobs` → `workflow_runs`. Deleting `jobs` first fails whenever a claim survived a test, which is exactly what a deliberately stranded run leaves behind. See [[Table Conventions#A `RESTRICT` foreign key to `workspaces` is also a test-teardown obligation]].
 
 ---
 
@@ -117,4 +144,4 @@ Both are registered in `_WORKSPACE_DEPENDANTS`, and **STEP-22 is where that list
 - **Previous:** [[Table - assets]]
 - **Next:** —
 - **Parent:** [[Database MOC]]
-- **Related Notes:** [[Workflow Execution]] · [[Table - projects]] · [[Table - assets]] · [[RLS Policy Pattern]] · [[Table Conventions]] · [[Schema Overview]]
+- **Related Notes:** [[Workflow Execution]] · [[Table - jobs]] · [[Table - projects]] · [[Table - assets]] · [[RLS Policy Pattern]] · [[Table Conventions]] · [[Schema Overview]] · [[ADR-006 Workflow Async Execution and Run Reconciliation]]

@@ -320,7 +320,13 @@ class TestClaiming:
             "max_attempts",
             "correlation_id",
             "lease_token",
+            # New in STEP-31, and the reason it is still "nothing wider": a
+            # workflow job's run is a **relational** fact on `jobs`, read by the
+            # same statement that claimed the row. A handler driving a run from
+            # this can never be driven from a payload a member could forge.
+            "workflow_run_id",
         }
+        assert claimed.workflow_run_id is None
 
     def test_only_one_of_many_concurrent_workers_claims_a_job(
         self,
@@ -605,7 +611,7 @@ class TestLeases:
         assert (
             dispatch.record_outcome(
                 stale.id, stale.lease_token, JobOutcome(status=JobStatus.SUCCEEDED)
-            )
+            ).held
             is False
         )
         assert read_job(admin_connection, job_id)["status"] == JobStatus.RUNNING
@@ -613,7 +619,7 @@ class TestLeases:
         assert (
             dispatch.record_outcome(
                 current.id, current.lease_token, JobOutcome(status=JobStatus.SUCCEEDED)
-            )
+            ).held
             is True
         )
         assert read_job(admin_connection, job_id)["status"] == JobStatus.SUCCEEDED
@@ -642,7 +648,7 @@ class TestOutcomesAndTheCeiling:
             claimed.id,
             claimed.lease_token,
             JobOutcome(status=JobStatus.SUCCEEDED, result={"ok": True}),
-        )
+        ).held
 
         stored = read_job(admin_connection, job_id)
         assert stored["status"] == JobStatus.SUCCEEDED
@@ -670,7 +676,7 @@ class TestOutcomesAndTheCeiling:
             claimed.id,
             claimed.lease_token,
             JobOutcome(status=JobStatus.PENDING, last_error="upstream timed out"),
-        )
+        ).held
 
         stored = read_job(admin_connection, job_id)
         assert stored["status"] == JobStatus.PENDING

@@ -14,255 +14,303 @@ in, so each is worth naming against the code that provides it:
 - **Independently executable** -- a run is identified by its id alone, so
   resuming needs no in-memory context.
 
+## What [[STEP-31 Workflow Async Execution]] changed here, and what it did not
+
+**Execution semantics are unchanged.** Steps still run in order, the gate still
+stops the run rather than skipping the step, approval is still per run, and a
+failure still fails the run loudly.
+
+**Entry and settlement are not.** A run now executes inside a worker, where
+delivery is at-least-once: a job's lease can lapse under a worker that is still
+running it, so two executions of one run can be alive at once
+([[ADR-005 Async Job Queue and Worker Execution Model]] §6). `next_step_index`
+makes a *sequential* redelivery resume rather than restart and says nothing about
+that case. So a step is now **admitted** before it runs and **settled** after,
+through two protected commands that hold the fences
+([[ADR-006 Workflow Async Execution and Run Reconciliation]] D8).
+
+## Why the runner holds no connection, and neither does a step
+
+It is given a session *factory* and opens one short session per unit of database
+work. Admission commits before a step executes, so the claim protecting that step
+is durable state rather than a held lock -- which is what lets a multi-minute
+provider call run with no row locked underneath it (ADR-005 §4).
+
+**The step's own execution holds nothing either**, and that is a stronger
+statement than "no row is locked". `RequestSessionFactory` keeps a transaction
+open for the life of a session, because `SET LOCAL ROLE` and the local JWT claim
+only survive inside one -- so a step handed a connection would leave a
+`projectone_api` backend `idle in transaction` for the whole provider call. Steps
+are therefore given *readers* that open a session per call and close it
+(`app/workflows/execution.py`), and the definition is built before any session is
+opened rather than inside one.
+
+What that buys is not tidiness: an open transaction across an external call pins
+the vacuum horizon, and `idle_in_transaction_session_timeout` would kill it
+*after* the provider had been paid and before the step could settle.
+`TestTheProviderCallHoldsNoTenantConnection` in `tests/test_workflows_api.py`
+asserts it against `pg_stat_activity` while a real call is in flight.
+
 ## Persist after every step, not at the end
 
-`_execute_from` writes each step's outcome before starting the next one. That is
-the whole resumability mechanism: the last committed row is always an honest
-answer to "where did this run get to", including when the answer is "it crashed
-during step 3".
+Each step's outcome is written before the next one starts. That is the whole
+resumability mechanism: the last committed row is always an honest answer to
+"where did this run get to", including when the answer is "it stopped during
+step 3".
 
-The cost is one round trip per step, which is the correct trade. An engine
-batching its writes to save them would lose exactly the runs worth investigating.
+## A step outcome and the run transition it causes are one transaction
+
+**The last committed row must be an honest answer, and two transactions could
+not guarantee that.** Settling a step and then moving the run in a second
+transaction leaves a gap, and the gap is reachable because a lease can rotate
+inside it:
+
+- the final step commits `completed` while its run is still `running`, and a
+  replacement seeing every step complete can reconcile that run to `failed`;
+- a non-replayable step commits `failed` with its claim cleared, and a
+  replacement arriving before the run turns `failed` can admit and **re-execute
+  a step that has already been paid for**;
+- any observer -- a poll, the UI, a support query -- can read a step and a run
+  that contradict each other.
+
+So `_settle` performs both writes in one session, which is one transaction.
+`app_settle_workflow_step` locks the run, the step and the job, and PostgreSQL
+holds those locks until the *transaction* ends rather than until the function
+returns -- so both writes happen with every relevant row still locked. If the run
+transition cannot be written, the step settlement rolls back with it.
+
+An intermediate successful step moves no run state and passes none: the run is
+`running` and stays `running`.
+
+## A redelivery of a run that already completed is a success
+
+Delivery is at-least-once, so a job whose earlier delivery finished the run can
+arrive again. That is not a failure and is not dead-lettered: no provider is
+called, no row is touched, and the job settles `succeeded`.
 
 ## The approval gate stops the run, it does not skip the step
 
-Reaching a step with `requires_approval` and no approval marks the **run**
-`awaiting_approval`, marks the **step** the same, and returns. Nothing is
-executed. Resuming later re-enters at that same index, because
-`next_step_index` counts only `completed` steps.
+Reaching a step with `requires_approval` and no **unspent, durable** grant marks
+the step and the run `awaiting_approval` and returns. Nothing is executed.
 
-That shape matters: a gate that let the run continue and merely flagged the step
-would be a gate in name only, and a gate that marked the step `skipped` would
-silently drop the work a user was asked to approve.
+The grant is now a persisted column rather than an in-memory flag, because the
+approving request and the executing process are no longer the same process
+(ADR-006 D9). It is spent at admission, so an interrupted gated step has already
+consumed its approval and cannot restart without a fresh one. **Approval is never
+inferred** -- there is nothing left to infer it from.
 
-## Approval is per run, not per step
+## Losing ownership writes nothing at all
 
-Approving a run clears the gate for **the step it is currently waiting on**, and
-the run continues until it finishes or reaches the next gated step -- where it
-stops again. There is no "approve everything from here", deliberately: that is
-autonomous execution, which CLAUDE.md §15 requires to be an explicitly
-configured, documented opt-in rather than a side effect of clicking approve.
+A settlement that returns false means this execution no longer owns what it was
+doing: another worker holds the job, or the run has already been reconciled. The
+runner stops, logs, and **writes nothing** -- it does not fail the run and does
+not touch the step row, because the claim is the record of what was in flight and
+erasing it would re-open the double call it exists to prevent.
 
 ## Errors fail the run loudly
 
 A step raising anything marks the run `failed` with a public message and stops.
-Nothing is retried here -- `AIRouter` owns retries for AI calls, and a runner
-retrying on top of that would multiply a ceiling nobody wrote down
-(CLAUDE.md §15a). An execution ceiling tripping is the same path, which is what
-"fails loudly rather than silently continuing" means in practice.
+Nothing is retried here -- `AIRouter` owns retries for AI calls and the job owns
+retries for the job, and a third loop in between would multiply a ceiling nobody
+wrote down (CLAUDE.md §15a).
 """
 
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
+from dataclasses import dataclass
+
+import psycopg
 
 from app.ai.governance import ExecutionBudget, GovernanceError
 from app.core.logging import get_logger, log_context
+from app.repositories.session import TenantSessionFactory
 from app.repositories.workflows import WorkflowRepository, WorkflowRun
 from app.workflows.models import (
     RunNotFoundError,
-    RunNotResumableError,
     RunStatus,
+    StepApprovalRequiredError,
     StepContext,
+    StepOwnershipLostError,
     StepStatus,
     WorkflowDefinition,
     WorkflowError,
+    ensure_definition_matches,
 )
 
 logger = get_logger(__name__)
 
+#: How the runner obtains a definition scoped to one tenant.
+#:
+#: A factory rather than a definition, because a definition holds steps and steps
+#: hold tenant-scoped services -- see `app/workflows/definitions.py`, which
+#: explains why a module-level definition would be a cross-tenant leak.
+#:
+#: It takes a **session factory, not a connection**. A definition that held a
+#: connection would hold it across the provider call, and the runner would have to
+#: choose between rebuilding one per step and leaving a transaction open through a
+#: network round trip. Taking the factory removes the choice: one definition is
+#: built per execution, before any session exists, and each read inside it opens
+#: and closes its own.
+WorkflowDefinitionFactory = Callable[[TenantSessionFactory], WorkflowDefinition]
+
+#: Given a workflow type, return the factory that builds it.
+#:
+#: Two levels because a run's type is a fact about the run, readable only once
+#: there is a session to read it in -- so it cannot be bound when a handler is
+#: constructed at process start. `app/workflows/execution.py` supplies the one
+#: implementation; the alias lives here so that module can import it without
+#: this one importing that one.
+WorkflowDefinitionsFactory = Callable[[str], WorkflowDefinitionFactory]
+
+
+@dataclass(frozen=True)
+class _Settlement:
+    """What one settlement transaction did.
+
+    `settled` is False only when a fence refused the write -- another execution
+    holds the job, or the run is already terminal. `run` carries the run as it
+    stands afterwards, and is None where the outcome moved no run state.
+    """
+
+    settled: bool
+    run: WorkflowRun | None
+
 
 class WorkflowRunner:
-    """Starts, resumes and approves workflow runs."""
+    """Drives one workflow run from where it is to where it can next stop."""
 
-    def __init__(self, repository: WorkflowRepository) -> None:
-        """Store the repository every run is persisted through."""
-        self._repository = repository
+    def __init__(
+        self,
+        sessions: TenantSessionFactory,
+        repositories: Callable[[psycopg.Connection], WorkflowRepository] = WorkflowRepository,
+    ) -> None:
+        """Store how this runner opens sessions and builds repositories over them.
 
-    # -------------------------------------------------------------- start --
+        `repositories` defaults to the real class and exists as a seam: the
+        engine's rules -- step order, the gate, budgets, failure -- are decidable
+        without SQL, and a suite needing PostgreSQL to prove "a gated step does
+        not execute without approval" is a suite nobody runs locally. The
+        fencing itself is not decidable without a database and is proven against
+        one in `test_workflow_commands.py`.
+        """
+        self._sessions = sessions
+        self._repositories = repositories
 
-    def start(
+    # ------------------------------------------------------------ executing --
+
+    def execute(
         self,
         workspace_id: uuid.UUID,
-        definition: WorkflowDefinition,
-        triggered_by: uuid.UUID,
-        project_id: uuid.UUID | None = None,
+        run_id: uuid.UUID,
+        definitions: WorkflowDefinitionsFactory,
+        job_id: uuid.UUID,
+        lease_token: uuid.UUID,
     ) -> WorkflowRun:
-        """Create a run and execute it until it finishes, pauses or fails.
+        """Advance a run until it completes, pauses for approval, or fails.
 
-        The **Trigger** phase. The run row is written before any step executes,
-        so a crash during the first step still leaves a record.
+        The single entry point. There is no `start`, `resume` or `approve` here
+        any more: creating a run, granting an approval and recovering an
+        interrupted one are complete domain transitions that must be atomic with
+        the job they enqueue, so they live in the protected commands the routes
+        call (ADR-006 D11). What is left for the runner is execution.
+
+        Args:
+            workspace_id: the run's workspace, already proven to the worker.
+            run_id: taken from `jobs.workflow_run_id`, never from a payload.
+            definitions: resolves a workflow type to a factory that builds its
+                definition against a live tenant connection.
+            job_id: the job this execution is delivering.
+            lease_token: proof that this execution currently holds that job.
 
         Returns:
-            The run in whatever state execution left it: `completed`,
-            `awaiting_approval`, or `failed`.
-        """
-        run = self._repository.create_run(
-            workspace_id=workspace_id,
-            workflow_type=definition.workflow_type,
-            definition_version=definition.version,
-            triggered_by=triggered_by,
-            project_id=project_id,
-        )
+            The run as persisted when execution stopped.
 
-        logger.info(
-            log_context(
-                event="workflow_run_started",
-                workspace_id=workspace_id,
-                run_id=run.id,
-                workflow_type=definition.workflow_type,
-                definition_version=definition.version,
+        Raises:
+            RunNotFoundError: the run is not visible to this actor.
+            StepInterruptedError: a non-replayable step is held by another
+                execution. Terminal, and never reported as success.
+            StepOwnershipLostError: this execution lost the job or its lease, so
+                nothing it did will land.
+            WorkflowError: the definition no longer matches the run.
+        """
+        with self._sessions() as connection:
+            repository = self._repositories(connection)
+            run = repository.get_run(workspace_id, run_id)
+
+            if run is None:
+                raise RunNotFoundError()
+
+            if RunStatus(run.status) is RunStatus.COMPLETED:
+                # **An idempotent success, not a failure.** Delivery is
+                # at-least-once, so the ordinary way to arrive here is a
+                # redelivery of a job whose earlier delivery already finished the
+                # run -- the lease lapsed after the work was done rather than
+                # before. Nothing is left to do and nothing is wrong: no provider
+                # is called, no row is touched, and the job settles `succeeded`.
+                #
+                # Dead-lettering instead would be worse than noise. It would mark
+                # a run that genuinely completed as having a failed job against
+                # it, and D5's reconciliation would then be the only thing
+                # standing between that and a `completed` run being rewritten to
+                # `failed`.
+                logger.info(
+                    log_context(
+                        event="workflow_run_already_completed",
+                        workspace_id=workspace_id,
+                        run_id=run_id,
+                        job_id=job_id,
+                    )
+                )
+
+                return run
+
+            start_index = repository.next_step_index(workspace_id, run_id)
+            outputs = self._rebuild_outputs(repository, run)
+
+        # Built after the session closes, deliberately. A definition holds no
+        # connection now, so there is nothing to bind it to one for -- and
+        # building it out here is what makes "no step holds a connection" a
+        # property of the code rather than of every step's good behaviour.
+        definition = definitions(run.workflow_type)(self._sessions)
+
+        # Before anything is admitted, claimed or spent. A run that outlived its
+        # definition stops here with its state untouched, for a person to decide
+        # about (`ensure_definition_matches`).
+        ensure_definition_matches(definition, run.workflow_type, run.definition_version)
+
+        if start_index >= len(definition.steps):
+            raise WorkflowError(
+                f"Run recorded {start_index} completed steps but definition "
+                f"'{definition.workflow_type}' v{definition.version} has "
+                f"{len(definition.steps)}",
+                public_message="This workflow definition has changed and the run cannot continue",
             )
+
+        return self._execute_from(
+            run=run,
+            definition=definition,
+            start_index=start_index,
+            outputs=outputs,
+            job_id=job_id,
+            lease_token=lease_token,
         )
 
-        return self._execute_from(run, definition, start_index=0)
-
-    # ------------------------------------------------------------- resume --
-
-    def resume(
-        self,
-        workspace_id: uuid.UUID,
-        run_id: uuid.UUID,
-        definition: WorkflowDefinition,
-    ) -> WorkflowRun:
-        """Continue a run from its last completed step.
-
-        **Reads persisted state, never memory**, which is what makes a run
-        resumable in a process that did not start it.
-
-        A run interrupted mid-step re-executes that step, because a step that did
-        not record completion did not commit its result either. That makes step
-        execution effectively at-least-once, which every step here is safe under:
-        validation and quality checks are pure reads, and planning produces a new
-        outline rather than mutating anything.
-
-        ## `failed` is resumable; `completed` is not
-
-        **A failed run is the main thing this method exists for.** [[Workflow
-        Engine]]'s Failure Recovery says failed workflows may "pause, retry,
-        resume from checkpoints or terminate safely while preserving execution
-        history", and a `resume` that refused them would leave every transient
-        provider outage as a run the user must recreate from scratch, losing the
-        steps that already succeeded.
-
-        Retrying picks up at the failed step, not at the beginning, because
-        `next_step_index` counts completed steps and the failed one never
-        recorded completion.
-
-        `completed` is refused because there is nothing to continue: resuming it
-        would re-execute the whole workflow while reporting itself as a
-        continuation.
-
-        Raises:
-            RunNotFoundError: no live run matched.
-            RunNotResumableError: the run has already completed, or is waiting
-                for an approval that resuming does not grant.
-        """
-        run = self._require_run(workspace_id, run_id)
-        status = RunStatus(run.status)
-
-        if status is RunStatus.COMPLETED:
-            raise RunNotResumableError(status, "resumed")
-
-        if status is RunStatus.AWAITING_APPROVAL:
-            # Resuming is not approving. Letting `resume` clear a gate would mean
-            # the gate could be bypassed by anyone who could restart a run --
-            # including an automated retry -- which is precisely the control
-            # CLAUDE.md §15 puts a human behind.
-            raise RunNotResumableError(status, "resumed without approval")
-
-        return self._continue(run, definition)
-
-    # ------------------------------------------------------------ approve --
-
-    def approve(
-        self,
-        workspace_id: uuid.UUID,
-        run_id: uuid.UUID,
-        definition: WorkflowDefinition,
-        approved_by: uuid.UUID,
-    ) -> WorkflowRun:
-        """Approve the step a run is waiting on and continue executing.
-
-        Authorization is **not** decided here -- `requires(UPDATE_WORKSPACE)` on
-        the route has already refused anyone who may not approve. This records
-        who approved and proceeds, the same division `ProjectService` keeps
-        between the state machine and `AuthorizationService`.
-
-        Raises:
-            RunNotFoundError: no live run matched.
-            RunNotResumableError: the run is not waiting for approval. Approving
-                a running or finished run is a client acting on stale state, and
-                answering 409 says so rather than silently doing nothing.
-        """
-        run = self._require_run(workspace_id, run_id)
-        status = RunStatus(run.status)
-
-        if status is not RunStatus.AWAITING_APPROVAL:
-            raise RunNotResumableError(status, "approved")
-
-        logger.info(
-            log_context(
-                event="workflow_run_approved",
-                workspace_id=workspace_id,
-                run_id=run_id,
-                approved_by=approved_by,
-            )
-        )
-
-        # `approved=True` applies to exactly one step -- the one the run is
-        # waiting on. The next gated step stops the run again.
-        return self._continue(run, definition, approved=True)
-
-    # ------------------------------------------------------------- shared --
-
-    def _require_run(self, workspace_id: uuid.UUID, run_id: uuid.UUID) -> WorkflowRun:
-        """Return a live run or raise.
-
-        Raises:
-            RunNotFoundError: absent, or hidden by RLS -- deliberately one error.
-        """
-        run = self._repository.get_run(workspace_id, run_id)
-
-        if run is None:
-            raise RunNotFoundError()
-
-        return run
-
-    def _continue(
-        self,
-        run: WorkflowRun,
-        definition: WorkflowDefinition,
-        approved: bool = False,
-    ) -> WorkflowRun:
-        """Resume execution at the first step this run has not completed."""
-        start_index = self._repository.next_step_index(run.workspace_id, run.id)
-
-        return self._execute_from(run, definition, start_index, approved=approved, resuming=True)
+    # ------------------------------------------------------------ internals --
 
     def _rebuild_outputs(
-        self, run: WorkflowRun, definition: WorkflowDefinition
+        self, repository: WorkflowRepository, run: WorkflowRun
     ) -> dict[str, object]:
-        """Return what earlier steps produced, read back from storage.
+        """Return every completed step's stored output, keyed by step name.
 
-        **This is what makes resumption correct rather than merely possible.** A
-        run pauses for approval and resumes in a *different request*, so outputs
-        held in memory are gone by then -- and a later step reading
-        `StepContext.outputs` would find it empty.
-
-        Found by running the real workflow rather than by reasoning about it: the
-        planning agent resumed after approval, could not see the validation
-        step's result, and failed the run. An earlier version of this method
-        returned `{}` and documented that as a harmless limitation. It was not
-        harmless; it broke the only workflow that exists.
-
-        Only **completed** steps contribute. A step that failed or is awaiting
-        approval produced nothing to read, and including a partial result would
-        hand a later step an output its predecessor never actually returned.
+        A run resuming in a different process has no in-memory outputs, and a
+        later step reading `StepContext.outputs` would find it empty -- the
+        defect `workflow_step_runs.output` exists to have fixed.
         """
         return {
             step.step_name: step.output
-            for step in self._repository.list_steps(run.workspace_id, run.id)
+            for step in repository.list_steps(run.workspace_id, run.id)
             if step.status == StepStatus.COMPLETED
         }
 
@@ -271,101 +319,53 @@ class WorkflowRunner:
         run: WorkflowRun,
         definition: WorkflowDefinition,
         start_index: int,
-        approved: bool = False,
-        resuming: bool = False,
+        outputs: dict[str, object],
+        job_id: uuid.UUID,
+        lease_token: uuid.UUID,
     ) -> WorkflowRun:
-        """Run steps from `start_index` until the run finishes, pauses or fails.
-
-        One `ExecutionBudget` for this execution, passed to every step through
-        `StepContext`. A budget per step would reset the tally each time and give
-        a ten-step workflow ten times the allowance -- the runaway §15a's
-        chained-invocation cap exists to prevent.
-
-        A resumed run gets a **fresh** budget, which is deliberate and worth
-        stating: the ceiling bounds one *execution*, not the run's whole lifetime.
-        A run paused overnight for approval should not fail on wall-clock time
-        that elapsed while a human was deciding.
-        """
+        """Run every step from `start_index`, stopping at the first that cannot proceed."""
         workspace_id = run.workspace_id
+
+        # One budget per execution, and a redelivery gets a fresh one by design:
+        # it bounds a single execution's wall clock and tokens, not a run's
+        # lifetime cost. The workspace spend ceiling is what bounds that, and the
+        # two are deliberately not the same control (CLAUDE.md §15a).
         budget = ExecutionBudget()
 
-        # **A continuing run must have a step left to run**, and the loop below
-        # cannot tell that it does not: `range(n, n)` is empty, so execution
-        # would fall straight through to the completion path and report a
-        # truncated run as `completed` -- claiming work that never happened.
-        #
-        # Reachable whenever a definition loses steps while a run is paused or
-        # failed, which is a real hazard rather than a defensive one: a
-        # definition edited without a version bump does exactly this.
-        #
-        # Scoped to `resuming` deliberately. A fresh run legitimately arrives
-        # here with `start_index == 0`, and a run that genuinely finished its
-        # last step is `completed` by this same method -- neither is continuing.
-        # `step_at` covers an index inside a shorter definition; this covers the
-        # boundary it structurally cannot see.
-        if resuming and start_index >= len(definition.steps):
-            raise WorkflowError(
-                f"Run recorded {start_index} completed steps but definition "
-                f"'{definition.workflow_type}' v{definition.version} has "
-                f"{len(definition.steps)}",
-                public_message="This workflow definition has changed and the run cannot continue",
+        with self._sessions() as connection:
+            current = self._repositories(connection).update_run_status(
+                workspace_id, run.id, RunStatus.RUNNING, started=True
             )
 
-        context_outputs = self._rebuild_outputs(run, definition)
-
-        current = self._repository.update_run_status(
-            workspace_id, run.id, RunStatus.RUNNING, started=True
-        )
-
-        if current is None:  # pragma: no cover - defensive
-            raise RunNotFoundError()
+        if current is None:
+            # The run is terminal, soft-deleted, or no longer visible. All three
+            # mean this execution has nothing left to advance.
+            raise StepOwnershipLostError(
+                f"Run {run.id} could not be moved to running; it is terminal or gone"
+            )
 
         for index in range(start_index, len(definition.steps)):
             step = definition.step_at(index)
 
-            # The approval gate. Checked before the step runs, so a gated step
-            # never executes on the strength of an approval it did not receive.
-            if step.requires_approval and not approved:
-                self._repository.record_step(
-                    workspace_id=workspace_id,
-                    run_id=run.id,
-                    step_index=index,
+            try:
+                claim = self._admit(
+                    run=run,
+                    index=index,
                     step_name=step.name,
-                    status=StepStatus.AWAITING_APPROVAL,
-                    detail="Waiting for approval before this step runs",
+                    requires_approval=step.requires_approval,
+                    replayable=step.replayable,
+                    job_id=job_id,
+                    lease_token=lease_token,
                 )
-
-                logger.info(
-                    log_context(
-                        event="workflow_run_awaiting_approval",
-                        workspace_id=workspace_id,
-                        run_id=run.id,
-                        step=step.name,
-                        step_index=index,
-                    )
+            except StepApprovalRequiredError:
+                return self._pause_for_approval(
+                    run=run,
+                    index=index,
+                    step_name=step.name,
+                    job_id=job_id,
+                    lease_token=lease_token,
+                    current=current,
                 )
-
-                paused = self._repository.update_run_status(
-                    workspace_id,
-                    run.id,
-                    RunStatus.AWAITING_APPROVAL,
-                    detail=f"Waiting for approval of '{step.name}'",
-                )
-
-                return paused if paused is not None else current
-
-            # An approval covers exactly one step. Cleared immediately so the
-            # next gated step stops the run again -- see the module docstring.
-            approved = False
-
-            self._repository.record_step(
-                workspace_id=workspace_id,
-                run_id=run.id,
-                step_index=index,
-                step_name=step.name,
-                status=StepStatus.RUNNING,
-                started=True,
-            )
 
             context = StepContext(
                 workspace_id=workspace_id,
@@ -373,21 +373,21 @@ class WorkflowRunner:
                 project_id=run.project_id,
                 triggered_by=run.triggered_by,
                 execution_budget=budget,
-                outputs=dict(context_outputs),
+                outputs=dict(outputs),
             )
 
             try:
+                # No session wrapper, and that is the point. Whatever this step
+                # reads, it reads through a reader that opens and closes its own
+                # -- so the provider call inside it holds no connection and no
+                # transaction (ADR-005 §4).
                 result = step.execute(context)
             except (WorkflowError, GovernanceError) as error:
-                # Expected refusals: a validation failure, a failed quality
-                # check, a tripped ceiling, a budget refusal. Each carries a
-                # message written to be shown, so it reaches the run row.
-                return self._fail(run, index, step.name, error, str(error))
-            except Exception as error:
-                # Everything else. The run records a generic message and the
-                # traceback goes to the log -- an unexpected exception's message
-                # is written for an engineer and may carry internal detail
-                # (CLAUDE.md §24).
+                # The engine's own refusals and the governance ceilings. Both are
+                # settled facts, and both carry a public message already written
+                # for a user.
+                return self._fail(run, index, step.name, error, job_id, lease_token, claim)
+            except Exception as error:  # noqa: BLE001 - failed below, never swallowed
                 logger.exception(
                     log_context(
                         event="workflow_step_crashed",
@@ -397,22 +397,35 @@ class WorkflowRunner:
                         step_index=index,
                     )
                 )
-                return self._fail(run, index, step.name, error, "This step failed unexpectedly")
+                return self._fail(run, index, step.name, error, job_id, lease_token, claim)
 
-            context_outputs[step.name] = result.output
+            outputs[step.name] = result.output
 
-            self._repository.record_step(
-                workspace_id=workspace_id,
-                run_id=run.id,
-                step_index=index,
+            # The last step's success and the run's completion are one write.
+            # An intermediate step moves no run state -- the run is `running`
+            # and stays there -- so it passes no run status at all.
+            final = index == len(definition.steps) - 1
+
+            settlement = self._settle(
+                run=run,
+                index=index,
                 step_name=step.name,
                 status=StepStatus.COMPLETED,
+                job_id=job_id,
+                lease_token=lease_token,
+                claim_token=claim,
                 detail=result.detail,
-                tokens_used=result.tokens_used,
-                # Persisted here, so a resumed run can hand it to a later step.
                 output=result.output,
-                finished=True,
+                tokens_used=result.tokens_used,
+                run_status=RunStatus.COMPLETED if final else None,
+                run_finished=final,
             )
+
+            if not settlement.settled:
+                raise StepOwnershipLostError(
+                    f"Step {index} of run {run.id} could not be settled; "
+                    "this execution no longer owns it"
+                )
 
             logger.info(
                 log_context(
@@ -425,7 +438,6 @@ class WorkflowRunner:
                 )
             )
 
-        # The Completion phase.
         logger.info(
             log_context(
                 event="workflow_run_completed",
@@ -435,11 +447,202 @@ class WorkflowRunner:
             )
         )
 
-        completed = self._repository.update_run_status(
-            workspace_id, run.id, RunStatus.COMPLETED, finished=True
+        # No write here. The run reached `completed` in the same transaction as
+        # its final step, which is what stops a replacement from ever seeing
+        # every step complete under a run that is still `running`.
+        return settlement.run if settlement.run is not None else current
+
+    def _admit(
+        self,
+        run: WorkflowRun,
+        index: int,
+        step_name: str,
+        requires_approval: bool,
+        replayable: bool,
+        job_id: uuid.UUID,
+        lease_token: uuid.UUID,
+    ) -> uuid.UUID | None:
+        """Enter a step, returning the claim token protecting it, or None.
+
+        Raises:
+            StepApprovalRequiredError: the gate is unmet; the caller pauses.
+            StepInterruptedError: another execution holds this step.
+            StepOwnershipLostError: this execution lost its job or lease.
+        """
+        with self._sessions() as connection:
+            claim = self._repositories(connection).admit_step(
+                workspace_id=run.workspace_id,
+                run_id=run.id,
+                step_index=index,
+                step_name=step_name,
+                requires_approval=requires_approval,
+                replayable=replayable,
+                job_id=job_id,
+                lease_token=lease_token,
+            )
+
+        logger.info(
+            log_context(
+                event="workflow_step_claimed" if claim is not None else "workflow_step_admitted",
+                workspace_id=run.workspace_id,
+                run_id=run.id,
+                step=step_name,
+                step_index=index,
+                job_id=job_id,
+                replayable=claim is None,
+            )
         )
 
-        return completed if completed is not None else current
+        return claim
+
+    def _settle(
+        self,
+        run: WorkflowRun,
+        index: int,
+        step_name: str,
+        status: StepStatus,
+        job_id: uuid.UUID,
+        lease_token: uuid.UUID,
+        claim_token: uuid.UUID | None,
+        detail: str | None = None,
+        output: object = None,
+        tokens_used: int = 0,
+        run_status: RunStatus | None = None,
+        run_detail: str | None = None,
+        run_finished: bool = False,
+    ) -> _Settlement:
+        """Persist a step's outcome, and the run transition it causes, together.
+
+        **One transaction, and that is the whole point of this method.** A step
+        outcome and the run state it implies used to be two transactions with a
+        commit between them, and the gap was reachable: the lease can rotate
+        inside it. Three concrete losses followed.
+
+        The final step committed `completed` while its run was still `running`,
+        so a replacement seeing every step complete could reconcile that run to
+        `failed`. A non-replayable step committed `failed` with its claim
+        cleared, and a replacement arriving before the run turned `failed` could
+        admit and **re-execute a step that had already been paid for**. And any
+        observer -- a poll, a UI, a support query -- could read a step and a run
+        that contradicted each other.
+
+        `app_settle_workflow_step` takes its locks on the run, the step and the
+        job, and PostgreSQL holds them to the end of the *transaction*, not the
+        end of the function. Doing the run transition in the same transaction
+        therefore keeps every one of those rows locked across both writes, so
+        there is no instant at which another execution can observe or act on the
+        half-applied outcome.
+
+        `run_status` is None for an intermediate successful step, which moves no
+        run state: the run is already `running` and stays there.
+
+        Raises:
+            StepOwnershipLostError: the step settled but the run transition could
+                not be written, because the run went terminal or vanished under
+                us. Raised **inside** the transaction, so the step settlement
+                rolls back with it and this execution has changed nothing.
+        """
+        with self._sessions() as connection:
+            repository = self._repositories(connection)
+            settled = repository.settle_step(
+                workspace_id=run.workspace_id,
+                run_id=run.id,
+                step_index=index,
+                step_name=step_name,
+                status=status,
+                job_id=job_id,
+                lease_token=lease_token,
+                claim_token=claim_token,
+                detail=detail,
+                output=output,
+                tokens_used=tokens_used,
+            )
+
+            if settled and run_status is not None:
+                moved = repository.update_run_status(
+                    run.workspace_id,
+                    run.id,
+                    run_status,
+                    detail=run_detail,
+                    finished=run_finished,
+                )
+
+                if moved is None:
+                    # Raised here rather than returned, because returning would
+                    # commit the step. The step outcome and the run transition
+                    # are one decision, so a run that cannot take its half means
+                    # the step does not take its half either.
+                    raise StepOwnershipLostError(
+                        f"Step {index} of run {run.id} settled {status}, but the run "
+                        "could not be moved; it is terminal or gone"
+                    )
+
+                return _Settlement(settled=True, run=moved)
+
+        if not settled:
+            # Carries no token: a fencing value in a log line is a value a log
+            # reader holds (ADR-006 I17).
+            logger.warning(
+                log_context(
+                    event="workflow_step_settle_fenced",
+                    workspace_id=run.workspace_id,
+                    run_id=run.id,
+                    step=step_name,
+                    step_index=index,
+                    job_id=job_id,
+                    attempted_status=status,
+                    detail="this execution no longer owns the step, the job or the run",
+                )
+            )
+
+        return _Settlement(settled=settled, run=None)
+
+    def _pause_for_approval(
+        self,
+        run: WorkflowRun,
+        index: int,
+        step_name: str,
+        job_id: uuid.UUID,
+        lease_token: uuid.UUID,
+        current: WorkflowRun,
+    ) -> WorkflowRun:
+        """Record the run and its step as waiting, and stop.
+
+        Reached when admission refuses under the step's row lock because the gate
+        carries no unspent grant. The step is recorded through the same fenced
+        settlement every other write uses, so a worker that has lost its job
+        cannot park a run it no longer owns.
+        """
+        settlement = self._settle(
+            run=run,
+            index=index,
+            step_name=step_name,
+            status=StepStatus.AWAITING_APPROVAL,
+            job_id=job_id,
+            lease_token=lease_token,
+            claim_token=None,
+            detail="Waiting for approval before this step runs",
+            run_status=RunStatus.AWAITING_APPROVAL,
+            run_detail=f"Waiting for approval of '{step_name}'",
+        )
+
+        if not settlement.settled:
+            raise StepOwnershipLostError(
+                f"Run {run.id} could not be paused at step {index}; "
+                "this execution no longer owns it"
+            )
+
+        logger.info(
+            log_context(
+                event="workflow_run_awaiting_approval",
+                workspace_id=run.workspace_id,
+                run_id=run.id,
+                step=step_name,
+                step_index=index,
+            )
+        )
+
+        return settlement.run if settlement.run is not None else current
 
     def _fail(
         self,
@@ -447,14 +650,19 @@ class WorkflowRunner:
         index: int,
         step_name: str,
         error: Exception,
-        internal_detail: str,
+        job_id: uuid.UUID,
+        lease_token: uuid.UUID,
+        claim_token: uuid.UUID | None = None,
     ) -> WorkflowRun:
-        """Mark a step and its run failed, and return the run.
+        """Record a step's failure and fail the run, with a message safe to show.
 
-        The message stored is `public_message` when the error carries one --
-        every `WorkflowError` and every `GovernanceError` does -- and a fixed
-        string otherwise. An unexpected exception's own message never reaches
-        the row, because a run's detail is shown to users.
+        `public_message` where the error has one, a fixed sentence where it does
+        not. An unexpected exception's own text is written for an engineer and
+        this message reaches a user (CLAUDE.md §24).
+
+        The failure is settled through the same three fences as a success: an
+        execution that has lost its job does not get to fail a run another worker
+        is legitimately advancing.
         """
         message = getattr(error, "public_message", "This step failed unexpectedly")
 
@@ -469,21 +677,26 @@ class WorkflowRunner:
             )
         )
 
-        self._repository.record_step(
-            workspace_id=run.workspace_id,
-            run_id=run.id,
-            step_index=index,
+        settlement = self._settle(
+            run=run,
+            index=index,
             step_name=step_name,
             status=StepStatus.FAILED,
+            job_id=job_id,
+            lease_token=lease_token,
+            claim_token=claim_token,
             detail=message,
-            finished=True,
+            run_status=RunStatus.FAILED,
+            run_detail=message,
+            run_finished=True,
         )
 
-        failed = self._repository.update_run_status(
-            run.workspace_id, run.id, RunStatus.FAILED, detail=message, finished=True
-        )
+        if not settlement.settled:
+            raise StepOwnershipLostError(
+                f"Step {index} of run {run.id} failed, and this execution no longer owns it"
+            ) from error
 
-        if failed is None:  # pragma: no cover - defensive
+        if settlement.run is None:  # pragma: no cover - settling proved it was live
             raise RunNotFoundError()
 
-        return failed
+        return settlement.run

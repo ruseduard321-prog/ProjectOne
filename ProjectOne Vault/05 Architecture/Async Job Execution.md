@@ -14,12 +14,15 @@ aliases: ["Job Queue", "Worker", "Async Jobs", "Job Execution"]
 
 This note describes **what exists**. [[ADR-005 Async Job Queue and Worker Execution Model]] records why each choice was made and what was rejected; [[Table - jobs]] describes the schema. If this note and the ADR disagree, the ADR is the decision and this note is the drift.
 
+> [!important] ADR-005 is superseded; [[ADR-006 Workflow Async Execution and Run Reconciliation]] is the current boundary
+> ADR-006 was accepted on 2026-08-20 and **supersedes ADR-005 §5 constraints 1 and 2 only** — the dispatcher may now also update `public.workflow_runs`, in one reconciliation statement per dead-letter path. Every other ADR-005 decision, tenant protection and retry ceiling, the at-least-once model and the 60-request composed ceiling carry forward unchanged, and are restated below as they stand.
+
 ## What it replaces
 
 `WorkflowRunner` executed every step inside the HTTP request that started it, so a multi-minute render could not be a workflow: the browser would wait for it, and any timeout between the client and the API would abandon a run that was still spending money. [[Product Coverage Audit]] recorded background execution as the second-largest foundation gap.
 
-> [!note] STEP-30 ships the substrate, not the integration
-> Workflow runs are **still synchronous**. This step delivers the queue, the worker and the tenant boundary, and proves them on a trivial handler; making workflow runs asynchronous is [[STEP-31 Workflow Async Execution]].
+> [!note] STEP-30 shipped the substrate; STEP-31 moved workflow runs onto it
+> STEP-30 delivered the queue, the worker and the tenant boundary, and proved them on a trivial handler. [[STEP-31 Workflow Async Execution]] added `workflow.execute` — the first handler that does real work — along with the run link, the durable step claim and the reconciliation described below.
 
 ## The shape
 
@@ -86,6 +89,24 @@ Both are met, and the reconciliation is worth stating because the two read as be
 
 So identity is established and verified before the handler's first statement, and no transaction is held while the long work runs. `test_identity_is_established_before_the_handler_runs` asserts the ordering structurally; `test_a_revoked_membership_fails_terminally_without_reaching_the_handler` asserts the behaviour against a real database.
 
+### What a running step occupies
+
+**Counted, not assumed.** "No row is locked" is a weaker statement than it sounds, because `RequestSessionFactory` keeps a transaction open for the life of a session — it must, since `SET LOCAL ROLE` and the local JWT claim do not survive outside one. A handler holding a session across a provider call is therefore a backend sitting `idle in transaction` for the length of a network round trip, which pins the vacuum horizon and is what `idle_in_transaction_session_timeout` exists to terminate — *after* the provider has been paid.
+
+So the occupancy is measured against `pg_stat_activity` while a real provider call is in flight (`TestTheProviderCallHoldsNoTenantConnection`):
+
+| While a workflow step calls a provider | Held |
+|---|---|
+| `projectone_api` (request-role) connections | **none** |
+| Privileged connections | **one**, `idle`, not mid-transaction — `AISpendService.guard` |
+
+**There is no application-side connection pool.** Every session is a fresh `psycopg.connect()` that closes with its `with` block, so nothing is "checked out" of anything. The API and the worker connect as the same `projectone_api` login and therefore compete for the same PostgreSQL `max_connections` — the shared resource is the server's, not a pool's.
+
+The bound follows from the process model rather than from a setting: **one job per worker process** ([[ADR-005 Async Job Queue and Worker Execution Model]] §3 — concurrency is more processes, never more threads), and the only thread a worker starts is the lease heartbeat, which runs no job work. A step's occupancy is bounded in time as well: at most `DEFAULT_MAX_PROVIDERS_TRIED × DEFAULT_MAX_ATTEMPTS_PER_PROVIDER` = 6 upstream requests at `ai_provider_timeout_seconds` = 30 each, under `ExecutionBudget`'s 300-second wall clock.
+
+**The privileged connection is a deliberate exception and is not workflow-specific.** `AISpendService.guard` holds one connection for a guarded call rather than opening eight, and chat holds it on exactly the same terms. Changing that is a decision about the AI service, not about the queue.
+
+
 ## The one cross-tenant path
 
 There is exactly one irreducible cross-tenant operation in any queue: **a worker must find the next job before it knows whose job it is.** The dispatch query cannot be RLS-scoped, because the identity that would scope it is the answer the query returns.
@@ -94,14 +115,28 @@ There is exactly one irreducible cross-tenant operation in any queue: **a worker
 
 | # | Constraint | Proven by |
 |---|---|---|
-| 1 | One table: `public.jobs`, never joined to a tenant table | `test_no_statement_mentions_a_tenant_table` |
-| 2 | Three operations, not a connection handed out | Module surface |
+| 1 | **Two tables**: `public.jobs`, plus `public.workflow_runs` in exactly two reconciliation statements of a fixed shape — never read, never returning more than `r.id`, and never `workflow_step_runs` (ADR-006 D6) | `TestConstraintOneTwoTables` |
+| 2 | Three operations, not a connection handed out; two of them carry the reconciliation leg | Module surface |
 | 3 | No privileged connection passed to, reachable from, or held open during a handler | `test_the_claim_carries_no_connection`, `test_the_handler_context_exposes_only_a_tenant_session` |
 | 4 | The user's RLS context is established before execution begins | `test_identity_is_established_before_the_handler_runs` |
 | 5 | Every claim is logged | `job_claimed`, with job, type, workspace, worker and correlation id |
 | 6 | The `jobs` table still carries RLS | Migration `a1b7c3e94f6d` |
 
 **Constraints 1, 3 and 4 are proven by test because the ADR requires it**: a boundary asserted only in prose is one the next handler's author can cross without noticing.
+
+### The one widening, and why it is the smallest that works
+
+A job that dies carrying a workflow run used to leave that run non-terminal with nothing able to advance it — a stranded run nobody would notice, which is exactly the [[CLAUDE|CLAUDE.md]] §26 failure the platform must not have. ADR-006 D5 closes it: **every dead-lettered job carrying a `workflow_run_id` marks its run `failed` in the same statement**, through a data-modifying CTE rather than two statements in one transaction, so there is no ordering to get right and no future edit that separates them invisibly.
+
+Three narrower options were considered and each fails against the code:
+
+- **Reconciling over the actor's own session** cannot serve the case it exists for: a revoked member's session cannot see the run at all, so the update would match zero rows.
+- **A second privileged repository** would open its own connection, landing the two writes in different transactions — a crash between them leaves exactly the inconsistency being fixed.
+- **A background sweeper** is not atomic by definition, and a sweeper that stops running is invisible.
+
+**The terminal-state guard is the whole safety of the rule.** A run already `completed` or `failed` is never touched: a job that succeeds while its run waits at an approval gate is a healthy pause, and a run the runner already failed keeps its own, more specific detail.
+
+**Reconciliation never touches `workflow_step_runs`**, and that exclusion is load-bearing three times over: the stale claim is the evidence of what was in flight, a live fence against the worker that took it, and the only thing standing between the next delivery and a provider that has already been paid. A run may therefore be `failed` while still holding a claimed step — the honest description of "this stopped mid-call".
 
 ## Retries: classified, then counted
 
@@ -143,6 +178,9 @@ Two adjacent bounds hold independently and are not multiplied away: `ExecutionBu
 | `job_succeeded` | With its duration |
 | `job_retry_scheduled` | A retryable failure with attempts remaining |
 | `job_dead_lettered` | Terminal refusal, attempts exhausted, or reaped |
+| `workflow_run_reconciled` | A dead-lettered job closed the run it was delivering |
+| `workflow_step_claimed` / `workflow_step_admitted` | An execution entered a step, with or without a claim |
+| `workflow_step_settle_fenced` | An execution that lost ownership wrote nothing — never carries a token |
 | `job_outcome_discarded` | A worker settled a job whose lease it had lost — expected, not an error |
 | `job_lease_lost` / `job_lease_extension_failed` | The heartbeat stopped |
 | `job_crashed` | An unexpected exception, with its traceback |
@@ -159,11 +197,10 @@ Two adjacent bounds hold independently and are not multiplied away: `ExecutionBu
 
 ## What is deliberately not here
 
-- **Workflow integration** — [[STEP-31 Workflow Async Execution]].
 - **Scheduling, cron, delayed execution, and jobs with no user** — [[STEP-74 Workflow Scheduling and Triggers]], which owns the system-actor decision ADR-005 §4 deferred. Every job today originates from an authenticated request, so an enqueuing user always exists; inventing a service identity before there is a caller to shape it would create the platform's most privileged principal by guesswork.
 - **Hosting, orchestration and worker autoscaling** — [[STEP-82 Staging Environment and Deployment Pipeline]] by owner decision. The *process model* is settled and recorded.
 - **Notification of job completion** — [[STEP-34 Notifications Domain]] onward. A user watching a job finish is a different problem from a job finishing.
-- **Provider-side idempotency keys.** The exactly-once problem `c8f1a3d54e29` names as unachievable without them remains open, and is a capability-layer decision rather than a queue one.
+- **Provider-side idempotency keys.** The exactly-once problem `c8f1a3d54e29` names as unachievable without them remains open, and is a capability-layer decision rather than a queue one. **There is no exactly-once provider execution anywhere in this platform**, and [[Workflow Execution]] states what the workflow layer does and does not buy instead.
 
 ---
 
