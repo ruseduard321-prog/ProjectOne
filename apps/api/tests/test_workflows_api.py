@@ -1545,7 +1545,20 @@ class TestARunCannotOutliveItsDefinition:
         provider: StubProvider,
         admin_connection: psycopg.Connection,
     ) -> None:
-        """No provider call, no step admitted, and the run's steps untouched."""
+        """Every effect of the refusal, including the ones that are not "nothing".
+
+        **The worker path is not the same as the other two, and saying so matters.**
+        Approval and recovery detect the mismatch in the route, before any
+        command runs, so the run keeps the state it had. A worker has already
+        been handed a job: refusing raises a terminal `WorkflowError`, the job
+        dead-letters, and ADR-006 D5 then reconciles the linked non-terminal run
+        to `failed` in the same statement. That is D5 working, not an oversight,
+        and it is deliberately not given an exception -- a dead-lettered job
+        against a live run is exactly the stranded pair D5 exists to prevent.
+
+        What the refusal does guarantee on every path is the part that costs
+        money: no provider call, no step admitted, no grant or claim consumed.
+        """
         project_id = _project(client, tenants)
         run = _start(client, tenants, project_id, execute=False)
 
@@ -1561,6 +1574,26 @@ class TestARunCannotOutliveItsDefinition:
             )
 
             assert cursor.fetchone()[0] == 0, "a step was admitted under a changed definition"
+
+            cursor.execute(
+                "SELECT status, dead_lettered_at FROM public.jobs WHERE workflow_run_id = %s",
+                (run["id"],),
+            )
+            jobs = cursor.fetchall()
+
+        assert len(jobs) == 1
+        assert jobs[0][0] == "dead_lettered", f"the job settled {jobs[0][0]}"
+        assert jobs[0][1] is not None
+
+        # D5, unchanged: a dead-lettered job reconciles its run in the same
+        # statement. The run is `failed` -- not its previous state -- and its
+        # history stays readable.
+        assert run_status(admin_connection, run["id"]) == RunStatus.FAILED
+
+        body = _read(client, tenants, run["id"])
+
+        assert body["status"] == RunStatus.FAILED
+        assert body["steps"] == []
 
     def test_recovery_refuses_before_it_reads_requires_approval(
         self, client: TestClient, tenants: Tenants, admin_connection: psycopg.Connection

@@ -174,7 +174,7 @@ Every proof below.
 
 ## Required Tests and Proofs
 
-The full set is [[ADR-006 Workflow Async Execution and Run Reconciliation]] P1–P52, which this step does not restate. Grouped by what each family must establish:
+The full set is [[ADR-006 Workflow Async Execution and Run Reconciliation]] P1–P65 — P53–P65 were added by v1.7 — which this step does not restate. Grouped by what each family must establish:
 
 **Async execution and contract (P1–P3, P13)** — a run started via the API reaches its terminal state **in the worker**, proven by persisted state; all three endpoints answer `202` with a working `Location`; approval enqueues rather than executing inline, asserted directly; **a sequential redelivery interrupted between steps or inside a replayable step resumes rather than restarts.**
 
@@ -253,7 +253,9 @@ Every one is a place where the implementation did not do what ADR-006 already re
 
 3. **A redelivery of a completed run was dead-lettered.** Refusing to re-execute is right; reporting it as a failure is not — it marks a genuinely completed run as having a failed job against it. It is now an idempotent success: no provider call, no state change, job `succeeded`.
 
-4. **The stored `definition_version` was never checked.** A run parked at a gate across a deploy could continue against a different step sequence, or a step that had stopped being gated or replayable — and `next_step_index` counts completed rows, so an inserted step shifts every index after it. One canonical check now runs before execution, recovery **and** approval. Approval is included because an approval that enqueues work the worker will refuse spends the grant and dead-letters the job. It fails closed with a fixed public-safe message and preserves the run, because what happens to an incompatible run is a product decision.
+4. **The stored `definition_version` was never checked.** A run parked at a gate across a deploy could continue against a different step sequence, or a step that had stopped being gated or replayable — and `next_step_index` counts completed rows, so an inserted step shifts every index after it. One canonical check now runs before execution, recovery **and** approval. Approval is included because an approval that enqueues work the worker will refuse spends the grant and dead-letters the job.
+
+   It fails closed with a fixed public-safe message naming no version. On every path: **no provider call, no step admitted, no approval or claim consumed**, and the run's history stays readable. **The status differs by path**, and the first draft of this note got it wrong by claiming otherwise: approval and recovery refuse in the route so the run keeps its state, while a worker's refusal dead-letters its job and D5 reconciles the run to `failed` — D5 unchanged, deliberately without an exception, because a dead-lettered job against a live run is the stranded pair D5 exists to prevent.
 
 A fifth finding was structural rather than behavioural: **the two new child foreign keys had no usable index.** `uq_jobs_one_live_job_per_workflow_run` is partial on `status IN ('pending','running')`, so terminal jobs — the ones that accumulate — leave it while `ON DELETE RESTRICT` still has to find them. Two partial indexes now cover every non-null referencing row.
 

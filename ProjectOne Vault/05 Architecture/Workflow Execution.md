@@ -173,7 +173,13 @@ Editing a step's internals without changing the sequence does not require a bump
 
 Continuing such a run is not a degraded version of correct behaviour but a different execution: `next_step_index` counts completed rows, so an inserted step shifts every index after it, and a step that stopped being `replayable` would be re-entered without a claim.
 
-So it **fails closed and preserves the run**, with a fixed message that says so. Approval is checked as well as execution and recovery, because an approval that enqueues work the worker will refuse spends the grant and dead-letters the job. What happens to an incompatible run — migrate it, restart it, abandon it — is a product decision somebody takes on purpose.
+So it **fails closed**, with a fixed message that names no version. Approval is checked as well as execution and recovery, because an approval that enqueues work the worker will refuse spends the grant and dead-letters the job.
+
+On every path the guarantee is the same and it is the expensive part: **no provider call, no step admitted, no approval or claim consumed**, and the run's steps, outputs and history stay readable.
+
+**The run's status is where the paths differ, and it is worth being exact.** Approval and recovery refuse in the route, before any command runs, so the run keeps the state it had. A worker is already holding a job: its refusal is terminal, the job dead-letters, and [[Async Job Execution]]'s reconciliation moves the linked run to `failed`. That is the reconciliation rule working as specified rather than an oversight — a dead-lettered job against a live run is the stranded pair it exists to prevent — so no exception is carved out for this case.
+
+What happens to an incompatible run afterwards — migrate it, restart it, abandon it — is a product decision somebody takes on purpose.
 
 ## Duplicate Delivery, and the Four Problems Behind One Symptom
 

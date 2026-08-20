@@ -2935,3 +2935,80 @@ class TestTheStepOutcomeAndTheRunMoveTogether:
             ]
 
             assert first_seen == expected, f"{name} takes locks out of order: {first_seen}"
+
+
+# --------------------------------------------- the ADR's own identifiers --
+
+#: How many proofs and invariants ADR-006 defines. Both are contiguous from 1.
+#:
+#: Stated as totals rather than inferred from the file, because inferring them
+#: would make the check tautological -- it would pass on any numbering the
+#: document happened to contain, which is exactly the defect it exists to catch.
+_ADR_006_PROOFS = 65
+_ADR_006_INVARIANTS = 24
+
+
+def _defined_identifiers(text: str, letter: str) -> list[int]:
+    """Return every identifier *defined* in the ADR, in document order.
+
+    A definition is a list item opening with the bolded identifier. References
+    in prose and tables -- "P45–P52 prove it", "asserted by P34–P42" -- are
+    deliberately not matched: those are citations, and citing an identifier
+    twice is correct.
+    """
+    return [
+        int(match.group(1))
+        for match in re.finditer(rf"^- \*\*{letter}(\d+)\.\*\*", text, re.MULTILINE)
+    ]
+
+
+class TestTheADRNumbersEachThingOnce:
+    """Every proof and invariant ADR-006 defines is defined exactly once.
+
+    **Written because it happened.** The v1.7 conformance correction appended
+    thirteen proofs starting again at `P42`, so the document defined `P42`
+    through `P52` twice -- once for the caller-identity proofs accepted in v1.5,
+    once for the new ones. Nothing failed. A reviewer asked to check "P50" would
+    have found two different proofs under that name, and a step note citing a
+    range would silently mean whichever block the reader reached first.
+
+    Prose cannot fail to compile, so the identifiers are checked here instead.
+    """
+
+    def test_every_proof_is_defined_exactly_once_and_none_is_missing(self) -> None:
+        """P1 through P65, each defined once, with no gaps and no repeats."""
+        defined = _defined_identifiers(_ADR_006.read_text(encoding="utf-8"), "P")
+        duplicates = sorted({n for n in defined if defined.count(n) > 1})
+        missing = sorted(set(range(1, _ADR_006_PROOFS + 1)) - set(defined))
+        unexpected = sorted(n for n in set(defined) if n > _ADR_006_PROOFS)
+
+        assert duplicates == [], f"ADR-006 defines these proofs more than once: {duplicates}"
+        assert missing == [], f"ADR-006 defines no proof for: {missing}"
+        assert unexpected == [], (
+            f"ADR-006 defines proofs above P{_ADR_006_PROOFS}: {unexpected}. "
+            "Raise _ADR_006_PROOFS deliberately when adding proofs."
+        )
+
+    def test_the_proofs_are_defined_in_ascending_order(self) -> None:
+        """Numbering that runs backwards is how the duplicate block arrived.
+
+        The v1.7 proofs were inserted between `P41` and the legacy `P42`, so the
+        document counted up to `P54` and then restarted at `P42`. Ascending order
+        catches that shape even when every identifier happens to be unique.
+        """
+        defined = _defined_identifiers(_ADR_006.read_text(encoding="utf-8"), "P")
+
+        assert defined == sorted(defined), (
+            "ADR-006 defines its proofs out of order; the first descent is at "
+            f"{next(b for a, b in zip(defined, defined[1:], strict=False) if b < a)}"
+        )
+
+    def test_every_invariant_is_defined_exactly_once_and_none_is_missing(self) -> None:
+        """I1 through I24, on the same terms as the proofs."""
+        defined = _defined_identifiers(_ADR_006.read_text(encoding="utf-8"), "I")
+        duplicates = sorted({n for n in defined if defined.count(n) > 1})
+        missing = sorted(set(range(1, _ADR_006_INVARIANTS + 1)) - set(defined))
+
+        assert duplicates == [], f"ADR-006 defines these invariants more than once: {duplicates}"
+        assert missing == [], f"ADR-006 defines no invariant for: {missing}"
+        assert defined == sorted(defined), "ADR-006 defines its invariants out of order"

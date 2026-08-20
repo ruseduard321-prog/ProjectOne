@@ -434,11 +434,18 @@ class WorkflowDefinition:
 #: What a client is told when a run outlives the definition that started it.
 #:
 #: Fixed and public-safe. It names neither version, because a version number is
-#: deployment detail a user cannot act on, and it says explicitly that the run is
-#: preserved -- the failure a user fears here is that their work was discarded.
+#: deployment detail a user cannot act on and naming it would leak what this
+#: deployment runs.
+#:
+#: **"Remains available for review" rather than "preserved unchanged"**, because
+#: the second is not true on every path. A worker refusing mid-delivery
+#: dead-letters its job, and D5 then reconciles the run to `failed` -- so the
+#: run's *status* does change there, while its steps, outputs and history do
+#: not. The wording has to be true of both paths, and what is true of both is
+#: that nothing executed and the record is still readable.
 DEFINITION_CHANGED_MESSAGE = (
-    "This workflow's definition has changed since this run started, so the run "
-    "cannot continue. It has been preserved unchanged."
+    "This workflow's definition has changed since this run started, so it "
+    "cannot continue automatically. The run remains available for review."
 )
 
 
@@ -449,9 +456,9 @@ def ensure_definition_matches(
 ) -> None:
     """Refuse to advance a run against a definition it did not start under.
 
-    **A run records `definition_version` at creation and it is never re-read**
-    (the migration `f3c82b19d4a7` note). Synchronously that was bookkeeping: the
-    definition that started a run was necessarily the one that finished it,
+    **A run's `definition_version` is stamped at creation and never silently
+    rewritten** (migration `f3c82b19d4a7`). Synchronously that was bookkeeping:
+    the definition that started a run was necessarily the one that finished it,
     within a single request. Asynchronously it is not -- a run can sit at an
     approval gate, or interrupted awaiting recovery, across a deploy that adds a
     step, reorders two, or changes whether one is gated or replayable.
@@ -462,16 +469,35 @@ def ensure_definition_matches(
     that stopped being `replayable` would be re-entered without a claim -- a
     second provider charge with nothing to prevent it.
 
-    **This fails closed and preserves the run.** Emulating an old definition with
-    current code would mean keeping every historical step sequence executable
-    forever, which is the second source of truth `WorkflowDefinition` exists to
-    avoid. What happens to an incompatible run is a product decision -- migrate
-    it, abandon it, restart it -- and this makes it one somebody takes on purpose.
+    Emulating an old definition with current code would mean keeping every
+    historical step sequence executable forever, which is the second source of
+    truth `WorkflowDefinition` exists to avoid. What happens to an incompatible
+    run is a product decision -- migrate it, abandon it, restart it -- and this
+    makes it one somebody takes on purpose.
+
+    ## What is guaranteed on every path, and what is not
+
+    Guaranteed wherever this is called: **no mismatched definition executes or
+    derives workflow state.** No provider is called, no step is admitted, and no
+    approval or claim is consumed -- this runs before any of them. The run's
+    persisted steps, outputs and history stay readable either way.
+
+    **The run's status is a different question, and the paths differ.** Do not
+    read this as "the run is left untouched":
+
+    - **Approval and recovery** call this in the route, *before* the protected
+      command runs, so nothing is written at all and the run keeps the state it
+      had.
+    - **A worker** has already been handed a job. Refusing raises, the job
+      dead-letters, and ADR-006 D5 then reconciles the linked
+      non-terminal run to `failed` in the same statement. That is D5 working as
+      specified, and it is deliberately given no exception here: a dead-lettered
+      job against a live run is precisely the stranded pair D5 exists to prevent.
 
     Called before **every** mutation of a run: execution, recovery and approval.
     Approval matters as much as the other two, because an approval that enqueues
     a job the worker will refuse turns an owner's decision into a dead-lettered
-    job and a run stuck at a gate that has already been spent.
+    job and a run stuck at a gate whose grant has already been spent.
 
     Args:
         definition: the definition this deployment would execute.
@@ -479,9 +505,8 @@ def ensure_definition_matches(
         definition_version: the version recorded on the run.
 
     Raises:
-        WorkflowError: on either mismatch. No provider is called, no step is
-            admitted, and no claim or approval is consumed, because this runs
-            before any of them.
+        WorkflowError: on either mismatch, carrying a fixed public-safe message
+            that names no version.
     """
     if definition.workflow_type != workflow_type:
         raise WorkflowError(
