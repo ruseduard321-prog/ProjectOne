@@ -1,19 +1,20 @@
 ---
 title: STEP-31 Workflow Async Execution
 category: Development/Build Step
-status: draft
+status: stable
 version: "3.0"
-last_updated: 2026-08-20
+last_updated: 2026-08-21
 tags: [engineering, workflow, build-step, backend, infrastructure]
 step_id: STEP-31
-step_status: In Progress
+step_status: Done
 detail_level: full
 phase: "Platform Substrate"
 ---
 
 # STEP-31 — Workflow Async Execution
 
-**Status:** In Progress
+**Status:** Done
+**Tasks 1–10 complete.** PR #52 was squash-merged to `main` as `a2804aad` on 2026-08-20, and migration `09a247684df7` is verified applied on `projectone-dev`. The [[Build Plan]] now pauses after this step for a complete design milestone. See [[#Step Completion Record]].
 **Phase:** Platform Substrate — The absent infrastructure every media, approval and automation capability sits behind: storage, async execution, and enough notification to make an asynchronous run visible.
 **Detail level:** full — expanded 2026-08-17 by [[STEP-30 Async Job Infrastructure]]; **readiness contract re-synchronized 2026-08-20 against the accepted [[ADR-006 Workflow Async Execution and Run Reconciliation]]**, which corrected several statements this note made before that ADR existed.
 
@@ -202,16 +203,16 @@ Proven by the existing STEP-22 suite plus the proof families above.
 
 Additionally, per [[Execution Protocol#Step Completion]]:
 
-- [ ] The API contract change is documented, and every existing caller updated.
-- [ ] No path claims exactly-once provider execution; the residual window is documented where a user or operator can see it.
-- [ ] Required CI green, and the manual checklist complete.
-- [ ] Owner approval obtained — this step is Critical.
-- [ ] Status synchronized between this note and the [[Build Plan]] index.
-- [ ] ~~[[STEP-32 Media Processing Pipeline]] expanded to full detail.~~ **Not applicable** — withdrawn by the project owner on 2026-08-20; the [[Build Plan]] pauses after this step for a complete design milestone.
+- [x] The API contract change is documented, and every existing caller updated.
+- [x] No path claims exactly-once provider execution; the residual window is documented where a user or operator can see it.
+- [x] Required CI green, and the manual checklist complete.
+- [x] Owner approval obtained — this step is Critical.
+- [x] Status synchronized between this note and the [[Build Plan]] index.
+- [x] ~~[[STEP-32 Media Processing Pipeline]] expanded to full detail.~~ **Not applicable** — withdrawn by the project owner on 2026-08-20; the [[Build Plan]] pauses after this step for a complete design milestone. **The decision is recorded**, which is what closes this item: not applicable and not done look identical in an unticked box.
 
 ## Outcome
 
-Recorded while building, not after. The Step Completion Record below stays open until the Pull Request merges.
+Recorded while building, not after. **Delivery is complete and recorded in [[#Step Completion Record]] below.**
 
 ### What was built
 
@@ -221,7 +222,7 @@ Recorded while building, not after. The Step Completion Record below stays open 
 - Four columns on `workflow_step_runs` — `claim_token`, `claimed_by_job_id`, `claimed_by_lease_token`, `approved_by` — with an all-or-none CHECK on the claim and a composite FK from the claim to its job. **`claimed_at`, `approved_at` and a superseded-token column were not added**: none enforces anything, and a raw superseded token in a column is the exposure ADR-006 §Column Necessity refuses.
 - **The five commands**, each `SECURITY DEFINER`, `SET search_path = ''`, schema-qualified throughout, no dynamic SQL, `PUBLIC`/`anon`/`service_role` revoked by name, `EXECUTE` to `authenticated` only, and the `session_user = 'projectone_api'` literal as the first executable statement.
 - **The grant narrowing**: `authenticated` loses `INSERT` and all but `UPDATE (deleted_at)` on `workflow_step_runs`; both fencing tokens leave its `SELECT` grants on `workflow_step_runs` and `jobs`, and `jobs.lease_expires_at` leaves with them because nothing on the tenant path read it.
-- `workflow.recovered` added to the audit action vocabulary.
+- **`workflow.approved` and `workflow.recovered`** added to the audit action vocabulary.
 
 **Application:**
 
@@ -235,7 +236,7 @@ Recorded while building, not after. The Step Completion Record below stays open 
 
 1. **The pause needs a write, and the write needs a command.** Once `authenticated` loses `INSERT` on `workflow_step_runs`, recording a step as `awaiting_approval` is no longer something the runner can do directly. It goes through `app_settle_workflow_step` with a null claim token — which keeps the lease and non-terminal-run predicates on the pause, so a worker that has lost its job cannot park a run it no longer owns. No sixth command was needed.
 
-2. **Every command takes its locks in one order: run, then step, then job.** ADR-006 lists settlement's locks in a different order from admission's. Taking them in two orders is a deadlock between a stale worker settling and a replacement admitting — a shape this codebase would meet in production and not in review. The accepted property is that *every predicate is evaluated with every row already locked*, and that holds.
+2. **Every command takes its locks in one order: run, then step, then job.** ADR-006 v1.7 and the installed command bodies both require that order, asserted by P59. Taking them in two orders would be a deadlock between a stale worker settling and a replacement admitting — a shape this codebase would meet in production and not in review. The accepted property is that *every predicate is evaluated with every row already locked*, and that holds.
 
 3. **A gated step held by another execution refuses at the approval check, not the claim check**, because admission consumes the grant before it takes the claim. The outcome is identical — nothing is executed, nothing is written, the job dead-letters and the run is reconciled — and the claim survives untouched.
 
@@ -263,7 +264,7 @@ A fifth finding was structural rather than behavioural: **the two new child fore
 
 ### Two things ADR-006 said that the implementation read differently — now resolved in ADR-006 v1.6
 
-Reported first, then taken to the owner and written into the ADR rather than left in a Pull Request description. **[[ADR-006 Workflow Async Execution and Run Reconciliation]] is now v1.6, still `accepted`**: an implementation clarification that changes no boundary, removes no predicate and relaxes no gate.
+Reported first, then taken to the owner and written into the ADR rather than left in a Pull Request description. **[[ADR-006 Workflow Async Execution and Run Reconciliation]] became v1.6, still `accepted`**: an implementation clarification that changes no boundary, removes no predicate and relaxes no gate. **v1.7 later recorded the conformance corrections found by independent review**, on the same terms.
 
 - **I15 said a client may not *read* `approved_by`**, while §D11's grant block — the concrete specification the migration implements — puts it in the client `SELECT` grant, and P24 asserts that it is readable. **v1.6 rewrites I15** to separate the two ideas: the three fencing tokens are unreadable *and* unwritable; `approved_by` is tenant-readable audit metadata and client-unwritable. Nothing is relaxed — the grant block was always the enforced rule. `TestTheGrantsThemselves::test_approval_metadata_is_readable_and_unwritable` states it as one proposition.
 - **§D11's `jobs` grant list omits `lease_expires_at`**, which first read as an enumeration slip. Tracing every reader settled it the other way: **no caller consumes it.** No router exposes `jobs`, and `JobRepository` selected the column into a `Job` field nothing read. So least privilege wins — the column leaves the grant, and the dead read leaves the repository and the dataclass with it. The dispatcher is untouched: every lease computation runs on the privileged connection.
@@ -297,8 +298,8 @@ Measured again: **no `projectone_api` backend exists during the provider call**,
 |---|---|
 | `ruff check .` / `ruff format --check .` | Passed |
 | `mypy app` (strict) | Passed — 94 source files |
-| `pytest` against PostgreSQL 17, database tests required | **1264 passed, 4 skipped** (from 1181 — **+83**) |
-| `migration_cycle_drill.py` (FA-02) | Passed — 435 schema facts identical after downgrade to base and re-upgrade |
+| `pytest` against PostgreSQL 17, database tests required | **1283 passed, 4 skipped** (from 1181 — **+102**) |
+| `migration_cycle_drill.py` (FA-02) | Passed — 437 schema facts identical after downgrade to base and re-upgrade |
 | `backup_restore_drill.py` (FA-03) | Passed — schema and per-workspace data identical after restore |
 | `web`: lint, typecheck, test, build | Passed — 324 tests, production build clean |
 | `sync-governance-docs.sh --check` | In sync |
@@ -307,13 +308,51 @@ The four skips are the opt-in live-R2 integration tests, unchanged by this step.
 
 **Three proof families were added by the pre-publication audit**, on top of the suite above: `TestTheProviderCallHoldsNoTenantConnection` measures `pg_stat_activity` while a real provider call is in flight; `TestTheGrantsThemselves` asserts the privilege state column by column, so a migration that granted columns and then revoked the table would fail loudly rather than silently; and `TestTheAcceptedCommandNames` fails if an abolished v1.3 function name returns to a normative section of ADR-006.
 
-**The new tests split by what only a database can answer.** `test_workflow_commands.py` (59 tests) runs against real PostgreSQL because a fake has no `SECURITY DEFINER`, no `session_user`, no column grant, no partial unique index and no `FOR UPDATE` — it would report success for an implementation that let any member forge an approval. `test_workflow_engine.py` stays offline and asserts sequencing and gating, with its fake extended to model the conditional claim and the three settlement predicates. `test_workflows_api.py` drives the **real worker** alongside the real routes, because the API no longer executes anything and a suite that only drove HTTP would assert that nothing happened.
+**The new tests split by what only a database can answer.** `test_workflow_commands.py` (77 tests) runs against real PostgreSQL because a fake has no `SECURITY DEFINER`, no `session_user`, no column grant, no partial unique index and no `FOR UPDATE` — it would report success for an implementation that let any member forge an approval. `test_workflow_engine.py` stays offline and asserts sequencing and gating, with its fake extended to model the conditional claim and the three settlement predicates. `test_workflows_api.py` drives the **real worker** alongside the real routes, because the API no longer executes anything and a suite that only drove HTTP would assert that nothing happened.
 
 ### Manual test checklist
 
 **Applicable, and performed at the process boundary rather than in a browser.** This step changes a public API contract and adds no browser control: `apps/web` has no caller for start, approval or resume, and the one surface it does render — a queued run — already worked.
 
 What replaces a browser check is real HTTP against a real database with the real worker process driving execution, which is what `test_workflows_api.py` does end to end: a 202 with a `Location` that resolves, a run that reaches its terminal state **in the worker**, an approval that enqueues rather than executing inline, a stranded run that stops instead of paying twice, and a recovery that continues it. Those are the user-facing behaviours, and a browser could not observe the half that matters.
+
+## Step Completion Record
+
+Merged to `main` as **`a2804aad`** via **PR #52**, squash-merged by the project owner on 2026-08-20 at 23:41 UTC from branch `step-31-workflow-async-execution` (final head `d6966c7`, three commits). **Owner approval and independent review were both completed before merge** — this step is Critical under [[CLAUDE|CLAUDE.md]] §21.
+
+**Required CI, green on both runs:**
+
+| Run | Head | `api` | `web` | `governance docs` |
+|---|---|---|---|---|
+| Pre-merge `32429291599` | `d6966c7` | `SUCCESS` | `SUCCESS` | `SUCCESS` |
+| Post-merge `32429681235` | `a2804aad` | `SUCCESS` | `SUCCESS` | `SUCCESS` |
+
+`Supabase Preview` skipped on both; it is not a required check.
+
+**What shipped:** 45 files, **+10,038 / −961**.
+
+**Final observed results:**
+
+| Check | Result |
+|---|---|
+| `pytest` against PostgreSQL 17 | **1283 passed, 4 skipped** |
+| `apps/web` lint, typecheck, test, build | **324 passed**, production build clean |
+| `migration_cycle_drill.py` (FA-02) | Passed — 437 schema facts identical |
+| `backup_restore_drill.py` (FA-03) | Passed — schema and per-workspace data identical after restore |
+
+**Migration `09a247684df7` applied to `projectone-dev`**, and verified rather than assumed:
+
+- The live Alembic revision reads `09a247684df7`.
+- **Applied with zero active jobs and zero active workflow runs** — nothing was mid-flight across the cutover, which is what made a single coordinated pre-production migration safe.
+- All **five protected commands**, their grants, the `session_user` caller guards, the constraints and the indexes were verified live.
+- Supabase advisors found **no new unindexed STEP-31 foreign key**.
+
+> [!note] The `authenticated` `SECURITY DEFINER` advisor notices are expected
+> The advisor flags each command as a `SECURITY DEFINER` routine executable by `authenticated`, and under ADR-006 that is the design rather than a finding: the worker reaches `current_user = authenticated`, so the grant has to exist for the accepted architecture to work at all. What the advisor cannot see is the second half — the literal `session_user = 'projectone_api'` guard that is the first executable statement in every body, which is why direct PostgREST execution is refused. Recorded here so a future reader meets the explanation rather than the alarm.
+
+**No production environment was touched.** `projectone-dev` is the only environment this migration has reached.
+
+**The manual test checklist was completed at the API/worker/database process boundary**, because there is no frontend caller: `apps/web` has no control for start, approval or resume, and the one surface it renders — a queued run — already worked. See [[#Manual test checklist]].
 
 ## Risks and Governance Gates
 
