@@ -68,7 +68,7 @@ Asset preview — *Missing, P1*
 
 ## Navigation
 
-- **Previous:** [[STEP-31 Workflow Async Execution]]
+- **Previous:** [[STEP-31a Product Experience Blueprint Alignment]]
 - **Next:** [[STEP-33 Storage Quotas and Lifecycle]]
 - **Parent:** [[Build Plan]]
 - **Related Notes:** [[Product Coverage Audit]] · [[Execution Protocol]]

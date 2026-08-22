@@ -108,6 +108,7 @@ Every note in the vault, grouped by folder. This is the exhaustive map — for c
 - [[ADR-004 Object Storage Provider and Tenant-Safe Key Construction]] — `Accepted`
 - [[ADR-005 Async Job Queue and Worker Execution Model]] — `Superseded` by [[ADR-006 Workflow Async Execution and Run Reconciliation]]
 - [[ADR-006 Workflow Async Execution and Run Reconciliation]] — `Accepted`
+- [[ADR-007 Product Experience Blueprint Authority and Adoption Boundary]] — `Accepted`. Design-blueprint authority, the adoption boundary, and a narrow supersession of one [[ADR-003 Product Visual Language and Token Semantics]] value. **Binding, and not yet implemented** — delivery is [[STEP-31a Product Experience Blueprint Alignment]]
 
 ## 09 Development
 
@@ -121,7 +122,7 @@ Every note in the vault, grouped by folder. This is the exhaustive map — for c
 
 **Build Plan:** [[Build Plan]] (step index) · [[Execution Protocol]] (execution rules) · [[Public Release Draft - Unscheduled]] (deferred, non-binding — not a step)
 
-**Steps:** step notes in `09 Development/Build Plan/Steps/` — **STEP-01 to STEP-89**, plus those inserted by owner decision (STEP-11a, STEP-12a, STEP-16a, STEP-16b, STEP-25a). STEP-26 onward was rebuilt on 2026-08-15 against the [[Product Coverage Audit]]. Not listed individually here: [[Build Plan]] is their index, and a session reads only the one step it is implementing. Note that steps execute in **table order, not numeric order** — a `Na` step is placed where its dependencies put it, while its number records which step's contract it amends. Three superseded outlines are kept as history and hold no status; see [[Build Plan#Superseded Step Numbering]]. **The plan ends at a private invite-only beta** ([[STEP-86 Private Beta Release]]); a public paid launch remains a separate owner decision.
+**Steps:** step notes in `09 Development/Build Plan/Steps/` — **STEP-01 to STEP-89**, plus those inserted by owner decision (STEP-11a, STEP-12a, STEP-16a, STEP-16b, STEP-25a, STEP-31a). STEP-26 onward was rebuilt on 2026-08-15 against the [[Product Coverage Audit]]. Not listed individually here: [[Build Plan]] is their index, and a session reads only the one step it is implementing. Note that steps execute in **table order, not numeric order** — a `Na` step is placed where its dependencies put it, while its number records which step's contract it amends. Three superseded outlines are kept as history and hold no status; see [[Build Plan#Superseded Step Numbering]]. **The plan ends at a private invite-only beta** ([[STEP-86 Private Beta Release]]); a public paid launch remains a separate owner decision.
 
 ## 10 Research
 
@@ -134,6 +135,7 @@ Every note in the vault, grouped by folder. This is the exhaustive map — for c
 ## 12 Assets
 
 - [[12 Assets/PDF|PDF]] — 47 archived source PDFs
+- `12 Assets/Prototypes/design-phase-2/` — the **Design Phase 2 Artifact**, the complete product-experience blueprint preserved on 2026-08-22. An approved design *reference*, not executable production authority; its governance is [[ADR-007 Product Experience Blueprint Authority and Adoption Boundary]] and its summary is [[Design MOC]]. Not modified by adoption work.
 - `12 Assets/Images/` — image assets. Two concept references: `ProjectOne_Dashboard_Concept_Mockup_v1.0.png`, embedded in [[Design Backlog and UI Vision]] and **superseded**, and `ProjectOne_Product_Design_Direction_v1.0.png`, the **active** direction, embedded in [[STEP-26 Product Design System Foundation]].
 
 ## 13 Templates
