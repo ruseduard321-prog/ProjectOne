@@ -49,7 +49,19 @@ const project = {
   name: "E2E Project",
   description: "A project the browser suite can open.",
   status: "idea",
-  legal_transitions: ["scripting"],
+  /*
+   * `planning`, because that is what the API's state machine actually returns
+   * from `idea` — one step forward along the lifecycle sequence. The fixture
+   * previously said `scripting`, which is not a member of `ApiProjectStatus`
+   * at all: `transitionLabel()` looked it up, got `undefined`, and the page
+   * rendered "Move to undefined". Found during the 200% zoom audit.
+   *
+   * A fixture is a contract with the API it stands in for. This one was not
+   * type-checked — the stub is plain JavaScript, deliberately, so it can run
+   * without a build step — which is why the assertion in `routes.spec.ts`
+   * checks the rendered label rather than trusting the payload.
+   */
+  legal_transitions: ["planning"],
   created_by: USER_ID,
   created_at: AT,
   updated_at: AT,

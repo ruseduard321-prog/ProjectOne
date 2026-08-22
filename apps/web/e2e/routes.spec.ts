@@ -135,6 +135,28 @@ test.describe("navigation", () => {
   });
 });
 
+test.describe("the lifecycle control renders a real state", () => {
+  test("project detail offers Move to Planning and never exposes undefined", async ({ page }) => {
+    // Found by the 200% zoom audit, not by any check: the fixture offered a
+    // transition to `scripting`, which is not a member of `ApiProjectStatus`,
+    // so `transitionLabel()` interpolated a missing lookup and the button read
+    // "Move to undefined". Every existing assertion still passed — the page
+    // rendered, the heading was right, nothing overflowed.
+    //
+    // Asserted on the RENDERED label rather than on the payload, because the
+    // stub is plain JavaScript and nothing type-checks its fixtures. This is
+    // the check that would have caught it.
+    await page.goto("/projects/22222222-2222-2222-2222-222222222222");
+    await expect(page.getByRole("heading", { level: 1, name: "E2E Project" })).toBeVisible();
+
+    await expect(page.getByRole("button", { name: "Move to Planning" })).toBeVisible();
+
+    // Not scoped to the button: `undefined` reaching the page from any lookup
+    // — a status, a label, a name — is the defect, wherever it surfaces.
+    await expect(page.locator("body")).not.toContainText("undefined");
+  });
+});
+
 test.describe("no speculative surface entered the product", () => {
   test("the proposed routes are not served", async ({ page }) => {
     // Proposition 14. The blueprint is coherent and persuasive, which is what

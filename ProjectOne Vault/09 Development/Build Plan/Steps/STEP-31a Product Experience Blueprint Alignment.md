@@ -2,7 +2,7 @@
 title: STEP-31a Product Experience Blueprint Alignment
 category: Development/Build Step
 status: draft
-version: "1.7"
+version: "1.8"
 last_updated: 2026-08-22
 tags: [engineering, workflow, build-step, design, frontend]
 step_id: STEP-31a
@@ -215,7 +215,7 @@ Additionally, per [[Execution Protocol#Step Completion]]:
 - [ ] Every browser proposition in [[#Required Tests and Proofs]] passes, observed.
 - [ ] Every pre-existing behavioural test passes unmodified.
 - [ ] `aria-current`, the skip link and the mobile drawer's focus contract have tests, which they did not before.
-- [ ] The 200% zoom manual check is performed and its result recorded — the only manual item.
+- [x] The 200% zoom manual check is performed and its result recorded — the only manual item. **Performed by the owner in Chrome 2026-08-22: 200% indicated, `innerWidth` 1002, `scrollWidth` = `clientWidth`, all five routes clean, drawer and scrim correct when windowed at 200%.** Attested by the owner, not observed by Claude.
 - [ ] `<body>` carries theme state only; `data-template` is server-rendered and stable across navigation.
 - [ ] Required CI green, and the manual checklist complete.
 - [ ] Documentation updated: [[Design System]], [[Design MOC]], ADR indexes, and the statement of how future frontend steps consume the blueprint.
@@ -255,7 +255,7 @@ Four findings were raised against the first implementation and all four are corr
 | **R1** | The shell was incomplete: a full-width canvas header sat **above** a rail holding only four links, so the plane began halfway down the screen and read as an empty black block | The rail is now **one full-height column from the top of the viewport**, in three regions — product identity, the four existing destinations, the signed-in user with sign-out. The detached desktop header is gone; a compact header remains **below `md` only**, carrying the drawer trigger and the wordmark. The drawer carries the same three regions. Identity and sign-out moved onto the plane and onto `nav-*` tokens |
 | **R2** | `keyboard.spec.ts` walked a fixed 25 stops and asserted only "more than three were reached" — it proved tabbing does *something*, not that it does the right thing, and a new unreachable control would not have failed it | The expected sequence is now **derived from the page**: every rendered, enabled, tabbable element in DOM order, marked with an identity index. The walk must reach all of them in that order, show a visible focus ring at every stop, visit no interactive element the derivation missed, and leave the document at the end. A negative `tabindex` no longer excuses a button or a link |
 | **R3** | The template test called `page.content()`, which serializes the **hydrated DOM**, while its comment claimed it read the raw response — so it could not distinguish a server-rendered attribute from one a client effect added after paint | It now reads `response.text()` — the document body the server actually sent — asserts the template there **first**, and only then asserts the hydrated DOM matches. The client-navigation proof and the `<body>` assertions are retained; the misleading comment is replaced with why the two differ |
-| **R4** | The 200% zoom check was reported as passed on the strength of CSS `zoom: 2` and an equivalent narrow viewport, which are approximations rather than the accepted manual test | **Corrected below. It is not passed.** |
+| **R4** | The 200% zoom check was reported as passed on the strength of CSS `zoom: 2` and an equivalent narrow viewport, which are approximations rather than the accepted manual test | **Corrected: recorded as pending rather than passed.** The real check was performed by the owner afterwards and passed — see the zoom section below |
 
 **Negative controls for R2, observed.** A reachable `<button>` added to `/dashboard`: the expectation grew on its own and the proof still passed. The same button with `tabIndex={-1}`: the proof **failed** with *"tab order does not match DOM order"*. Both reverted, and the file is byte-identical to before the probe.
 
@@ -297,15 +297,32 @@ The first pipeline run on [PR #56](https://github.com/ruseduard321-prog/ProjectO
 
 **The invariant, stated once:** *a form control carries an intrinsic width, so the flex item holding it must be allowed to shrink below it.* That sentence is the comment at all three sites; the measurement and the reasoning live here rather than being repeated in the markup.
 
-### The 200% browser-zoom check — `Pending owner manual verification`
+### The 200% browser-zoom check — **performed and passed 2026-08-22**
 
-**Not performed, and not claimed.** [[ADR-007 Product Experience Blueprint Authority and Adoption Boundary]] Decision 13 keeps this manual precisely because browser automation cannot reproduce the browser's own zoom control, and driving CSS `zoom` or a proportionally narrower viewport is **not** that test — it approximates the layout consequence and reproduces neither the device-pixel rendering nor the browser's rounding.
+**Performed by the project owner in Chrome, at the browser's own zoom control.** [[ADR-007 Product Experience Blueprint Authority and Adoption Boundary]] Decision 13 keeps this manual precisely because automation cannot reproduce it: driving CSS `zoom` or a proportionally narrower viewport approximates the layout consequence and reproduces neither the device-pixel rendering nor the browser's rounding. Both were run earlier and recorded as supporting evidence only; they did not discharge the check, and this section previously said so.
 
-What was run, recorded as **supporting evidence only**:
+**The evidence, as reported by the owner:**
 
-- CSS `zoom: 2` at 1280×800, and a 640×400 viewport (the CSS viewport a 1280×800 window has at 200%): no horizontal overflow, no overflowing element, the rail correctly collapsed to the drawer with every destination still reachable, headings and controls legible.
+- Chrome visibly reported **Zoom 200%** — the control's own indicator, not an emulated one.
+- Maximized: `innerWidth` **1002**, `scrollWidth` = `clientWidth` = **1002**. No horizontal overflow.
+- All five shell routes inspected visually — Dashboard, Projects, Project detail, AI Chat, Settings.
+- No horizontal overflow, no clipping, no overlap, no unusable control on any route.
+- The two-column form rows held: project asset rows and the Settings AI Spend row both clean — the rows whose intrinsic-width defect CI caught at 768px.
+- Chrome then windowed **while still at 200%**: the compact header appeared, as §9a rule 2 requires.
+- The drawer opened with identity, the four destinations, the signed-in address, Sign out and Close all visible; **scrim polarity correct** (the R5 correction, confirmed by eye at real zoom); Close worked.
+- Chrome restored to 100% afterwards.
 
-That evidence is consistent with the check passing. **It does not discharge it.** The check is completed by the project owner during review, and [[#Definition of Done]]'s zoom item stays open until then.
+**Recorded as attested by the owner, not observed by Claude** ([[CLAUDE|CLAUDE.md]] §30b). Claude prepared the environment — a production build served against the deterministic browser-suite fixtures — and made no claim about the outcome.
+
+### The audit found a real defect that every automated check had missed
+
+**`Move to undefined` on Project detail.** The browser suite's fixture (`e2e/stub-api.mjs`) offered `legal_transitions: ["scripting"]`. `scripting` is not a member of `ApiProjectStatus`, so `transitionLabel()` interpolated a missing `STATUS_LABELS` lookup and the control rendered the word `undefined` to the user.
+
+**Nothing failed, and that is the finding.** The route returned 200, the heading was right, the template was right, the keyboard walk reached the button, nothing overflowed. The stub is plain JavaScript — deliberately, so it runs without a build step — so no type-checker ever compared its fixtures against the interfaces they stand in for.
+
+**Corrected:** `legal_transitions: ["planning"]`, which is what the API's own state machine returns from `idea` (one step forward along `_SEQUENCE`; the machine also permits `archive` from anywhere). A focused assertion in `routes.spec.ts` now proves the rendered label reads **Move to Planning** and that `undefined` appears nowhere in the document — asserted on what the page renders rather than on the payload, since the payload is exactly what was untyped. Negative control observed: with the fixture reverted, the new test fails.
+
+**A fixture is a contract with the API it replaces.** This one drifted silently because it was only ever exercised through assertions that did not look at it. That is the same class of gap as §6.3's *"a pairing that is not checked is not passing; it is unknown"*, one layer out.
 
 ### Deliberately not done
 
