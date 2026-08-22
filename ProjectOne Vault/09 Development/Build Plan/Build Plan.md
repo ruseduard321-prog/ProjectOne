@@ -2,15 +2,15 @@
 title: Build Plan
 category: Development
 status: stable
-version: "4.4"
-last_updated: 2026-08-17
+version: "4.7"
+last_updated: 2026-08-22
 tags: [engineering, documentation, workflow]
 aliases: ["Implementation Plan", "Build Roadmap", "Step Index"]
 ---
 
 # ProjectOne Build Plan
 
-The ordered execution index taking ProjectOne from an empty repository to a verified product in the hands of real users. **94 sequential steps** — 36 delivered (31 numbered plus five inserted by owner decision: STEP-11a, STEP-16a, STEP-12a, STEP-16b, STEP-25a), and **58 future steps, STEP-32 through STEP-89**, each sized for a single Claude Code session. Three further step notes are **superseded and carry no status**, so they are deliberately not part of that 94 — they are kept as history in [[#Superseded Step Numbering]].
+The ordered execution index taking ProjectOne from an empty repository to a verified product in the hands of real users. **95 sequential steps** — 36 delivered (31 numbered plus five inserted by owner decision: STEP-11a, STEP-16a, STEP-12a, STEP-16b, STEP-25a), and **59 future steps, STEP-31a through STEP-89**, each sized for a single Claude Code session. Three further step notes are **superseded and carry no status**, so they are deliberately not part of that 95 — they are kept as history in [[#Superseded Step Numbering]].
 
 **The future half of this plan was rebuilt on 2026-08-15**, by owner decision, against the [[Product Coverage Audit]]. That audit measured the complete intended product against what `main` actually implements and found 24 capabilities Missing, 14 Foundation/Partial and — the finding that forced the rebuild — several P0 prerequisites with **no executable step anywhere**: file storage, async execution, the AI capability model beyond chat completion, and the Memory System. A three-step tail could not carry them.
 
@@ -78,6 +78,9 @@ Status appears in two places — the step note and the row below — and they mu
 | STEP-29 | [[STEP-29 Asset Management UI]] | Done | full |
 | STEP-30 | [[STEP-30 Async Job Infrastructure]] | Done | full |
 | STEP-31 | [[STEP-31 Workflow Async Execution]] | Done | full |
+| | **Design Foundation — resumed** | | |
+| STEP-31a | [[STEP-31a Product Experience Blueprint Alignment]] | Not Started | full |
+| | **Platform Substrate — resumed** | | |
 | STEP-32 | [[STEP-32 Media Processing Pipeline]] | Not Started | outline |
 | STEP-33 | [[STEP-33 Storage Quotas and Lifecycle]] | Not Started | outline |
 | STEP-34 | [[STEP-34 Notifications Domain]] | Not Started | outline |
@@ -153,10 +156,12 @@ Status appears in two places — the step note and the row below — and they mu
 
 The future sequence is grouped into fourteen phases. Grouping is descriptive — **numbering is one continuous sequence**, and a phase boundary is not a gate.
 
+**One phase is interleaved, and the ordered table says so rather than hiding it.** [[STEP-31a Product Experience Blueprint Alignment]] belongs to **Design Foundation** — it establishes shared visual and interaction substrate, which is what that phase is for and what [[STEP-26 Product Design System Foundation]] began — but it *executes* between [[STEP-31 Workflow Async Execution]] and [[STEP-32 Media Processing Pipeline]], where the owner's design milestone placed it. Platform Substrate therefore pauses at STEP-31 and resumes at STEP-32, and the table carries a `— resumed` marker at each transition so a reader scanning it is never misled about which phase a row belongs to. This is the same principle already stated above: **steps execute in table order, and a phase boundary is not a gate.**
+
 | Phase | Steps | Count | What it establishes |
 |---|---|---|---|
-| **Design Foundation** | STEP-26–STEP-26 | 1 | The shared visual and interaction system, established once against the surfaces that actually exist. |
-| **Platform Substrate** | STEP-27–STEP-35 | 9 | The absent infrastructure every media, approval and automation capability sits behind: storage, async execution, and enough notification to make an asynchronous run visible. |
+| **Design Foundation** | STEP-26, STEP-31a | 2 | The shared visual and interaction system, established once against the surfaces that actually exist. |
+| **Platform Substrate** | STEP-27–STEP-35, excluding STEP-31a | 9 | The absent infrastructure every media, approval and automation capability sits behind: storage, async execution, and enough notification to make an asynchronous run visible. |
 | **AI Capability Expansion** | STEP-36–STEP-42 | 7 | Turning a chat-only AI layer into one that can produce media and take actions, with every prompt versioned before the agents that depend on them are written. |
 | **Context and Memory** | STEP-43–STEP-48 | 6 | Shared context assembly and the five-scope Memory System, with the user controls [[CLAUDE|CLAUDE.md]] §15 requires of it. |
 | **Workflow and Agent Infrastructure** | STEP-49–STEP-53 | 5 | The engine extensions and the agent-safety ceiling that must exist before agents can chain. |
@@ -302,6 +307,10 @@ Capabilities the [[Product Coverage Audit]] recorded as specified-but-absent whi
 | Marketplace, enterprise capabilities, formal certification | [[Roadmap]] Phase 3, explicitly beyond this plan |
 | Idempotency keys | Recorded as an open gap since STEP-22. Folded into the API surfaces of the steps that need them rather than carried as a standalone step |
 | Public paid launch | The owner's release decision makes the first release a free invite-only beta. The step that publishes publicly will be created when that decision is made |
+| Studio, Library, Recipes, Review, the creation plan and the deliverable/version nouns | Proposed by the design blueprint preserved on 2026-08-22, and **proposals rather than descriptions** — its own README says `recipe` and `deliverable` "do not exist as product nouns anywhere in the repository today". Each needs owner approval of the capability, then an owning step, in that order. [[ADR-007 Product Experience Blueprint Authority and Adoption Boundary]] Decision 3 |
+| The paid-media pack and any advertising subsystem | Drawn by the same blueprint, generated by nothing, and owned by no step. **Bounded by two settled owner decisions of 2026-08-22, not by an open question:** ProjectOne shows **no third-party advertising** to its users, and **does not buy, bid or place media** — it makes the creative. Any future advertising work inherits both constraints |
+| An activity / audit surface | **A gap the blueprint surfaced rather than created.** [[STEP-19 Settings and BYOK UI]] deferred it to "a step that owns the audit surface"; no such step was ever created. STEP-34 declares no frontend, STEP-35 is scoped to notifications and STEP-77 to members. **Recorded and open; it does not block [[ADR-007 Product Experience Blueprint Authority and Adoption Boundary]]** (owner decision, 2026-08-22), and neither that ADR nor [[STEP-31a Product Experience Blueprint Alignment]] creates the route |
+| A workflow-run route (`/runs`, run detail) | The same gap in a second place. Run data is read today and rendered on [[STEP-24 Dashboard]]; that step explicitly declined to invent a route and deferred the link to "a later step" that no step took. **Recorded and open on the same terms** — non-blocking, and created by neither ADR-007 nor STEP-31a |
 
 ## Source Documents
 
@@ -672,6 +681,29 @@ The fix re-throws `ApiUnreachableError` and leaves every other error on the exis
 Two findings are worth carrying forward. A **`SECURITY DEFINER` role guard silently never fires**: `current_user` inside such a function is the function's owner, so a guard testing for `authenticated` read `postgres` and refused nothing. It is now `SECURITY INVOKER`, and the trap is recorded in [[RLS Policy Pattern]] because it will recur on the next table whose only client write is an erasure. And **the ADR needed one reading reconciled** — §5's "identity established before execution" against §4's "short, discrete transactions" — resolved by proving the identity in a short session that closes before the handler is invoked, and reported to the owner rather than settled quietly.
 
 **Workflow runs are still synchronous.** This step ships the substrate and proves it on an infrastructure probe; [[STEP-31 Workflow Async Execution]] writes the first real handler and is now expanded to full detail. The suite grew from 1039 tests to 1120.
+
+### The product experience blueprint arrived early — 2026-08-22
+
+**A complete design pass exists, and it arrived earlier in the plan than this roadmap expected.** [[STEP-31 Workflow Async Execution]] merged as `a2804aad` (PR #52) on 2026-08-20, and the owner then paused the plan for a design milestone rather than expanding the next step — STEP-31's expansion task was **withdrawn at that gate and the withdrawal recorded in the step**, which is why [[STEP-32 Media Processing Pipeline]] is still `outline`. Commit `5d10a81` (PR #54) preserved the result on 2026-08-22: a complete product-experience prototype at `ProjectOne Vault/12 Assets/Prototypes/design-phase-2/`, thirty route patterns across eighteen view modules, with its own decision record, route map and verification evidence.
+
+**The plan had scheduled that work for STEP-79 and STEP-80.** [[STEP-26 Product Design System Foundation]] excluded blueprints for domains that do not exist on the stated grounds that designing them *"would design against a specification rather than a product"*. The blueprint covers them anyway, plus several domains no step in this plan owns.
+
+**The owner's decision, taken 2026-08-22: adopt the shared foundation now, and nothing beyond it.** Domain pages are implemented when their real functionality exists, [[STEP-79 Domain Screen Blueprints]] remains the final blueprint validation and reconciliation, and [[STEP-80 Product-wide UI Rebuild]] remains the product-wide consolidation pass. Prototype-only and proposed capabilities do **not** become product commitments, and no speculative route, dead navigation link, backend behaviour, security change or fake functionality enters the product on the strength of a design.
+
+**[[STEP-31a Product Experience Blueprint Alignment]] was inserted by owner decision between STEP-31 and STEP-32** to carry exactly that boundary — adding and removing steps being a plan change rather than an execution detail ([[Execution Protocol#Future Step Synchronization]]). STEP-32 through STEP-89 keep their numbers. The plan is now **95 steps: 36 delivered, 59 future**, in the same fourteen phases.
+
+**It belongs to Design Foundation, not to Platform Substrate.** The step establishes shared visual and interaction substrate — the phase [[STEP-26 Product Design System Foundation]] opened — and shares nothing with the storage, async-execution and notification infrastructure Platform Substrate exists to deliver. It merely *executes* inside that phase's range, because that is where the design milestone fell. **Design Foundation is therefore `STEP-26, STEP-31a`, count 2, and Platform Substrate is `STEP-27–STEP-35 excluding STEP-31a`, count 9** — the two totals unchanged at 95 and the phase count unchanged at fourteen. The ordered table marks both transitions `— resumed` so the interleave is visible rather than inferred.
+
+**The step's governing ADR is accepted, and nothing is built yet.** [[ADR-007 Product Experience Blueprint Authority and Adoption Boundary]] was **approved by the owner on 2026-08-22** and is binding — all 13 decisions approved as written, no value changed at the gate. Its contracts are settled; its delivery is STEP-31a, which stays `Not Started`, so the production stylesheet, shell and test harness are unchanged. It establishes the blueprint as an approved design *reference* rather than executable production authority, fixes the authority order — accepted ADRs and [[Design System]] first, then the approved blueprint and its handoff, then prototype implementation details — and preserves the blueprint's own Now / Planned / Proposed provenance boundary as binding. It narrowly supersedes exactly one row of [[ADR-003 Product Visual Language and Token Semantics]] and leaves every other decision in it intact.
+
+**Two things the audit found are worth carrying forward.** The colour work turned out **not** to be architectural: measured *before adoption*, the blueprint's semantic role set matches production exactly — twenty-two roles on each side, none added, none dropped — so three changed values and two added primitives are the routine revalue [[Design System#6.5 How to change a token]] already governs. What is genuinely new is a theme-selection mechanism, a page-template system, motion tokens, and an **inverted-surface family the blueprint needed but never named** — which, if adopted, means the *production* role set grows even though the blueprint's did not. And **two gaps in this plan were surfaced rather than created**: no step owns an activity/audit surface, and no step owns a workflow-run route. **Neither blocks ADR-007** — the owner settled that on 2026-08-22. They stay recorded in [[#Deferred by Decision]] as open plan gaps, and neither ADR-007 nor STEP-31a creates either route or schedules either capability.
+
+**Four owner decisions were taken on 2026-08-22 and are settled, not open.** `--text-4xl` is `3.25rem` (52px) with line-height `1.05`; **Playwright** is approved as the shared browser-testing contract and is added inside STEP-31a; the two activity/run gaps do not gate the ADR; and two standing product constraints are adopted — **ProjectOne shows no third-party advertising, and does not buy, bid or place media. It makes the creative.** ADR-007 was then accepted as a whole on the same day, carrying those four in unchanged.
+
+**Why STEP-79 and STEP-80 both remain.** A blueprint drawn before the behaviour exists is a hypothesis about the product, not a description of it. STEP-79 stops being the step that designs every screen from zero — that work now exists — and becomes the step that enumerates the real product as it then stands, validates the preserved blueprint against real behaviour, completes what is missing, reconciles deviations deliberately and obtains owner approval for the final set. STEP-80 is unchanged: the single implementation pass over the domain pages STEP-31a deliberately does not rebuild.
+
+> [!note] Three steps still have no Current State entry
+> STEP-27, STEP-28 and now **STEP-31** closed without one. STEP-31's delivery is fully recorded in its own note ([[STEP-31 Workflow Async Execution#Step Completion Record]]); this entry references that merge but does not back-fill the record, because writing another step's completion record inside this one is the scope widening [[CLAUDE|CLAUDE.md]] §29 forbids. It remains an open item for the owner.
 
 ---
 

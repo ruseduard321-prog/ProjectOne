@@ -374,6 +374,6 @@ Merged to `main` as **`a2804aad`** via **PR #52**, squash-merged by the project 
 ## Navigation
 
 - **Previous:** [[STEP-30 Async Job Infrastructure]]
-- **Next:** [[STEP-32 Media Processing Pipeline]]
+- **Next:** [[STEP-31a Product Experience Blueprint Alignment]]
 - **Parent:** [[Build Plan]]
 - **Related Notes:** [[Product Coverage Audit]] · [[Execution Protocol]] · [[ADR-006 Workflow Async Execution and Run Reconciliation]] · [[Async Job Execution]] · [[Workflow Execution]]

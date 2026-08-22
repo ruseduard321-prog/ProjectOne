@@ -2,8 +2,8 @@
 title: Design System
 category: Design
 status: stable
-version: "2.1"
-last_updated: 2026-08-15
+version: "2.4"
+last_updated: 2026-08-22
 tags: [design, documentation, feature]
 aliases: ["Design System & Visual Language", "Visual Language"]
 source_pdf: "[[12 Assets/PDF/ProjectOne_Design_System_Visual_Language_v1.0.pdf|ProjectOne_Design_System_Visual_Language_v1.0.pdf]]"
@@ -21,6 +21,36 @@ This document defines the visual identity and user experience principles of Proj
 > The direction below was approved on 2026-08-14; the token values expressing it (§4–6) were approved on **2026-08-15** through [[ADR-003 Product Visual Language and Token Semantics]] (`Accepted`), written by [[STEP-26 Product Design System Foundation]]. **Both are binding.**
 >
 > Concept reference: `ProjectOne_Product_Design_Direction_v1.0.png` in `12 Assets/Images`. **It is direction, not a screen specification.** It illustrates surfaces that do not exist today; the rules below are what is binding, not the pixels in that image.
+
+> [!important] A set of changes to this document is **accepted and not yet applied** — 2026-08-22
+> The **Design Phase 2 Artifact** (`ProjectOne Vault/12 Assets/Prototypes/design-phase-2/`, preserved as `5d10a81`) is the complete product-experience blueprint in this direction. It is an approved design **reference**, not executable production authority, and it does not change anything in this document by existing.
+>
+> [[ADR-007 Product Experience Blueprint Authority and Adoption Boundary]] settles a bounded set of changes arising from it, and was **approved by the project owner on 2026-08-22**. All 13 of its decisions are binding.
+>
+> **Binding, but not yet applied here.** [[STEP-31a Product Experience Blueprint Alignment]] delivers them and is `Not Started`, so **every value, rule and contract in this document below still stands exactly as written**, and `apps/web/src/app/globals.css` is unchanged. A reader implementing today follows this document; a reader planning follows ADR-007. The two converge when STEP-31a lands, which is the change that will edit the sections named below.
+>
+> What will change, and where — recorded so a reader knows what is settled and pending application, not duplicated from the Artifact's own documents:
+>
+> | Section | Proposed change | Kind |
+> |---|---|---|
+> | §6.1, §6.2 | `--ivory-75` added; light `--color-surface` → `ivory-75`, light `--color-surface-raised` → `ivory-50` | Routine revalue under §6.5 — owner sign-off on the §6.1 specification change, no ADR |
+> | §6.1, §6.2 | `--ink-975` added; dark `--color-nav-surface` → `ink-975` | Same mechanism, but it narrowly supersedes a value printed in [[ADR-003 Product Visual Language and Token Semantics]] Decision 2, so it needs ADR-007 |
+> | §6.2, §6.4 | Native `color-scheme` on `:root`, and a three-state `[data-theme]` cascade beside `prefers-color-scheme` | New shared runtime contract |
+> | §5.2 | `--text-4xl: 3.25rem` (52px), line-height `1.05` — **owner-selected 2026-08-22.** The **1.25 scale applies through `--text-3xl`**, and `--text-4xl` is documented as a deliberate **display-only exception**, validated by the Artifact's measured composition rather than derived from the ratio | New token + a stated exception to §5.2 |
+> | §6.2 | An **inverted-surface** semantic family, so canvas components stop reaching for `nav-*` and for raw primitives. Approved **in principle**; membership derived from real consumers and values from contrast measurement — and **if no current consumer justifies a role, nothing is added** | New token semantics |
+> | §7 | Three page-template contracts — **Cockpit, Workbench, Focus** — selected by a **server-rendered shared layout primitive** emitting `data-template`. `<body>` keeps global theme behaviour only; no client mutation, no hydration race, no prototype-chrome dependency | New shared contract |
+> | §8 | Motion tokens replacing §8's prose-only specification | New tokens |
+> | §9.2 | **Playwright** as the shared browser-testing contract, wired into required CI — owner-approved 2026-08-22 | New testing contract |
+>
+> **On the role count.** Measured *before adoption*, the Artifact's semantic role set matches production exactly — twenty-two on each side, none added, none dropped — which is why its colour work is §6.5 procedure rather than architecture. That is **not** a claim that the production role set stays at 22: the inverted-surface family above would grow it, by roles the Artifact needed but never named.
+>
+> **The Artifact's "roughly 64px" sentence is stale prose.** It implements `3.25rem` = 52px, which is the value the composition was measured against and the value the owner selected. **The preserved Artifact is not edited to correct it** — it is a preserved record, and this document is authority rank 1.
+>
+> **The Artifact's `QA.md` discharges no check in this document.** It measures the prototype against itself in a `data:` harness. Production contrast verification is `scripts/check-contrast.py` in CI (§6.3), which `QA.md` never ran and — the palettes having diverged — could not have run.
+>
+> **Four owner decisions of 2026-08-22 are settled inputs, not open questions:** the `--text-4xl` value above; Playwright as the browser-testing contract; that the unowned activity/audit and workflow-run surfaces do **not** gate the ADR and are created by neither it nor STEP-31a; and two standing product constraints — **ProjectOne shows no third-party advertising, and does not buy, bid or place media.**
+>
+> Adoption is bounded and sequenced: [[STEP-31a Product Experience Blueprint Alignment]] takes the shared foundation for routes that already exist and rebuilds no domain page; each later frontend step consumes the blueprint when it builds its own surface; [[STEP-79 Domain Screen Blueprints]] reconciles the blueprint against the real product; [[STEP-80 Product-wide UI Rebuild]] implements it product-wide. See [[Design MOC#Authority Order]].
 
 ProjectOne looks like a **production studio's workspace**, not a SaaS dashboard. The identity in one line:
 
@@ -368,6 +398,17 @@ Written down because "the architecture supports it" is worth nothing if the proc
 
 Buttons, cards, tables, forms, dialogs and navigation elements must share identical spacing, radius, elevation and interaction behavior across the application.
 
+> [!info] How a step that builds a screen consumes the blueprint
+> Any Build Plan step introducing a frontend surface reads the **Design Phase 2 Artifact** as reference for that surface, at authority rank 2 ([[Design MOC#Authority Order]]) — this document and the accepted ADRs outrank it, and the prototype's own CSS and JavaScript rank below both.
+>
+> Three rules bound that use, and none of them is discretionary:
+>
+> 1. **The blueprint informs the screen; it does not authorise it.** A route, control or product noun appearing in the Artifact is not scheduled by appearing there. Anything the Artifact labels `Proposed` needs the owner's approval of the capability and an owning step, in that order.
+> 2. **No prototype file is copied.** Contracts are re-derived and implemented in the production architecture. The Artifact is not a Tailwind build and proves nothing about how its tokens compile.
+> 3. **Where the blueprint and this document disagree, this document wins**, and the step says so rather than resolving it quietly.
+>
+> A surface built this way is still reconciled at [[STEP-79 Domain Screen Blueprints]] and implemented product-wide at [[STEP-80 Product-wide UI Rebuild]].
+
 ### 7.1 Shared component contracts
 
 **A contract is the component's public interface plus the states it is required to define.** Recorded here so a screen consumes a component rather than reinventing one, and so a component's async behaviour is decided once instead of per screen (§10).
@@ -553,4 +594,4 @@ The Design System is the single source of truth for every interface decision. Ne
 - **Previous:** —
 - **Next:** —
 - **Parent:** [[Design MOC]]
-- **Related Notes:** [[Frontend Architecture]] · [[React Standards]] · [[Dashboard]] · [[Design Backlog and UI Vision]] · [[STEP-14 Design System Tokens]] · [[STEP-26 Product Design System Foundation]] · [[ADR-003 Product Visual Language and Token Semantics]] · [[Chapter 04 - React Standards]] · [[Chapter 05 - NextJS Architecture]]
+- **Related Notes:** [[ADR-007 Product Experience Blueprint Authority and Adoption Boundary]] · [[Frontend Architecture]] · [[React Standards]] · [[Dashboard]] · [[Design Backlog and UI Vision]] · [[STEP-14 Design System Tokens]] · [[STEP-26 Product Design System Foundation]] · [[ADR-003 Product Visual Language and Token Semantics]] · [[Chapter 04 - React Standards]] · [[Chapter 05 - NextJS Architecture]]
