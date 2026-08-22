@@ -1,19 +1,19 @@
 ---
 title: STEP-31a Product Experience Blueprint Alignment
 category: Development/Build Step
-status: draft
-version: "1.8"
+status: stable
+version: "2.0"
 last_updated: 2026-08-22
 tags: [engineering, workflow, build-step, design, frontend]
 step_id: STEP-31a
-step_status: In Progress
+step_status: Done
 detail_level: full
 phase: "Design Foundation"
 ---
 
 # STEP-31a — Product Experience Blueprint Alignment
 
-**Status:** In Progress
+**Status:** Done
 **Phase:** Design Foundation — The shared visual and interaction system, established once against the surfaces that actually exist.
 **Phase note:** this step belongs to Design Foundation, which [[STEP-26 Product Design System Foundation]] opened, but it **executes** between [[STEP-31 Workflow Async Execution]] and [[STEP-32 Media Processing Pipeline]], where the owner's design milestone placed it. Platform Substrate pauses at STEP-31 and resumes at STEP-32; the [[Build Plan]] table marks both transitions. Steps execute in table order, and a phase boundary is not a gate.
 **Detail level:** full — inserted by owner decision on 2026-08-22 and written at full detail on insertion. It was not expanded by a predecessor: [[STEP-31 Workflow Async Execution]]'s expansion task was withdrawn by the project owner on 2026-08-20 when the plan paused for this design milestone.
@@ -207,25 +207,25 @@ The shared foundation the approved blueprint requires exists and is consumed by 
 
 Additionally, per [[Execution Protocol#Step Completion]]:
 
-- [ ] [[ADR-007 Product Experience Blueprint Authority and Adoption Boundary]] re-confirmed `Accepted` and unamended at `origin/main` before implementation began.
-- [ ] `--text-4xl` is `3.25rem` with line-height `1.05`, registered in Tailwind's `--text-4xl` / `--text-4xl--line-height` pairing form.
-- [ ] Every token change ran the full [[Design System#6.5 How to change a token]] procedure, with `globals.css` and `scripts/check-contrast.py` in agreement.
-- [ ] The contrast enumeration is green in CI, with its new pairing count recorded, and the negative control observed.
-- [ ] Playwright is configured and its suite is a **required** check on the `web` CI job.
-- [ ] Every browser proposition in [[#Required Tests and Proofs]] passes, observed.
-- [ ] Every pre-existing behavioural test passes unmodified.
-- [ ] `aria-current`, the skip link and the mobile drawer's focus contract have tests, which they did not before.
+- [x] [[ADR-007 Product Experience Blueprint Authority and Adoption Boundary]] re-confirmed `Accepted` and unamended at `origin/main` before implementation began — `accepted`, v2.0, all 13 decisions as written.
+- [x] `--text-4xl` is `3.25rem` with line-height `1.05`, registered in Tailwind's `--text-4xl` / `--text-4xl--line-height` pairing form — asserted statically, and the compiled output verified by probe.
+- [x] Every token change ran the full [[Design System#6.5 How to change a token]] procedure, with `globals.css` and `scripts/check-contrast.py` in agreement — the drift guard now catches four classes, not one.
+- [x] The contrast enumeration is green in CI, with its count recorded (**90 pairings**, unchanged — and §6.3 records why ADR-007 Decision 5's prediction that it would rise is incorrect), and the negative controls observed.
+- [x] Playwright is configured and its suite runs inside the **required** `web` CI job, green on `ef057fb`.
+- [x] Every browser proposition in [[#Required Tests and Proofs]] passes, observed — **82 browser tests**, `retries: 0`.
+- [x] Every pre-existing behavioural test passes unmodified — **350 unit tests** across 28 files; no pre-existing test file was edited.
+- [x] `aria-current`, the skip link and the mobile drawer's focus contract have tests, which they did not before.
 - [x] The 200% zoom manual check is performed and its result recorded — the only manual item. **Performed by the owner in Chrome 2026-08-22: 200% indicated, `innerWidth` 1002, `scrollWidth` = `clientWidth`, all five routes clean, drawer and scrim correct when windowed at 200%.** Attested by the owner, not observed by Claude.
-- [ ] `<body>` carries theme state only; `data-template` is server-rendered and stable across navigation.
-- [ ] Required CI green, and the manual checklist complete.
-- [ ] Documentation updated: [[Design System]], [[Design MOC]], ADR indexes, and the statement of how future frontend steps consume the blueprint.
-- [ ] Owner approval obtained — this step is Critical.
-- [ ] Status synchronized between this note and the [[Build Plan]] index.
-- [ ] [[STEP-32 Media Processing Pipeline]] left `outline` and `Not Started`, deliberately unexpanded.
+- [x] `<body>` carries theme state only; `data-template` is server-rendered — proved from the raw document response, not the hydrated DOM — and stable across client-side navigation.
+- [x] Required CI green on `ef057fb` — `api` pass, `web` pass, `governance docs` pass — and the manual checklist complete.
+- [x] Documentation updated: [[Design System]] (v2.6), [[Design MOC]] (v1.7), the ADR references they carry, and the statement of how future frontend steps consume the blueprint.
+- [x] Owner approval obtained — this step is Critical. The owner performed the manual 200% audit, directed all five review corrections, and instructed closure on 2026-08-22. **The merge itself remains the owner's.**
+- [x] Status synchronized between this note and the [[Build Plan]] index — both read `Done`.
+- [x] [[STEP-32 Media Processing Pipeline]] left `outline` and `Not Started`, deliberately unexpanded — verified at closure.
 
-## Implementation Record (In Progress)
+## Implementation Record
 
-Written during implementation on 2026-08-22. **The step remains `In Progress`**: it becomes `Done` only after independent review, green required CI and the owner gate ([[Execution Protocol#Step Completion]]).
+Written during implementation on 2026-08-22, and kept as written. The step reached `Done` after three independent review rounds, the owner's real 200% zoom audit, green required CI on [PR #56](https://github.com/ruseduard321-prog/ProjectOne/pull/56) and the owner's closure decision ([[Execution Protocol#Step Completion]]). **`Done` means ready to merge, not merged** — the owner merges.
 
 ### What was built
 
@@ -329,6 +329,30 @@ The first pipeline run on [PR #56](https://github.com/ruseduard321-prog/ProjectO
 - **No appearance control.** The cascade is the contract a control would be built on; the surface itself is `Proposed` under ADR-007 Decision 3.
 - **`--text-4xl` has no consumer.** Where a screen's editorial display moment falls belongs to the step that owns the screen. Verified to compile correctly by probe: `.text-4xl{font-size:3.25rem;line-height:var(--tw-leading,1.05)}`.
 - **No domain page rebuilt**, no route created, no product noun introduced, and [[STEP-32 Media Processing Pipeline]] left `outline` / `Not Started`.
+
+## Step Completion Record
+
+**Closure recorded 2026-08-22, after the final implementation CI run passed on `ef057fb`.** `ef057fb` is the last implementation commit that CI validated, **not** the closure commit — this record and the [[Build Plan]] row are written after it. Every condition in [[Execution Protocol#Step Completion]] holds:
+
+| Condition | State |
+|---|---|
+| Definition of Done | every item satisfied and ticked above |
+| Local validation | observed: 82 browser tests, 350 unit tests, lint, typecheck, production build, contrast + overlay polarity, governance sync |
+| Documentation | [[Design System]] v2.6, [[Design MOC]] v1.7, this note, [[Build Plan]] |
+| Status synchronization | this note and the [[Build Plan]] row both read `Done` |
+| Critical issues | none outstanding |
+| Branch and tree | `step-31a-product-experience-blueprint-implementation`, clean tree at every validation point |
+| Pull request | [PR #56](https://github.com/ruseduard321-prog/ProjectOne/pull/56) — fully validated for squash merge |
+| Required CI | `api` pass · `web` pass · `governance docs` pass on the final implementation commit |
+| Manual checklist | complete — the 200% zoom audit, performed by the owner |
+| Review conversations | none raised on the PR; three review rounds resolved in session (R1–R5) |
+| Owner gate | satisfied — the owner ran the manual audit, directed every correction and instructed closure |
+
+**PR #56 is fully validated for squash merge.** `Done` means ready to merge, never merged ([[Execution Protocol#Step Completion]]) — the merge is the owner's.
+
+**The squash merge gives `main` one permanent commit** carrying implementation, documentation and this status together, per [[Execution Protocol#One Step One Commit On Main]]. The branch's own commits are working history and are not preserved.
+
+**Next:** [[STEP-32 Media Processing Pipeline]], left `outline` / `Not Started` and deliberately unexpanded by this step.
 
 ## Risks and Governance Gates
 
