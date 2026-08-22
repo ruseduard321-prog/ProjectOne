@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en" data-annotations="off">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Cutting Room — ProjectOne product blueprint</title>
+<meta name="robots" content="noindex, nofollow">
+<meta name="description" content="Static, dependency-free design blueprint for ProjectOne. Not the live application.">
+<link rel="stylesheet" href="styles.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='3' fill='%23121110'/><circle cx='8' cy='8' r='3' fill='%23F0663A'/></svg>">
+</head>
+<body>
+
+<!-- ============================================================ ICON SPRITE
+     24x24, 1.5 stroke, round caps and joins, currentColor. One coherent set.
+     No emoji is used as an interface icon anywhere in this product.
+     ============================================================ -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs>
+<symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5.5 9.5V20a1 1 0 0 0 1 1H9.5v-5.5h5V21h3a1 1 0 0 0 1-1V9.5"/></symbol>
+<symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 3 3 7.5 12 12l9-4.5L12 3Z"/><path d="m3 12.5 9 4.5 9-4.5"/><path d="m3 17 9 4.5L21 17"/></symbol>
+<symbol id="i-activity" viewBox="0 0 24 24"><path d="M3 12h3.5l2.5-7 4 14 2.5-7H21"/></symbol>
+<symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 6h9"/><path d="M17 6h3"/><circle cx="15" cy="6" r="2"/><path d="M4 12h3"/><path d="M11 12h9"/><circle cx="9" cy="12" r="2"/><path d="M4 18h9"/><path d="M17 18h3"/><circle cx="15" cy="18" r="2"/></symbol>
+<symbol id="i-grid" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></symbol>
+<symbol id="i-scissors" viewBox="0 0 24 24"><circle cx="6" cy="6.5" r="2.5"/><circle cx="6" cy="17.5" r="2.5"/><path d="M8 8 20 19"/><path d="M8 16 20 5"/></symbol>
+<symbol id="i-history" viewBox="0 0 24 24"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1"/><path d="M3.5 4.5V10H9"/><path d="M12 7.5v5l3.2 1.9"/></symbol>
+<symbol id="i-message-circle" viewBox="0 0 24 24"><path d="M21 11.5a8 8 0 0 1-11.6 7.1L4 20.5l1.9-5.4A8 8 0 1 1 21 11.5Z"/></symbol>
+<symbol id="i-message-square" viewBox="0 0 24 24"><path d="M20 4H4a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h3v4l4.5-4H20a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1Z"/></symbol>
+<symbol id="i-users" viewBox="0 0 24 24"><circle cx="9.5" cy="8" r="3.2"/><path d="M3.5 20a6 6 0 0 1 12 0"/><path d="M16 5.2a3.2 3.2 0 0 1 0 5.6"/><path d="M17.5 14.4A6 6 0 0 1 20.5 20"/></symbol>
+<symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 9a6 6 0 0 1 12 0c0 4 1.5 5.5 2 6H4c.5-.5 2-2 2-6Z"/><path d="M10 19a2 2 0 0 0 4 0"/></symbol>
+<symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m6 9.5 6 6 6-6"/></symbol>
+<symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="m9.5 6 6 6-6 6"/></symbol>
+<symbol id="i-chevron-left" viewBox="0 0 24 24"><path d="m14.5 6-6 6 6 6"/></symbol>
+<symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="M20 12H4"/><path d="m10 6-6 6 6 6"/></symbol>
+<symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M4 12h16"/><path d="m14 6 6 6-6 6"/></symbol>
+<symbol id="i-corner-down-right" viewBox="0 0 24 24"><path d="M5 4v8a3 3 0 0 0 3 3h11"/><path d="m15 11 4 4-4 4"/></symbol>
+<symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></symbol>
+<symbol id="i-x" viewBox="0 0 24 24"><path d="m6 6 12 12"/><path d="m18 6-12 12"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+<symbol id="i-check-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8 12.5 2.5 2.5L16 9.5"/></symbol>
+<symbol id="i-alert-triangle" viewBox="0 0 24 24"><path d="M12 4.5 2.8 20h18.4L12 4.5Z"/><path d="M12 10v4.5"/><path d="M12 17.5h.01"/></symbol>
+<symbol id="i-alert-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V13"/><path d="M12 16.5h.01"/></symbol>
+<symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 16.5V11"/><path d="M12 7.5h.01"/></symbol>
+<symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5.2l3.2 1.9"/></symbol>
+<symbol id="i-hourglass" viewBox="0 0 24 24"><path d="M7 3h10"/><path d="M7 21h10"/><path d="M7 3v3.5c0 2 5 3.8 5 5.5 0-1.7 5-3.5 5-5.5V3"/><path d="M7 21v-3.5c0-2 5-3.8 5-5.5 0 1.7 5 3.5 5 5.5V21"/></symbol>
+<symbol id="i-spinner" viewBox="0 0 24 24"><path d="M12 3.5v3"/><path d="M12 17.5v3"/><path d="M20.5 12h-3"/><path d="M6.5 12h-3"/><path d="m18 6-2.1 2.1"/><path d="m8.1 15.9-2.1 2.1"/><path d="m18 18-2.1-2.1"/><path d="M8.1 8.1 6 6"/></symbol>
+<symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5L8 5.5Z"/></symbol>
+<symbol id="i-film" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="2"/><path d="M8 4.5v15"/><path d="M16 4.5v15"/><path d="M3 12h18"/></symbol>
+<symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="2"/><circle cx="8.5" cy="9.5" r="1.8"/><path d="m3.5 17 5-5 4.5 4.5 3-3 4.5 4.5"/></symbol>
+<symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 4v4.5h-4.5"/></symbol>
+<symbol id="i-shield-check" viewBox="0 0 24 24"><path d="M12 3 5 5.7v5.6c0 4.3 3 7.6 7 9.7 4-2.1 7-5.4 7-9.7V5.7L12 3Z"/><path d="m9 12 2.2 2.2L15.5 10"/></symbol>
+<symbol id="i-wallet" viewBox="0 0 24 24"><path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H18a1 1 0 0 1 1 1v2"/><rect x="4" y="7.5" width="16" height="11.5" rx="2"/><path d="M20 12.5h-3.2a1.8 1.8 0 0 0 0 3.6H20"/></symbol>
+<symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2"/><path d="M12 19.5v2"/><path d="M21.5 12h-2"/><path d="M4.5 12h-2"/><path d="m18.4 5.6-1.4 1.4"/><path d="m7 17-1.4 1.4"/><path d="m18.4 18.4-1.4-1.4"/><path d="M7 7 5.6 5.6"/></symbol>
+<symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"/></symbol>
+<symbol id="i-monitor" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12.5" rx="2"/><path d="M9 20.5h6"/><path d="M12 16.5v4"/></symbol>
+<symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></symbol>
+<symbol id="i-file-text" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z"/><path d="M14 3v5h5"/><path d="M9 13h6"/><path d="M9 17h4"/></symbol>
+<symbol id="i-lock" viewBox="0 0 24 24"><rect x="4.5" y="10" width="15" height="10.5" rx="2"/><path d="M8 10V7.5a4 4 0 0 1 8 0V10"/></symbol>
+<symbol id="i-ban" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/></symbol>
+<symbol id="i-zap" viewBox="0 0 24 24"><path d="M13 2.5 4.5 13.5H11l-.5 8L19 10.5h-6.5l.5-8Z"/></symbol>
+<symbol id="i-inbox" viewBox="0 0 24 24"><path d="M3.5 13.5H8l1.5 3h5l1.5-3h4.5"/><path d="M5.6 5.2A2 2 0 0 1 7.4 4h9.2a2 2 0 0 1 1.8 1.2l2.1 8.3v4a2 2 0 0 1-2 2H5.5a2 2 0 0 1-2-2v-4l2.1-8.3Z"/></symbol>
+<symbol id="i-log-out" viewBox="0 0 24 24"><path d="M14 20H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h8"/><path d="M17 15.5 20.5 12 17 8.5"/><path d="M20.5 12H10"/></symbol>
+<symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="3"/></symbol>
+<symbol id="i-book" viewBox="0 0 24 24"><path d="M4 4.5A1.5 1.5 0 0 1 5.5 3H19v15H5.5A1.5 1.5 0 0 0 4 19.5v-15Z"/><path d="M4 19.5A1.5 1.5 0 0 0 5.5 21H19v-3"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></symbol>
+<symbol id="i-send" viewBox="0 0 24 24"><path d="M21 3 10.5 13.5"/><path d="M21 3 14.5 21l-4-7.5L3 9.5 21 3Z"/></symbol>
+<symbol id="i-paperclip" viewBox="0 0 24 24"><path d="M20 11.5 12 19.5a5 5 0 0 1-7-7l8.5-8.5a3.4 3.4 0 0 1 4.8 4.8L9.7 17.3a1.8 1.8 0 0 1-2.5-2.5l8-8"/></symbol>
+<symbol id="i-pencil" viewBox="0 0 24 24"><path d="M4 20h4L20 8a2.8 2.8 0 0 0-4-4L4 16v4Z"/><path d="m14.5 5.5 4 4"/></symbol>
+<symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 6.5V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h1.5"/></symbol>
+<symbol id="i-trash" viewBox="0 0 24 24"><path d="M4.5 6.5h15"/><path d="M9.5 6.5V4.5h5v2"/><path d="M6.5 6.5 7.5 20a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1l1-13.5"/></symbol>
+<symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4"/><path d="m7.5 8.5 4.5-4.5 4.5 4.5"/><path d="M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></symbol>
+<symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v12"/><path d="m7.5 11.5 4.5 4.5 4.5-4.5"/><path d="M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></symbol>
+<symbol id="i-more-horizontal" viewBox="0 0 24 24"><circle cx="6" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18" cy="12" r="1.6"/></symbol>
+<symbol id="i-mail" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3.5 6.5 8.5 6.5 8.5-6.5"/></symbol>
+<symbol id="i-flag" viewBox="0 0 24 24"><path d="M5 21V4"/><path d="M5 4.5h11l-2 3.5 2 3.5H5"/></symbol>
+</defs></svg>
+
+<a class="skip-link" href="#main-content">Skip to content</a>
+
+<!-- ============================================================ PROTOTYPE BAR
+     Always present. Deliberately unlike any product surface so this can never
+     be mistaken for the live application.
+     ============================================================ -->
+<div class="protobar" role="region" aria-label="Prototype controls">
+  <span class="protobar__mark"><span class="protobar__dot" aria-hidden="true"></span>Prototype — not the live app</span>
+  <span class="protobar__note">“The Cutting Room” · every name, number and image here is invented</span>
+  <span class="protobar__spacer"></span>
+  <div class="protobar__controls">
+    <label class="u-sr-only" for="scenario">Prototype scenario</label>
+    <select id="scenario" title="Switch the simulated workspace condition"></select>
+    <button type="button" class="switch switch--label" id="anno-toggle" aria-pressed="false">
+      <span class="switch__track" aria-hidden="true"><span class="switch__thumb"></span></span>
+      <span>Annotations</span>
+    </button>
+  </div>
+</div>
+
+<div class="shell">
+
+  <!-- ======================================================== RAIL (md and up) -->
+  <nav class="rail" aria-label="Primary">
+    <div class="rail__brand">
+      <button type="button" class="wsbtn" id="ws-trigger" data-act="ws-menu" aria-expanded="false" aria-haspopup="dialog" aria-controls="ws-popover">
+        <span class="mark" aria-hidden="true"></span>
+        <span class="wsbtn__meta">
+          <span class="wsbtn__name" id="ws-name">Avery Kim Studio</span>
+          <span class="wsbtn__role" id="ws-role">Owner</span>
+        </span>
+        <svg class="icon icon--sm icon-chevron" aria-hidden="true"><use href="#i-chevron-down"/></svg>
+      </button>
+    </div>
+    <div class="rail__nav">
+      <ul class="rail__group" id="rail-nav" role="list"></ul>
+    </div>
+    <div class="rail__foot">
+      <button type="button" class="railsearch" data-act="palette">
+        <svg class="icon icon--sm" aria-hidden="true"><use href="#i-search"/></svg>
+        <span>Search</span><kbd>&#8984;K</kbd>
+      </button>
+      <button type="button" class="wsbtn wsbtn--user" id="user-trigger" data-act="user-menu" aria-expanded="false" aria-haspopup="dialog" aria-controls="user-popover">
+        <span class="avatar avatar--sm" aria-hidden="true">AK</span>
+        <span class="wsbtn__meta">
+          <span class="wsbtn__name" id="user-name">Avery Kim</span>
+          <span class="wsbtn__role" id="user-role">avery@averykim.studio</span>
+        </span>
+        <svg class="icon icon--sm icon-chevron" aria-hidden="true"><use href="#i-chevron-down"/></svg>
+      </button>
+    </div>
+  </nav>
+
+  <!-- ======================================================== CONTENT COLUMN -->
+  <div class="content">
+    <header class="topbar">
+      <div class="topbar__lead">
+        <button type="button" class="iconbtn railtoggle" id="nav-trigger" data-act="nav-open" aria-label="Open navigation" aria-haspopup="dialog" aria-expanded="false" aria-controls="navdrawer">
+          <svg class="icon icon--lg" aria-hidden="true"><use href="#i-menu"/></svg>
+        </button>
+        <a class="backlink" id="topbar-back" href="#/dashboard" hidden>
+          <svg class="icon icon--sm" aria-hidden="true"><use href="#i-arrow-left"/></svg><span>Back</span>
+        </a>
+        <span class="topbar__title" id="topbar-title">Home</span>
+      </div>
+      <div class="topbar__actions">
+        <button type="button" class="iconbtn topbar__search" data-act="palette" aria-label="Search everything">
+          <svg class="icon icon--lg" aria-hidden="true"><use href="#i-search"/></svg>
+        </button>
+        <button type="button" class="iconbtn" id="theme-trigger" data-act="theme-menu" data-pop-align="end" aria-expanded="false" aria-haspopup="dialog" aria-controls="theme-popover" aria-label="Appearance">
+          <svg class="icon icon--lg" id="theme-icon" aria-hidden="true"><use href="#i-monitor"/></svg>
+        </button>
+        <button type="button" class="iconbtn" id="notif-trigger" data-act="notif-menu" data-pop-align="end" aria-expanded="false" aria-haspopup="dialog" aria-controls="notif-popover" aria-describedby="notif-label">
+          <svg class="icon icon--lg" aria-hidden="true"><use href="#i-bell"/></svg>
+          <span class="iconbtn__badge" id="notif-count" aria-hidden="true">2</span>
+          <span class="u-sr-only" id="notif-label">Notifications</span>
+        </button>
+      </div>
+    </header>
+
+    <main class="main" id="main-content" tabindex="-1">
+      <div class="wrap" id="screen"></div>
+    </main>
+  </div>
+</div>
+
+<!-- ============================================================ POPOVERS -->
+<div class="popover" id="ws-popover" role="dialog" aria-label="Workspace" hidden></div>
+<div class="popover" id="user-popover" role="dialog" aria-label="Account" hidden></div>
+<div class="popover" id="theme-popover" role="dialog" aria-label="Appearance" hidden></div>
+<div class="popover" id="notif-popover" role="dialog" aria-label="Notifications" hidden></div>
+<div class="popover" id="dest-popover" role="dialog" aria-label="Destination" hidden></div>
+<div class="popover" id="ess-popover" role="dialog" aria-label="Brief essential" hidden></div>
+
+<!-- ============================================================ OVERLAYS -->
+<dialog id="navdrawer" class="navdrawer" aria-label="Navigation"></dialog>
+<dialog id="drawer" class="drawer" aria-labelledby="drawer-title"></dialog>
+<dialog id="modal" class="modal" aria-labelledby="modal-title"></dialog>
+
+<!-- ============================================================ LIVE REGIONS -->
+<div class="toasts" id="toasts" role="status" aria-live="polite" aria-atomic="false"></div>
+<p class="u-sr-only" id="run-live" role="status" aria-live="polite"></p>
+
+<!-- ============================================================ ANNOTATION LEGEND -->
+<aside class="annolegend" id="annolegend" hidden aria-label="Annotation legend">
+  <strong class="t-xs">What is real</strong>
+  <ul role="list">
+    <li><span class="key" style="background:var(--color-success)"></span><span><strong>Available now</strong> — shipped and verifiable in the repository.</span></li>
+    <li><span class="key" style="background:var(--color-warning)"></span><span><strong>On the plan</strong> — approved and scheduled, not built.</span></li>
+    <li><span class="key" style="background:var(--color-accent)"></span><span><strong>Proposed</strong> — this design proposes it; it needs owner approval.</span></li>
+    <li><span class="key" style="background:var(--color-text-muted)"></span><span><strong>Simulated</strong> — faked here to make the journey clickable.</span></li>
+  </ul>
+</aside>
+
+<script src="campaign.js"></script>
+<script src="prototype.js"></script>
+<script src="screens.js"></script>
+</body>
+</html>
