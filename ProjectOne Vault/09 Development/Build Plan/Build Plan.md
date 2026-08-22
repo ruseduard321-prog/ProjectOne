@@ -2,7 +2,7 @@
 title: Build Plan
 category: Development
 status: stable
-version: "4.7"
+version: "4.8"
 last_updated: 2026-08-22
 tags: [engineering, documentation, workflow]
 aliases: ["Implementation Plan", "Build Roadmap", "Step Index"]
@@ -690,7 +690,7 @@ Two findings are worth carrying forward. A **`SECURITY DEFINER` role guard silen
 
 **The owner's decision, taken 2026-08-22: adopt the shared foundation now, and nothing beyond it.** Domain pages are implemented when their real functionality exists, [[STEP-79 Domain Screen Blueprints]] remains the final blueprint validation and reconciliation, and [[STEP-80 Product-wide UI Rebuild]] remains the product-wide consolidation pass. Prototype-only and proposed capabilities do **not** become product commitments, and no speculative route, dead navigation link, backend behaviour, security change or fake functionality enters the product on the strength of a design.
 
-**[[STEP-31a Product Experience Blueprint Alignment]] was inserted by owner decision between STEP-31 and STEP-32** to carry exactly that boundary — adding and removing steps being a plan change rather than an execution detail ([[Execution Protocol#Future Step Synchronization]]). STEP-32 through STEP-89 keep their numbers. The plan became **95 steps: 36 delivered, 59 future** at that insertion, in the same fourteen phases. **STEP-31a has since delivered** — closure recorded 2026-08-22 after CI passed on `ef057fb`, the final implementation commit, with [PR #56](https://github.com/ruseduard321-prog/ProjectOne/pull/56) fully validated for squash merge — so the plan now reads **37 delivered, 58 future**, with the future range beginning at [[STEP-32 Media Processing Pipeline]].
+**[[STEP-31a Product Experience Blueprint Alignment]] was inserted by owner decision between STEP-31 and STEP-32** to carry exactly that boundary — adding and removing steps being a plan change rather than an execution detail ([[Execution Protocol#Future Step Synchronization]]). STEP-32 through STEP-89 keep their numbers. The plan became **95 steps: 36 delivered, 59 future** at that insertion, in the same fourteen phases. **STEP-31a has since delivered** — [PR #56](https://github.com/ruseduard321-prog/ProjectOne/pull/56) squash-merged to `main` as **`68f974f`** on 2026-08-22 — so the plan now reads **37 delivered, 58 future**, with the future range beginning at [[STEP-32 Media Processing Pipeline]].
 
 **It belongs to Design Foundation, not to Platform Substrate.** The step establishes shared visual and interaction substrate — the phase [[STEP-26 Product Design System Foundation]] opened — and shares nothing with the storage, async-execution and notification infrastructure Platform Substrate exists to deliver. It merely *executes* inside that phase's range, because that is where the design milestone fell. **Design Foundation is therefore `STEP-26, STEP-31a`, count 2, and Platform Substrate is `STEP-27–STEP-35 excluding STEP-31a`, count 9** — the two totals unchanged at 95 and the phase count unchanged at fourteen. The ordered table marks both transitions `— resumed` so the interleave is visible rather than inferred.
 
