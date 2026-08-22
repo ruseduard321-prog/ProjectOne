@@ -2,7 +2,7 @@
 title: STEP-31a Product Experience Blueprint Alignment
 category: Development/Build Step
 status: stable
-version: "2.0"
+version: "2.1"
 last_updated: 2026-08-22
 tags: [engineering, workflow, build-step, design, frontend]
 step_id: STEP-31a
@@ -225,7 +225,7 @@ Additionally, per [[Execution Protocol#Step Completion]]:
 
 ## Implementation Record
 
-Written during implementation on 2026-08-22, and kept as written. The step reached `Done` after three independent review rounds, the owner's real 200% zoom audit, green required CI on [PR #56](https://github.com/ruseduard321-prog/ProjectOne/pull/56) and the owner's closure decision ([[Execution Protocol#Step Completion]]). **`Done` means ready to merge, not merged** — the owner merges.
+Written during implementation on 2026-08-22, and kept as written. The step reached `Done` after three independent review rounds, the owner's real 200% zoom audit, green required CI on [PR #56](https://github.com/ruseduard321-prog/ProjectOne/pull/56) and the owner's closure decision ([[Execution Protocol#Step Completion]]). **`Done` was reached before the merge, as [[Execution Protocol#Step Completion]] defines it**; the owner then squash-merged [PR #56](https://github.com/ruseduard321-prog/ProjectOne/pull/56) on 2026-08-22, and the step is delivered.
 
 ### What was built
 
@@ -332,7 +332,9 @@ The first pipeline run on [PR #56](https://github.com/ruseduard321-prog/ProjectO
 
 ## Step Completion Record
 
-**Closure recorded 2026-08-22, after the final implementation CI run passed on `ef057fb`.** `ef057fb` is the last implementation commit that CI validated, **not** the closure commit — this record and the [[Build Plan]] row are written after it. Every condition in [[Execution Protocol#Step Completion]] holds:
+**Delivered to `main` as `68f974f` on 2026-08-22 at 19:35:32 UTC**, the squash merge of [PR #56](https://github.com/ruseduard321-prog/ProjectOne/pull/56).
+
+Closure was recorded first, after the final implementation CI run passed on `ef057fb` — the last implementation commit CI validated, which is **not** the commit on `main`. Every condition in [[Execution Protocol#Step Completion]] held at that point, and the merge followed:
 
 | Condition | State |
 |---|---|
@@ -341,16 +343,15 @@ The first pipeline run on [PR #56](https://github.com/ruseduard321-prog/ProjectO
 | Documentation | [[Design System]] v2.6, [[Design MOC]] v1.7, this note, [[Build Plan]] |
 | Status synchronization | this note and the [[Build Plan]] row both read `Done` |
 | Critical issues | none outstanding |
-| Branch and tree | `step-31a-product-experience-blueprint-implementation`, clean tree at every validation point |
-| Pull request | [PR #56](https://github.com/ruseduard321-prog/ProjectOne/pull/56) — fully validated for squash merge |
+| Branch and tree | `step-31a-product-experience-blueprint-implementation`, clean tree at every validation point; deleted locally and remotely after the merge |
+| Pull request | [PR #56](https://github.com/ruseduard321-prog/ProjectOne/pull/56) — **squash-merged** 2026-08-22 19:35:32 UTC |
+| Commit on `main` | **`68f974f`** — *feat: align product experience foundation (#56)* |
 | Required CI | `api` pass · `web` pass · `governance docs` pass on the final implementation commit |
 | Manual checklist | complete — the 200% zoom audit, performed by the owner |
 | Review conversations | none raised on the PR; three review rounds resolved in session (R1–R5) |
 | Owner gate | satisfied — the owner ran the manual audit, directed every correction and instructed closure |
 
-**PR #56 is fully validated for squash merge.** `Done` means ready to merge, never merged ([[Execution Protocol#Step Completion]]) — the merge is the owner's.
-
-**The squash merge gives `main` one permanent commit** carrying implementation, documentation and this status together, per [[Execution Protocol#One Step One Commit On Main]]. The branch's own commits are working history and are not preserved.
+**The squash merge gives `main` one permanent commit** carrying implementation, documentation and this status together, per [[Execution Protocol#One Step One Commit On Main]]. For this step that commit is **`68f974f`**; the branch's own commits were working history and are not preserved.
 
 **Next:** [[STEP-32 Media Processing Pipeline]], left `outline` / `Not Started` and deliberately unexpanded by this step.
 

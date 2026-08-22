@@ -2,7 +2,7 @@
 title: Design MOC
 category: MOC
 status: stable
-version: "1.7"
+version: "1.8"
 last_updated: 2026-08-22
 tags: [moc, design, documentation]
 aliases: ["Design Map of Content"]
@@ -51,7 +51,7 @@ Where two disagree, the higher wins and the conflict is stated rather than silen
 
 ## Adoption
 
-- [[STEP-31a Product Experience Blueprint Alignment]] — the shared foundation, for routes that already exist. Rebuilds no domain page. **`Done` (2026-08-22):** the token layer, the three-state theme cascade, `color-scheme`, the motion tokens, `--text-4xl`, the three page templates, the shared shell on the `nav-*` plane, the mobile drawer, the `--color-overlay` scrim and the Playwright suite are implemented, reviewed across three rounds and green on required CI. Ready for the owner's squash merge on [PR #56](https://github.com/ruseduard321-prog/ProjectOne/pull/56), not yet merged.
+- [[STEP-31a Product Experience Blueprint Alignment]] — the shared foundation, for routes that already exist. Rebuilds no domain page. **`Done` (2026-08-22):** the token layer, the three-state theme cascade, `color-scheme`, the motion tokens, `--text-4xl`, the three page templates, the shared shell on the `nav-*` plane, the mobile drawer, the `--color-overlay` scrim and the Playwright suite are implemented, reviewed across three rounds and green on required CI. Delivered to `main` through [PR #56](https://github.com/ruseduard321-prog/ProjectOne/pull/56), squash-merged as **`68f974f`** on 2026-08-22.
 - Every future step that introduces a frontend surface consumes the blueprint when it builds that surface.
 - [[STEP-79 Domain Screen Blueprints]] — final validation and reconciliation against the real product.
 - [[STEP-80 Product-wide UI Rebuild]] — the product-wide implementation pass over the domain pages STEP-31a does not rebuild.
