@@ -132,7 +132,7 @@ export function SettingsForm({
             "rounded-md px-4 py-2 text-sm font-medium transition-colors disabled:opacity-60",
             intent === "danger"
               ? "border border-danger text-danger hover:bg-danger hover:text-accent-contrast"
-              : "bg-accent text-accent-contrast hover:bg-accent-hover",
+              : "bg-accent-fill text-accent-contrast hover:bg-accent-hover",
           ].join(" ")}
         >
           {pending ? pendingLabel : submitLabel}

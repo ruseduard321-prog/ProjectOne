@@ -130,7 +130,7 @@ export function ConfirmDialog({
         ref={dialogRef}
         aria-labelledby={titleId}
         aria-describedby={descriptionId}
-        className="max-w-prose rounded-lg border border-border bg-surface-raised p-6 text-text shadow-lg backdrop:bg-text/40"
+        className="max-w-prose rounded-lg border border-border bg-surface-raised p-6 text-text shadow-lg backdrop:bg-overlay"
       >
         <div className="flex flex-col gap-4">
           <h2 id={titleId} className="text-lg font-medium text-text">

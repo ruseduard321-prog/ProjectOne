@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/shell/EmptyState";
 import { type ApiProject, listProjects } from "@/lib/api";
 import { requireProfile, resolveAccessToken } from "@/lib/auth";
 import { resolveWorkspace } from "@/lib/workspace";
+import { PageHeader } from "@/components/shell/PageHeader";
 
 import { createProjectAction } from "./actions";
 
@@ -42,7 +43,7 @@ export default async function ProjectsPage() {
   if (accessToken === undefined || workspace === undefined) {
     return (
       <div className="flex flex-col gap-6">
-        <h1 className="text-2xl font-semibold tracking-tight text-text">Projects</h1>
+        <PageHeader title="Projects" />
         <EmptyState
           title="No workspace yet"
           description="Projects live inside a workspace. Once you belong to one, your projects appear here."
@@ -85,22 +86,24 @@ function ProjectsScreen({
 }: ProjectsScreenProps) {
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight text-text">Projects</h1>
-        <p className="text-sm text-text-muted">
-          The work in {workspaceName}.
-          {/*
-           * The multi-workspace limitation, disclosed rather than hidden —
-           * inherited from STEP-19 and still true: the application resolves the
-           * caller's first workspace and has no switcher. See `lib/workspace.ts`.
-           */}
-          {otherWorkspaceCount > 0
-            ? ` You belong to ${otherWorkspaceCount} other ${
-                otherWorkspaceCount === 1 ? "workspace" : "workspaces"
-              } — switching between them is not available yet.`
-            : ""}
-        </p>
-      </div>
+      <PageHeader
+        title="Projects"
+        description={
+          <>
+            The work in {workspaceName}.
+            {/*
+             * The multi-workspace limitation, disclosed rather than hidden —
+             * inherited from STEP-19 and still true: the application resolves the
+             * caller's first workspace and has no switcher. See `lib/workspace.ts`.
+             */}
+            {otherWorkspaceCount > 0
+              ? ` You belong to ${otherWorkspaceCount} other ${
+                  otherWorkspaceCount === 1 ? "workspace" : "workspaces"
+                } — switching between them is not available yet.`
+              : ""}
+          </>
+        }
+      />
 
       <SettingsSection
         title="New project"

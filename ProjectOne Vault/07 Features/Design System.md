@@ -2,7 +2,7 @@
 title: Design System
 category: Design
 status: stable
-version: "2.4"
+version: "2.6"
 last_updated: 2026-08-22
 tags: [design, documentation, feature]
 aliases: ["Design System & Visual Language", "Visual Language"]
@@ -145,6 +145,30 @@ Deliberately **non-continuous** — there is no `--space-5`, `--space-7`, `--spa
 
 Four values, deliberately. §13 names "random border radii" as an anti-pattern, and the only reliable defence is having too few options to improvise with.
 
+### 4.2a Page templates (v2)
+
+Every surface uses exactly one of three templates, and there is no fourth. Adopted through [[ADR-007 Product Experience Blueprint Authority and Adoption Boundary]] Decision 8 and delivered by [[STEP-31a Product Experience Blueprint Alignment]].
+
+| Template | Shape | Measure | Assigned to today |
+|---|---|---|---|
+| **Cockpit** | Full-bleed, height-aware, one primary action region | uncapped | `/dashboard` |
+| **Workbench** | The default working surface: wide content, list and detail | `--workbench-max` `78rem` | `/projects`, `/projects/[projectId]`, `/chat`, `/settings` |
+| **Focus** | Narrow single column, reduced chrome, one task | `--focus-max` `46rem` | `/sign-in`, `/sign-up` |
+
+Three is the number of genuinely different jobs: operate a workspace, inspect one thing beside its context, decide one thing carefully. The short forms are canonical — the blueprint names them twice, differently, and this is the naming that matches its own implementation.
+
+**How a template is selected, and how it is not.** The prototype mutates `body[data-tpl]` from client-side JavaScript on navigation. That technique is explicitly **not** adopted. The contract instead:
+
+- **A shared server-rendered wrapper** (`components/shell/PageTemplate.tsx`) emits `data-template` on **its own element**, from a prop resolved on the server by the route already rendering. It is in the first byte of HTML, identical on server and client, and never reassigned after paint.
+- **Nothing reads `usePathname()` to decide it.** That would reintroduce the hydration race the wrapper exists to avoid.
+- **`<body>` carries global theme state only** — never per-route or per-template state, so a route cannot leak its layout into the next one.
+- **The template is assigned in a segment `layout.tsx`**, so `page.tsx`, `loading.tsx` and `error.tsx` all render inside it and every state of the route agrees.
+- **Only routes that exist are assigned one.** Defining three templates commits the product to no route; assigning them to routes that do not exist would.
+
+Widths live in `globals.css` under `[data-template]` rather than in a class ladder in the component — one element, one declaration per template, and a stylesheet reader can find all three in one place. This is the blueprint's own scoping discipline, re-expressed against the wrapper instead of against the document body.
+
+**Adding a fourth template is a change to this contract** and needs an ADR superseding Decision 8, not a new string in a union type.
+
 ### 4.3 Elevation (v1)
 
 | Token | Value | Use |
@@ -190,7 +214,7 @@ One weight, because only display sizes use it and additional weights would be pa
 
 ### 5.2 Type scale (v1)
 
-A **1.25 (major third)** ratio, rounded to sensible pixel values:
+A **1.25 (major third)** ratio **through `--text-3xl`**, rounded to sensible pixel values. `--text-4xl` is a deliberate display-only exception and is described below the table:
 
 | Token | Size | Line height | Use |
 |---|---|---|---|
@@ -201,6 +225,18 @@ A **1.25 (major third)** ratio, rounded to sensible pixel values:
 | `--text-xl` | `1.5rem` (24px) | 1.4 | Section headings |
 | `--text-2xl` | `1.875rem` (30px) | 1.3 | Page titles |
 | `--text-3xl` | `2.25rem` (36px) | 1.2 | Display, used sparingly |
+| `--text-4xl` | `3.25rem` (52px) | 1.05 | **Editorial display only** — see below |
+
+> [!important] `--text-4xl` is outside the ratio, deliberately
+> `3.25 / 2.25 = 1.444`, so this step does **not** continue the major third. It was selected by the owner on 2026-08-22 and accepted through [[ADR-007 Product Experience Blueprint Authority and Adoption Boundary]] Decision 11, validated against the approved composition rather than derived from the ratio.
+>
+> **The rule is therefore: the 1.25 scale applies through `--text-3xl`, and `--text-4xl` is one editorial size above the display boundary.** Never body copy, labels, table cells, controls, captions or metadata. Stating the exception is what keeps this section truthful; leaving the ratio claim standing beside a value that contradicts it would be documentation drift ([[CLAUDE|CLAUDE.md]] §19).
+>
+> It **extends** [[ADR-003 Product Visual Language and Token Semantics]] Decision 5 rather than superseding it: Decision 5 bounds the display face to `--text-2xl` and above, and a step above `--text-3xl` is inside that bound by construction.
+>
+> Registered as `--text-4xl` **and** `--text-4xl--line-height` — Tailwind v4's pairing form. The prototype's `--text-4xl-lh` form would register no line height at all.
+>
+> **It has no consumer yet, and that is deliberate.** Where a screen's editorial display moment falls is a per-screen decision belonging to the step that owns the screen. [[STEP-31a Product Experience Blueprint Alignment]] defines the token and applies it nowhere.
 
 **Line height tightens as size grows**, which is not arbitrary: long body lines need vertical breathing room to track from line to line, while a large heading with generous leading reads as disconnected words rather than one phrase.
 
@@ -231,6 +267,13 @@ The palette is warm throughout. **No value in it is neutral grey**, and that is 
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | **Ivory** — the canvas | `#FFFDF8` | `#FAF6EE` | `#F2ECE1` | `#E4DBCB` | `#CFC4B0` | — | — | — | — | — | — | — |
 | **Ink** — warm near-blacks | — | — | — | — | `#9A9189` | `#8F867E` | `#6E665F` | `#57504A` | `#3A3531` | `#232120` | `#121110` | `#0F0E0D` |
+
+Two further steps sit off that grid, added by [[ADR-007 Product Experience Blueprint Authority and Adoption Boundary]] Decision 5:
+
+| Primitive | Value | Why it exists |
+|---|---|---|
+| `--ivory-75` | `#FDFAF3` | The light surface ladder used to *lose* warmth as it rose — R−B of 12 → 7 → 0 — and ended on `#ffffff`, a colour the approved direction does not contain. A pure-white panel on an ivory canvas reads as a hole rather than as a raised surface |
+| `--ink-975` | `#070605` | The deepest plane, so the dark theme's navigation rail stays distinct from a now-dark canvas instead of merging into it. Still not pure black, which §6.1 keeps deliberately absent |
 | **Charcoal** — dark surfaces | — | — | — | — | — | — | — | `#332F2C` | `#242120` | `#1A1816` | — | — |
 | **Vermilion** — the accent | — | — | — | `#F58555` | `#F0663A` | — | `#E2511F` | `#C84016` | `#A83512` | — | — | — |
 | **Green** — success | — | — | — | — | `#5FA971` | — | — | `#2F6B3D` | — | — | — | — |
@@ -256,8 +299,8 @@ The interface that sits *on* the ivory.
 | Token | Light | Dark | Role |
 |---|---|---|---|
 | `--color-background` | `ivory-100` | `ink-950` | Page canvas |
-| `--color-surface` | `ivory-50` | `char-800` | Cards, panels — sits *above* the canvas |
-| `--color-surface-raised` | `#ffffff` | `char-700` | Dropdowns, dialogs |
+| `--color-surface` | `ivory-75` | `char-800` | Cards, panels — sits *above* the canvas |
+| `--color-surface-raised` | `ivory-50` | `char-700` | Dropdowns, dialogs |
 | `--color-border` | `ivory-300` | `char-600` | **Decorative** dividers and separators |
 | `--color-border-strong` | `ink-450` | `ink-400` | **Interactive** boundaries — input outlines, control edges |
 | `--color-text` | `ink-900` | `ivory-200` | Primary content |
@@ -279,13 +322,46 @@ The interface that sits *on* the ivory.
 
 | Token | Light | Dark | Role |
 |---|---|---|---|
-| `--color-nav-surface` | `ink-900` | `ink-950` | The navigation plane |
+| `--color-nav-surface` | `ink-900` | `ink-975` | The navigation plane |
 | `--color-nav-surface-raised` | `ink-800` | `char-800` | Active / hovered navigation item |
 | `--color-text-on-nav` | `ivory-100` | `ivory-200` | Navigation labels |
 | `--color-text-on-nav-muted` | `ink-400` | `ink-400` | Secondary navigation text, section labels |
 | `--color-accent-on-nav` | `verm-400` | `verm-400` | The accent **on** the navigation plane |
 
 **The binding rule:** *a component rendering inside the navigation plane references the `nav-*` family; a component rendering on the canvas never does.* Painting navigation with canvas tokens plus overrides is how components become theme-aware, which §6.4 forbids.
+
+**The family has a consumer as of [[STEP-31a Product Experience Blueprint Alignment]].** It was defined, registered as Tailwind utilities and contrast-verified in CI from [[STEP-26 Product Design System Foundation]] onward while being referenced by **zero components** — the shell painted its rail with canvas tokens. The rail, the mobile drawer and their destinations now reference it, which is what makes the matte-black navigation plane something the product renders rather than something this document describes.
+
+#### The inverted-surface family is empty, and that is the finding
+
+[[ADR-007 Product Experience Blueprint Authority and Adoption Boundary]] Decision 9 approved an inverted-surface family **in principle** — an inverted treatment that is *not* the navigation plane — with membership to be derived from real consumers and values from measurement during STEP-31a.
+
+**It was derived, and it is empty.** The nine canvas components that forced the question — segmented controls, log panels, mode selectors, filters, gates, chat turns, avatars and a toast — exist in the prototype and in no production surface. Nothing in `apps/web` renders an inverted canvas component, so there is no consumer to name a role for, and Decision 9 is explicit that *"if no current consumer justifies a role, nothing is added"*.
+
+One candidate was examined and **belongs to a different family**: the modal scrim. It is now `--color-overlay` (§6.2a) — an *overlay* role, not an inverted *surface* — so promoting it left the inverted-surface family empty, which is where the derivation left it.
+
+An empty family is a success under Decision 9, not a failure to deliver.
+
+#### §6.2a — The overlay role
+
+| Token | Light | Dark | Role |
+|---|---|---|---|
+| `--color-overlay` | `ink-950` at **45%** | `ink-975` at **65%** | The modal scrim — the veil a `<dialog>` paints over the page beneath it |
+
+Two consumers: `ConfirmDialog` and the mobile drawer (`MobileNav`). Both reference the role; neither styles its own backdrop.
+
+**An overlay role is not a surface role, and the distinction is load-bearing rather than tidy.** A surface is opaque and carries foregrounds, so it has contrast bars and appears in the §6.3 enumeration. The scrim is translucent and carries **nothing** — both consumers paint their own panel above it — so it has no foreground, and no contrast bar applies. That is why the pairing count did not move when it was added, and why it sits in its own subsection rather than in the surface table.
+
+**The alpha lives in the token, not in the consumer.** `bg-overlay/40` at each call site is how two dialogs drift apart, and how a scrim ends up tuned for one theme and merely inherited by the other. The consumers write `backdrop:bg-overlay` and choose nothing.
+
+**Dark is heavier than light (65% against 45%) because the two themes give a veil different work to do.** In light mode the scrim darkens an ivory canvas, and 45% is already decisive. In dark mode the canvas is near-black, so what a scrim actually subdues is the *lit content* on top of it, and that needs the heavier mix.
+
+> [!warning] What this role replaced, and why it was invisible
+> The scrim was previously `backdrop:bg-text/40` at both call sites. `--color-text` is a near-black in light mode and **ivory in dark mode**, so the same class darkened the page in one theme and washed it out with a pale grey veil in the other — the drawer's hierarchy inverted rather than reinforced.
+>
+> **No existing check could see it.** It was a role misuse, not a layer breach: `text` is a semantic token, so §3a was never violated. And contrast is measured on *foregrounds* — nothing is rendered on a scrim, so no pairing existed to fail. It was found by visual inspection during independent review of [[STEP-31a Product Experience Blueprint Alignment]] (finding R5).
+>
+> **The property that was wrong is polarity, so polarity is now what gets measured.** `scripts/check-contrast.py` composites the declared scrim over every surface it can cover, in both themes, and fails if the result is lighter than what it covers — or unchanged on the canvas (§6.3). The browser suite reads the computed `::backdrop` colour with the drawer open in each theme and asserts the same thing end to end.
 
 `--color-accent-on-nav` is **identical in both themes**, because the plane it sits on is dark in both. The light-mode `--color-accent` measures **3.99** on `nav-surface` and fails AA outright — this is the same one-step-lighter rule §6.2 has always stated for dark mode, applied to a dark region that happens to live inside the light theme.
 
@@ -322,7 +398,23 @@ Every pairing above targets **WCAG 2.1 AA** — 4.5:1 for text, 3:1 for non-text
 >
 > Run it locally with `python scripts/check-contrast.py --table` to see every pairing and its margin.
 
-**All 90 pairings pass** as of 2026-08-15 (STEP-26). The script also guards against drift between itself and `globals.css`: it parses the stylesheet's primitives and fails if the two disagree, so the check cannot silently verify a palette the product no longer uses.
+**All 90 pairings pass** as of 2026-08-15 (STEP-26), and still **90** after the [[ADR-007 Product Experience Blueprint Authority and Adoption Boundary]] revalues of 2026-08-22.
+
+> [!note] The count did not rise, and ADR-007 expected it to
+> ADR-007 Decision 5 states *"the pairing count rises as the two new primitives enter the enumeration."* **That is incorrect, and the enumeration is right.** The check enumerates **semantic roles** against the surfaces they appear on; primitives enter it only through the roles that point at them. `--ivory-75` and `--ink-975` were added and three roles repointed, so three pairings changed *value* and none changed *existence*.
+>
+> The count moves when a **role** is added. The inverted-surface family would have moved it, and it is correctly empty (§6.2), so it did not. Recorded rather than quietly reconciled, per the conflict rule in [[CLAUDE|CLAUDE.md]].
+
+The script also guards against drift between itself and `globals.css`, and STEP-31a widened that guard after finding it one-directional. It now fails on four drifts rather than one, the fourth added when the overlay role landed:
+
+1. A primitive the script names that the stylesheet does not define.
+2. **A primitive the stylesheet defines that the script does not know** — previously undetected, so a new primitive could enter `globals.css` and never be measured.
+3. **A semantic role whose mapping differs between the two, or is present in only one** — previously undetected entirely, which meant a role added to the stylesheet was silently never contrast-checked. That is precisely the failure this check exists to prevent, one layer up from where it was guarded.
+4. **A role declared in a value form the script does not parse.** Every role above maps to a bare `var(--primitive)`; `--color-overlay` deliberately does not, because its alpha belongs in the token (§6.2a). Without this class, a third form would slip past the mapping check *and* the enumeration and be measured by nothing.
+
+**The scrim is measured for polarity rather than contrast.** The same script composites `--color-overlay` over every surface it can cover — canvas and navigation, both themes — and fails if the result is **lighter** than what it covers, or unchanged on the canvas. The one permitted equality is dark `nav-surface`: the rail is already `ink-975`, the deepest value the palette contains and the scrim's own colour, so the veil cannot take it further down; nothing is lightened, and the rail's *content* still dims. This is why the pairing count stayed at 90 while a new role was added — nothing renders on a scrim, so it has no pairing (§6.2a).
+
+Theme blocks are located by sentinel comments (`/* theme-block: light */`) rather than by selector text, so rewrapping a comment cannot silently make the parser match nothing and check nothing.
 
 **Four failures were found by measurement during STEP-26 and corrected before anything was committed.** Each one is a case where no existing token could be repointed to fix it, which is why [[ADR-003 Product Visual Language and Token Semantics]] was required:
 
@@ -339,16 +431,20 @@ Every one of these looked correct until it was measured. That is the entire argu
 
 The margins worth knowing, because they are where a change will break first:
 
-| Pairing | Ratio | Bar |
-|---|---|---|
-| `skeleton` on `surface-raised` (dark) | 1.21 | 1.2 (visibility) |
-| `skeleton` on `background` (light) | 1.27 | 1.2 (visibility) |
-| `border-strong` on `background` (light) | 3.31 | 3.0 |
-| `border-strong` on `surface` (light) | 3.51 | 3.0 |
-| `accent-fill` on `surface-raised` (dark) | 4.13 | 3.0 |
-| `text-on-nav-muted` on `nav-surface-raised` (light) | 4.63 | 4.5 |
-| `accent` on `background` (light) | 4.64 | 4.5 |
-| `text-muted` on `background` (light) | 5.22 | 4.5 |
+| Pairing | Ratio | Bar | Moved by ADR-007? |
+|---|---|---|---|
+| `skeleton` on `surface-raised` (dark) | 1.21 | 1.2 (visibility) | no |
+| `skeleton` on `background` (light) | 1.27 | 1.2 (visibility) | no |
+| `skeleton` on `surface` (light) | 1.32 | 1.2 (visibility) | **yes** — `surface` moved to `ivory-75` |
+| `skeleton` on `surface-raised` (light) | 1.35 | 1.2 (visibility) | **yes** — `surface-raised` moved to `ivory-50` |
+| `border-strong` on `background` (light) | 3.31 | 3.0 | no |
+| `border-strong` on `surface` (light) | 3.43 | 3.0 | **yes**, from 3.51 |
+| `accent-fill` on `surface-raised` (dark) | 4.13 | 3.0 | no |
+| `accent` on `background` (light) | 4.64 | 4.5 | no |
+| `accent` on `surface` (light) | 4.80 | 4.5 | **yes**, and it is now tighter than it was on `ivory-50` |
+| `text-muted` on `background` (light) | 5.22 | 4.5 | no |
+
+Values as of 2026-08-22, after the ADR-007 revalues. **The light surfaces got warmer, so every light pairing measured against them got slightly tighter** — by two to nine hundredths, all still clear, and the skeleton floors remain the tightest margins in the system exactly as before. That is the cost of the change and it was measured rather than assumed.
 
 **Skeleton fills carry the tightest margins in the system**, by construction: a placeholder that stands out strongly is a placeholder that looks like content. They are the first thing to re-check on any surface change.
 
@@ -370,6 +466,30 @@ Under v1, light-mode `warning` (3.04) and `success` (3.15) cleared the non-text 
 Answered deliberately rather than inherited from the template. The skeleton carries a `prefers-color-scheme` block from `create-next-app`, and the choice is to **implement it properly** — the semantic layer makes it a remapping rather than a second design, so the marginal cost is small and it is far cheaper now than retrofitting once screens exist.
 
 **No component is theme-aware.** A component containing `dark:` variants has leaked a theme decision out of the token layer, which is the same defect as hardcoding a hex.
+
+#### The theme cascade is three-state (v2)
+
+[[ADR-007 Product Experience Blueprint Authority and Adoption Boundary]] Decisions 6 and 7, delivered by [[STEP-31a Product Experience Blueprint Alignment]]. Until then the mechanism was a bare `prefers-color-scheme` block: the theme followed the operating system and nothing could override it.
+
+| State | How it is expressed | Result |
+|---|---|---|
+| No explicit choice | no `data-theme` attribute | follows `prefers-color-scheme` |
+| Explicit light | `:root[data-theme="light"]` | light, **even on a machine set to dark** |
+| Explicit dark | `:root[data-theme="dark"]` | dark, **even on a machine set to light** |
+
+Four obligations come with it, and each exists because omitting it produces a specific defect:
+
+1. **The media query is guarded** — `@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { … } }`. Unguarded, it overrides an explicit *light* choice on a dark machine, making the control a no-op in exactly one direction.
+2. **Every dark-branch token is defined in both places** — the media query *and* the attribute selector, byte-identically. A token defined only inside the media query is invisible to an explicit choice, and the page is then dark in some roles and light in the rest. A test asserts the two blocks stay identical.
+3. **The attribute block comes last.** Both selectors have specificity (0,2,0), so source order is what decides.
+4. **A pre-hydration script applies the choice before first paint.** An effect runs *after* the first paint, so the user would see the system theme for one frame and their own for the next — a flash of the wrong theme on every load. The attribute is set by a synchronous inline script in `<head>`; `lib/theme.ts` owns it.
+
+**Persistence is client-side only** — `localStorage` plus the attribute. Storing a theme on the user profile would need an API field, a migration and a write endpoint, which is API-contract territory.
+
+**`color-scheme` is declared alongside it** — `light` on `:root`, `dark` in both dark branches. It is not a token: it changes the caret, the selection highlight, scrollbars and every native control and `<dialog>` backdrop, all of which rendered in the user agent's *light* styling under the full dark token set. That was a live defect, and it is closed.
+
+> [!warning] Declaring the mechanism does not schedule an appearance control
+> There is no theme picker, and STEP-31a deliberately adds none. A user-facing appearance surface is `Proposed` under ADR-007 Decision 3 and enters the product only with owner approval and an owning step. What exists is the contract such a control would be built on.
 
 ### 6.5 How to change a token
 
@@ -421,8 +541,13 @@ These are **the components that exist today**, against surfaces that exist today
 | **`FormField`** | `id`, `name`, `label`, `type`, `autoComplete`, `error?`, `hint?`, `defaultValue?`, `disabled?`, `placeholder?`, `required?`, `inputMode?` | Default · disabled · **error** (`aria-invalid` + `aria-describedby`) · hint |
 | **`SettingsSection`** | `title`, `description`, `aside?`, `children` | Structural — states belong to its children |
 | **`StatusBadge`** | `status` | Resting · archived |
-| **`SidebarNav`** | none — reads the current route | Resting · hover · **active** (`aria-current="page"`) · focus |
-| **`UserMenu`** | `email` | Resting · hover · focus · submitting |
+| **`PageTemplate`** | `template` (`cockpit` \| `workbench` \| `focus`), `children` | Structural — server-rendered, one shape per surface (§4.2a) |
+| **`PageHeader`** | `title`, `description?`, `actions?` | Structural — the one `h1`, in the display face |
+| **`NavLinks`** | `onNavigate?` — reads the current route | Resting · hover · **active** (`aria-current="page"`) · focus |
+| **`SidebarNav`** | none | Structural — the `nav` landmark and its name; destinations come from `NavLinks` |
+| **`ShellIdentity`** | `asLink?` | Structural — the product wordmark at the head of the navigation plane |
+| **`MobileNav`** | `identity` (`ReactNode`) | Closed (trigger: resting · hover · focus) · **open** (focus trapped, `Escape` closes, focus returns to the trigger) |
+| **`UserMenu`** | `email` | Resting · hover · focus · submitting — rendered at the foot of the navigation plane, on `nav-*` tokens |
 | **`Transcript`** | message list | Loading · empty · error · populated · streaming |
 | **`SpendSummary`** | spend figures | Loading · empty · error · populated |
 | **`ConfirmDialog`** | `triggerLabel`, `title`, `description`, `cancelLabel?`, `children` | Closed (trigger: resting · hover · focus) · **open** (focus trapped, `Escape` closes, focus returns to the trigger) |
@@ -447,7 +572,14 @@ These are **the components that exist today**, against surfaces that exist today
 
 ### 7.2 Navigation conventions
 
-**Structure.** A persistent left rail on the matte-black plane, holding top-level product sections. Workspace identity sits at the top, the signed-in user at the bottom. Section order is stable and does not reorder by recency — a navigation that moves is a navigation users must re-read.
+**Structure.** A persistent left rail on the matte-black plane, holding top-level product sections — **rendered as of [[STEP-31a Product Experience Blueprint Alignment]]**, which gave the `nav-*` family its first consumer. It is one full-height column from the top of the viewport, in three regions: **identity at the top, destinations in the middle, the signed-in user at the bottom.** Below `md` the rail is replaced by a drawer carrying the same three regions (§9a rule 2). Section order is stable and does not reorder by recency — a navigation that moves is a navigation users must re-read.
+
+> [!important] The identity at the top is the **product**, not the workspace
+> This section previously said *"workspace identity sits at the top"*. **The shell cannot render that truthfully**, and the sentence was corrected rather than the code bent to match it.
+>
+> The workspace is resolved **per page** (`lib/workspace.ts`, from `GET /workspaces`); the shell layout holds only the signed-in profile. Putting a workspace name in the rail would mean either inventing one — forbidden outright ([[CLAUDE|CLAUDE.md]] §35) — or adding an API request to the shell purely to decorate it, which STEP-31a excludes. So the plane states what the shell actually knows: the product.
+>
+> **This is a description of today, not a decision against workspace identity.** The step that gives the shell workspace data — a switcher is the obvious candidate — may put it here, and should update this section when it does. A document describing behaviour the code does not have is worse than no document, because it actively misleads ([[CLAUDE|CLAUDE.md]] §19).
 
 **States.** Every navigation item defines four, and all four are required:
 
@@ -465,6 +597,28 @@ These are **the components that exist today**, against surfaces that exist today
 ## 8. Motion
 
 Animations exist only to improve comprehension. Keep transitions subtle, short and purposeful. Avoid decorative animations.
+
+### 8.1 Motion tokens (v2)
+
+Until [[STEP-31a Product Experience Blueprint Alignment]] this section was **prose only**. "Subtle, short and purposeful" is a value judgement rather than a number, so every component silently inherited Tailwind's `150ms` / `ease-in-out` defaults and no two surfaces were obliged to agree. [[ADR-007 Product Experience Blueprint Authority and Adoption Boundary]] Decision 10 replaces the prose with four tokens:
+
+| Token | Value | Use |
+|---|---|---|
+| `--duration-fast` | `120ms` | Hover, focus, colour changes — anything the user is already looking at |
+| `--duration-base` | `180ms` | Something appearing or dismissing in place |
+| `--duration-slow` | `240ms` | Something entering from off-screen |
+| `--ease-standard` | `cubic-bezier(0.2, 0, 0, 1)` | Every transition, unless there is a stated reason |
+
+**Restraint is the rule, not the default: motion confirms a change of state and never decorates.**
+
+### 8.2 Reduced motion is belt and braces
+
+`prefers-reduced-motion: reduce` does **two** things, and neither is sufficient alone:
+
+1. **Remaps the three duration tokens to `1ms`**, which catches everything that consumes them — including a component that names a token directly in a transition.
+2. **Neutralises `animation`, `transition`, `scroll-behavior` and `scroll-snap-type` universally**, which catches everything that does *not*. This half is load-bearing rather than defensive: every loading skeleton in the product uses `animate-pulse`, an **infinite keyframe animation that names no duration token**, and the token remap alone would leave all of them running.
+
+`scroll-behavior` and `scroll-snap-type` are included because vestibular triggers are not limited to things that fade.
 
 ## 9. Accessibility
 
@@ -488,9 +642,21 @@ Support keyboard navigation, screen readers, sufficient color contrast and visib
 
 ### 9.2 What is checked automatically, and what is not
 
-**Automated:** contrast (CI, all 90 pairings), lint rules for accessibility attributes, `tsc` for required props.
+**Automated:** contrast (CI, all 90 pairings), lint rules for accessibility attributes, `tsc` for required props — and, since [[STEP-31a Product Experience Blueprint Alignment]], a **browser suite** (Playwright, [[ADR-007 Product Experience Blueprint Authority and Adoption Boundary]] Decision 13) running inside the required `web` CI check.
 
-**Not automated, and therefore stated as rules someone must apply:** tab order correctness, whether a label describes its field usefully, whether an error message is actionable, and screen-reader announcement quality. FA-11 was verified through the rendered accessibility tree rather than an automated rule, and that remains the standard for boundary and dialog work.
+The browser layer moved five things out of the "someone must remember" column, because they are properties of a running browser that no amount of source reading can establish:
+
+- **Tab order correctness** — actual `Tab` presses, reading `document.activeElement` at each stop, with a visible focus indicator asserted at every one.
+- **The skip link** — that focus *moves* to the main landmark, not merely that the `href` points at it. (The landmark needed `tabIndex={-1}` to make this true; without it the browser scrolls and leaves focus on `<body>`, so the link appears to work and does not.)
+- **Focus trapping, `Escape` and focus return** for the mobile drawer.
+- **Reflow and horizontal overflow** at every breakpoint and at 320px, and **reduced motion** actually suppressing animation.
+- **Scrim polarity** — the computed `::backdrop` colour with the drawer open, in each theme, composited over the page and required to come out darker (§6.2a). Source reading cannot answer this: the defect it replaced was one utility class that resolved to a different polarity in each theme.
+
+**Still not automated, and therefore still rules someone must apply:** whether a label describes its field usefully, whether an error message is actionable, and screen-reader announcement quality. FA-11 was verified through the rendered accessibility tree rather than an automated rule, and that remains the standard for boundary and dialog work.
+
+**One manual check is retained, narrowly.** Browser automation cannot faithfully reproduce actual browser zoom, so **200% zoom stays a manual checklist item**. It is the only one.
+
+**The two test layers are complementary, not redundant.** Several static assertions have no browser equivalent — most importantly, whether a token is defined *only* inside a media query, which is invisible to a browser set to dark and is the entire correctness argument for the three-state cascade (§6.4).
 
 ## 9a. Responsive Behaviour
 
@@ -507,7 +673,7 @@ Support keyboard navigation, screen readers, sufficient color contrast and visib
 **Rules:**
 
 1. **Mobile-first.** Base styles are the narrow case; breakpoints add, never subtract.
-2. **The navigation rail is persistent from `md` and a drawer below it.** The drawer traps focus while open, closes on `Escape`, and returns focus to the control that opened it.
+2. **The navigation rail is persistent from `md` and a drawer below it.** The drawer traps focus while open, closes on `Escape`, and returns focus to the control that opened it. **Built by [[STEP-31a Product Experience Blueprint Alignment]]** — this rule described nothing until then, because the shell had no drawer and the four destinations simply stacked above the content on every page. It is a native `<dialog>` driven by `showModal()`, the same mechanism `ConfirmDialog` uses and for the same reason: the platform supplies the trap, the `Escape` handler and the inert background, and a hand-built drawer has to reimplement all three correctly.
 3. **Content has a maximum width.** Beyond `xl` the canvas widens and the content does not — measure matters more than filling the viewport, and full-width body text at 2560px is unreadable.
 4. **Tables reflow or scroll within their own container; the page never scrolls horizontally.**
 5. **No layout is described as "desktop-only."** Every surface is usable at 375px, whatever its primary context.

@@ -60,7 +60,7 @@ export default function Error({
         <button
           type="button"
           onClick={retry}
-          className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-contrast transition-colors hover:bg-accent-hover"
+          className="rounded-md bg-accent-fill px-4 py-2 text-sm font-medium text-accent-contrast transition-colors hover:bg-accent-hover"
         >
           Try again
         </button>

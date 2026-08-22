@@ -1,19 +1,19 @@
 ---
 title: STEP-31a Product Experience Blueprint Alignment
 category: Development/Build Step
-status: draft
-version: "1.3"
+status: stable
+version: "2.0"
 last_updated: 2026-08-22
 tags: [engineering, workflow, build-step, design, frontend]
 step_id: STEP-31a
-step_status: Not Started
+step_status: Done
 detail_level: full
 phase: "Design Foundation"
 ---
 
 # STEP-31a — Product Experience Blueprint Alignment
 
-**Status:** Not Started
+**Status:** Done
 **Phase:** Design Foundation — The shared visual and interaction system, established once against the surfaces that actually exist.
 **Phase note:** this step belongs to Design Foundation, which [[STEP-26 Product Design System Foundation]] opened, but it **executes** between [[STEP-31 Workflow Async Execution]] and [[STEP-32 Media Processing Pipeline]], where the owner's design milestone placed it. Platform Substrate pauses at STEP-31 and resumes at STEP-32; the [[Build Plan]] table marks both transitions. Steps execute in table order, and a phase boundary is not a gate.
 **Detail level:** full — inserted by owner decision on 2026-08-22 and written at full detail on insertion. It was not expanded by a predecessor: [[STEP-31 Workflow Async Execution]]'s expansion task was withdrawn by the project owner on 2026-08-20 when the plan paused for this design milestone.
@@ -207,21 +207,152 @@ The shared foundation the approved blueprint requires exists and is consumed by 
 
 Additionally, per [[Execution Protocol#Step Completion]]:
 
-- [ ] [[ADR-007 Product Experience Blueprint Authority and Adoption Boundary]] re-confirmed `Accepted` and unamended at `origin/main` before implementation began.
-- [ ] `--text-4xl` is `3.25rem` with line-height `1.05`, registered in Tailwind's `--text-4xl` / `--text-4xl--line-height` pairing form.
-- [ ] Every token change ran the full [[Design System#6.5 How to change a token]] procedure, with `globals.css` and `scripts/check-contrast.py` in agreement.
-- [ ] The contrast enumeration is green in CI, with its new pairing count recorded, and the negative control observed.
-- [ ] Playwright is configured and its suite is a **required** check on the `web` CI job.
-- [ ] Every browser proposition in [[#Required Tests and Proofs]] passes, observed.
-- [ ] Every pre-existing behavioural test passes unmodified.
-- [ ] `aria-current`, the skip link and the mobile drawer's focus contract have tests, which they did not before.
-- [ ] The 200% zoom manual check is performed and its result recorded — the only manual item.
-- [ ] `<body>` carries theme state only; `data-template` is server-rendered and stable across navigation.
-- [ ] Required CI green, and the manual checklist complete.
-- [ ] Documentation updated: [[Design System]], [[Design MOC]], ADR indexes, and the statement of how future frontend steps consume the blueprint.
-- [ ] Owner approval obtained — this step is Critical.
-- [ ] Status synchronized between this note and the [[Build Plan]] index.
-- [ ] [[STEP-32 Media Processing Pipeline]] left `outline` and `Not Started`, deliberately unexpanded.
+- [x] [[ADR-007 Product Experience Blueprint Authority and Adoption Boundary]] re-confirmed `Accepted` and unamended at `origin/main` before implementation began — `accepted`, v2.0, all 13 decisions as written.
+- [x] `--text-4xl` is `3.25rem` with line-height `1.05`, registered in Tailwind's `--text-4xl` / `--text-4xl--line-height` pairing form — asserted statically, and the compiled output verified by probe.
+- [x] Every token change ran the full [[Design System#6.5 How to change a token]] procedure, with `globals.css` and `scripts/check-contrast.py` in agreement — the drift guard now catches four classes, not one.
+- [x] The contrast enumeration is green in CI, with its count recorded (**90 pairings**, unchanged — and §6.3 records why ADR-007 Decision 5's prediction that it would rise is incorrect), and the negative controls observed.
+- [x] Playwright is configured and its suite runs inside the **required** `web` CI job, green on `ef057fb`.
+- [x] Every browser proposition in [[#Required Tests and Proofs]] passes, observed — **82 browser tests**, `retries: 0`.
+- [x] Every pre-existing behavioural test passes unmodified — **350 unit tests** across 28 files; no pre-existing test file was edited.
+- [x] `aria-current`, the skip link and the mobile drawer's focus contract have tests, which they did not before.
+- [x] The 200% zoom manual check is performed and its result recorded — the only manual item. **Performed by the owner in Chrome 2026-08-22: 200% indicated, `innerWidth` 1002, `scrollWidth` = `clientWidth`, all five routes clean, drawer and scrim correct when windowed at 200%.** Attested by the owner, not observed by Claude.
+- [x] `<body>` carries theme state only; `data-template` is server-rendered — proved from the raw document response, not the hydrated DOM — and stable across client-side navigation.
+- [x] Required CI green on `ef057fb` — `api` pass, `web` pass, `governance docs` pass — and the manual checklist complete.
+- [x] Documentation updated: [[Design System]] (v2.6), [[Design MOC]] (v1.7), the ADR references they carry, and the statement of how future frontend steps consume the blueprint.
+- [x] Owner approval obtained — this step is Critical. The owner performed the manual 200% audit, directed all five review corrections, and instructed closure on 2026-08-22. **The merge itself remains the owner's.**
+- [x] Status synchronized between this note and the [[Build Plan]] index — both read `Done`.
+- [x] [[STEP-32 Media Processing Pipeline]] left `outline` and `Not Started`, deliberately unexpanded — verified at closure.
+
+## Implementation Record
+
+Written during implementation on 2026-08-22, and kept as written. The step reached `Done` after three independent review rounds, the owner's real 200% zoom audit, green required CI on [PR #56](https://github.com/ruseduard321-prog/ProjectOne/pull/56) and the owner's closure decision ([[Execution Protocol#Step Completion]]). **`Done` means ready to merge, not merged** — the owner merges.
+
+### What was built
+
+| Task | Outcome |
+|---|---|
+| 1. Confirm the gate | [[ADR-007 Product Experience Blueprint Authority and Adoption Boundary]] re-read at `origin/main` (`b24bc95`): `accepted`, v2.0, 13 decisions unchanged, `--text-4xl` at `3.25rem`/`1.05`, Playwright named. Not blocked |
+| 2. Tokens and theme | `--ivory-75` and `--ink-975` added; light `--color-surface`/`--color-surface-raised` and dark `--color-nav-surface` repointed; `color-scheme` declared; three-state `[data-theme]` cascade with a guarded media query and a duplicated dark branch; four motion tokens with the two-part reduced-motion block; `--text-4xl` in Tailwind's pairing form. `scripts/check-contrast.py` updated in the same change |
+| 3. Inverted surface | **Derived and empty.** No production component renders an inverted canvas surface. Recorded in [[Design System]] §6.2 with the one candidate that was deliberately not promoted |
+| 4. Page templates | `PageTemplate` emits `data-template` from a server-resolved prop, assigned in segment layouts so `page`/`loading`/`error` agree. `<body>` carries no per-route state |
+| 5. Shell and primitives | The rail is a full-height three-region plane on the `nav-*` family — its first consumer since STEP-26 — with `ShellIdentity`, `SidebarNav` and `UserMenu` from top to bottom, mirrored by `MobileNav`'s drawer below `md`. `PageHeader` replaces 13 hand-written headers and is the display face's first consumer. `bg-accent` corrected to `bg-accent-fill` in 11 places. `NAV_ITEMS` unchanged at four |
+| 6. Behaviour preserved | All 324 pre-existing tests pass **unmodified**. No auth, redirect, server action, data fetch or error handling changed |
+| 7. Playwright | Added as a dev dependency, configured with `retries: 0`, and run inside the **already-required** `web` CI job. 79 browser tests after the review round, including a derived keyboard-order proof and a shell-structure proof |
+| 8. Documentation | [[Design System]] §4.2a, §5.2, §6.1–6.4, §7.1, §7.2, §8, §9.2, §9a; [[Design MOC]]; the governed `AGENTS.md` command table. §7.2's claim that **workspace** identity sits at the top of the rail was corrected: the shell has no workspace data, and the document now describes what is built |
+
+### Three findings that changed the work
+
+- **ADR-007 Decision 5 predicts the contrast pairing count will rise. It does not, and the enumeration is right.** The check enumerates *semantic roles*, so primitives enter it only through the roles pointing at them. Two primitives were added and three roles repointed: three pairings changed value, none changed existence. The count is still **90**. Recorded in [[Design System]] §6.3 rather than quietly reconciled.
+- **The contrast script's drift guard was one-directional**, and its semantic maps were not guarded at all — so a role added to `globals.css` would have been silently never contrast-checked, which is the exact failure the script exists to prevent. Widened to catch three drifts, with four negative controls observed.
+- **Two real overflow defects were found by the browser suite**, both pre-existing and both in the shell: the header's user menu could not shrink, and `<main>` could not shrink beside the rail. Both violated §9a rule 4 at 320px, 375px and (for `/settings`) 768px, and neither was visible to any existing check.
+
+### Independent review round 1 — findings applied 2026-08-22
+
+Four findings were raised against the first implementation and all four are corrected. None required discarding the work.
+
+| # | Finding | Correction |
+|---|---|---|
+| **R1** | The shell was incomplete: a full-width canvas header sat **above** a rail holding only four links, so the plane began halfway down the screen and read as an empty black block | The rail is now **one full-height column from the top of the viewport**, in three regions — product identity, the four existing destinations, the signed-in user with sign-out. The detached desktop header is gone; a compact header remains **below `md` only**, carrying the drawer trigger and the wordmark. The drawer carries the same three regions. Identity and sign-out moved onto the plane and onto `nav-*` tokens |
+| **R2** | `keyboard.spec.ts` walked a fixed 25 stops and asserted only "more than three were reached" — it proved tabbing does *something*, not that it does the right thing, and a new unreachable control would not have failed it | The expected sequence is now **derived from the page**: every rendered, enabled, tabbable element in DOM order, marked with an identity index. The walk must reach all of them in that order, show a visible focus ring at every stop, visit no interactive element the derivation missed, and leave the document at the end. A negative `tabindex` no longer excuses a button or a link |
+| **R3** | The template test called `page.content()`, which serializes the **hydrated DOM**, while its comment claimed it read the raw response — so it could not distinguish a server-rendered attribute from one a client effect added after paint | It now reads `response.text()` — the document body the server actually sent — asserts the template there **first**, and only then asserts the hydrated DOM matches. The client-navigation proof and the `<body>` assertions are retained; the misleading comment is replaced with why the two differ |
+| **R4** | The 200% zoom check was reported as passed on the strength of CSS `zoom: 2` and an equivalent narrow viewport, which are approximations rather than the accepted manual test | **Corrected: recorded as pending rather than passed.** The real check was performed by the owner afterwards and passed — see the zoom section below |
+
+**Negative controls for R2, observed.** A reachable `<button>` added to `/dashboard`: the expectation grew on its own and the proof still passed. The same button with `tabIndex={-1}`: the proof **failed** with *"tab order does not match DOM order"*. Both reverted, and the file is byte-identical to before the probe.
+
+**No pre-existing behavioural test was changed by this round.** The specs edited (`keyboard`, `routes`, `mobile-nav`) were all written by this step.
+
+### Independent review round 2 — finding R5 applied 2026-08-22
+
+| # | Finding | Correction |
+|---|---|---|
+| **R5** | The modal scrim was `backdrop:bg-text/40`. `--color-text` is ivory in dark mode, so the scrim **lightened** the page it existed to subdue — a pale grey veil that inverted the drawer's hierarchy rather than reinforcing it. Round 1 recorded it as a future candidate; visual inspection proved it a live defect with two consumers | A named semantic role, **`--color-overlay`** ([[Design System]] §6.2a): `ink-950` at 45% in light, `ink-975` at 65% in dark, mixed in the token so no consumer chooses its own opacity. `ConfirmDialog` and `MobileNav` both write `backdrop:bg-overlay` and style nothing themselves |
+
+**It is an overlay role, not an inverted surface, and the inverted-surface family stays empty.** A surface is opaque and carries foregrounds, so it has contrast bars and appears in the §6.3 enumeration. The scrim is translucent and carries nothing — both consumers paint their own panel above it — so no pairing exists to check and the count stayed at **90**. That distinction is documented in §6.2a rather than assumed, and the stale "first candidate for a future step" paragraph is gone.
+
+**The property that was wrong is polarity, so polarity is what is now measured — twice.**
+
+- `scripts/check-contrast.py` composites the **declared** scrim over all five surfaces it can cover, in both themes, and fails if the result is lighter than what it covers, or unchanged on the canvas. Measured: light `background` 0.9241 → 0.2708, dark `background` 0.0044 → 0.0028. Dark `nav-surface` is the one permitted equality — the rail is already `ink-975`, the palette's deepest value and the scrim's own colour, so nothing is lightened and the rail's content still dims.
+- `e2e/scrim.spec.ts` opens the drawer in each theme with the *system* preference set to the opposite, reads the computed `::backdrop` colour, and asserts it is translucent, darker than the page, and darker still once composited.
+- `shell-contracts.test.ts` proves both dialogs use the shared role and that **no** file styles a backdrop any other way; `theme-tokens.test.ts` proves the role exists in all three theme blocks, is registered as a utility, and mixes from an `ink-*` primitive in every one.
+
+**Negative controls, observed.** Reverting the dark token to `ivory-200 40%`: the contrast script failed with *"dark scrim LIGHTENS background … a veil that lightens is not a veil"* on all five surfaces, plus the mirror-drift line. Reverting both consumers to `backdrop:bg-text/40`: both static proofs failed, and the browser proof failed in **dark only** — *"the scrim (oklab(0.944756 …)) is lighter than the page it covers"* — while light still passed, which is the defect's actual shape. All reverted.
+
+**Visual inspection, 375×812, drawer open, both themes.** Light: the ivory page dims to a deep warm grey and the drawer reads as raised above it. Dark: the page recedes — cards, headings and the accent all subdued — with no grey wash. Drawer contrast and readability unchanged in both; identity, four destinations, address and sign-out all legible and unclipped.
+
+**No pre-existing behavioural test was changed by this round**, and no shell layout, route, server action or data fetch was touched: the change is one token, two class strings, one checker, one new spec and two additions to tests this step already owns.
+
+### CI round 1 — one real defect, found by the suite it added 2026-08-22
+
+The first pipeline run on [PR #56](https://github.com/ruseduard321-prog/ProjectOne/pull/56) was green for API and governance and red for one browser case: **`/settings` scrolled horizontally at exactly 768px** — `scrollWidth` 825 against a 768 viewport, first offender `div.flex-1`.
+
+**Cause, measured rather than guessed.** The AI Spend budget row places two `flex-1` wrappers side by side from `sm`. A flex item defaults to `min-width: auto`, so it cannot shrink below its content's min-content width — and an `<input>` with no width is sized by the user agent from `size=20` **in the resolved font**. Each wrapper's min-content was therefore the input's intrinsic width, and the row's floor was two of them plus the gap. Beside the 240px rail at `md`, the available width is 430px; the row needed 442px locally and ~537px on the runner.
+
+**It was font-dependent, which is why it passed here and failed there.** Measured at 768px: the overflow begins once an input exceeds ~228px. macOS renders it at **213px** — 15px of margin, not a passing structure. A sweep of input font sizes reproduced the failure locally with the identical offender: 18px → `scrollWidth` 771, 20px → 813, 24px → 901, bracketing CI's 825.
+
+**Fix:** `min-w-0` on the two wrappers — nothing hidden, no breakpoint moved, no tolerance loosened, no design change. After it, the input measures **207px at every font size tested (16 → 64px)** and the row fills its container exactly, so the layout no longer depends on font metrics at all.
+
+**Regression proof:** the existing `responsive.spec.ts` case, unchanged in what it asserts. Its failure *message* was strengthened to name the cause rather than the symptom — overflow in px, `scrollWidth`/`clientWidth`, and the offender's width, min-content and parent row. Verified by negative control: with the fix reverted and inputs widened, it reports *"content overflows by 271px … div.flex-1 (width 367, min-content 367) inside div.flex flex-col gap-4 sm:flex-row sm:gap-4"*.
+
+**The two latent instances are closed in the same change.** `/projects/[projectId]` carried the same pattern twice — the add-asset form in `page.tsx` and `AssetUpload.tsx` — each pairing an intrinsic `<input>` with a shrinkable `<select>`. Both passed at the time they were found, but reached within **2px** of the viewport edge once inputs were widened to 24px: the same defect, one font change from the same failure. Both wrappers in both rows now carry `min-w-0`, so the invariant holds wherever the pattern appears rather than only where CI happened to catch it.
+
+**The invariant, stated once:** *a form control carries an intrinsic width, so the flex item holding it must be allowed to shrink below it.* That sentence is the comment at all three sites; the measurement and the reasoning live here rather than being repeated in the markup.
+
+### The 200% browser-zoom check — **performed and passed 2026-08-22**
+
+**Performed by the project owner in Chrome, at the browser's own zoom control.** [[ADR-007 Product Experience Blueprint Authority and Adoption Boundary]] Decision 13 keeps this manual precisely because automation cannot reproduce it: driving CSS `zoom` or a proportionally narrower viewport approximates the layout consequence and reproduces neither the device-pixel rendering nor the browser's rounding. Both were run earlier and recorded as supporting evidence only; they did not discharge the check, and this section previously said so.
+
+**The evidence, as reported by the owner:**
+
+- Chrome visibly reported **Zoom 200%** — the control's own indicator, not an emulated one.
+- Maximized: `innerWidth` **1002**, `scrollWidth` = `clientWidth` = **1002**. No horizontal overflow.
+- All five shell routes inspected visually — Dashboard, Projects, Project detail, AI Chat, Settings.
+- No horizontal overflow, no clipping, no overlap, no unusable control on any route.
+- The two-column form rows held: project asset rows and the Settings AI Spend row both clean — the rows whose intrinsic-width defect CI caught at 768px.
+- Chrome then windowed **while still at 200%**: the compact header appeared, as §9a rule 2 requires.
+- The drawer opened with identity, the four destinations, the signed-in address, Sign out and Close all visible; **scrim polarity correct** (the R5 correction, confirmed by eye at real zoom); Close worked.
+- Chrome restored to 100% afterwards.
+
+**Recorded as attested by the owner, not observed by Claude** ([[CLAUDE|CLAUDE.md]] §30b). Claude prepared the environment — a production build served against the deterministic browser-suite fixtures — and made no claim about the outcome.
+
+### The audit found a real defect that every automated check had missed
+
+**`Move to undefined` on Project detail.** The browser suite's fixture (`e2e/stub-api.mjs`) offered `legal_transitions: ["scripting"]`. `scripting` is not a member of `ApiProjectStatus`, so `transitionLabel()` interpolated a missing `STATUS_LABELS` lookup and the control rendered the word `undefined` to the user.
+
+**Nothing failed, and that is the finding.** The route returned 200, the heading was right, the template was right, the keyboard walk reached the button, nothing overflowed. The stub is plain JavaScript — deliberately, so it runs without a build step — so no type-checker ever compared its fixtures against the interfaces they stand in for.
+
+**Corrected:** `legal_transitions: ["planning"]`, which is what the API's own state machine returns from `idea` (one step forward along `_SEQUENCE`; the machine also permits `archive` from anywhere). A focused assertion in `routes.spec.ts` now proves the rendered label reads **Move to Planning** and that `undefined` appears nowhere in the document — asserted on what the page renders rather than on the payload, since the payload is exactly what was untyped. Negative control observed: with the fixture reverted, the new test fails.
+
+**A fixture is a contract with the API it replaces.** This one drifted silently because it was only ever exercised through assertions that did not look at it. That is the same class of gap as §6.3's *"a pairing that is not checked is not passing; it is unknown"*, one layer out.
+
+### Deliberately not done
+
+- **No appearance control.** The cascade is the contract a control would be built on; the surface itself is `Proposed` under ADR-007 Decision 3.
+- **`--text-4xl` has no consumer.** Where a screen's editorial display moment falls belongs to the step that owns the screen. Verified to compile correctly by probe: `.text-4xl{font-size:3.25rem;line-height:var(--tw-leading,1.05)}`.
+- **No domain page rebuilt**, no route created, no product noun introduced, and [[STEP-32 Media Processing Pipeline]] left `outline` / `Not Started`.
+
+## Step Completion Record
+
+**Closure recorded 2026-08-22, after the final implementation CI run passed on `ef057fb`.** `ef057fb` is the last implementation commit that CI validated, **not** the closure commit — this record and the [[Build Plan]] row are written after it. Every condition in [[Execution Protocol#Step Completion]] holds:
+
+| Condition | State |
+|---|---|
+| Definition of Done | every item satisfied and ticked above |
+| Local validation | observed: 82 browser tests, 350 unit tests, lint, typecheck, production build, contrast + overlay polarity, governance sync |
+| Documentation | [[Design System]] v2.6, [[Design MOC]] v1.7, this note, [[Build Plan]] |
+| Status synchronization | this note and the [[Build Plan]] row both read `Done` |
+| Critical issues | none outstanding |
+| Branch and tree | `step-31a-product-experience-blueprint-implementation`, clean tree at every validation point |
+| Pull request | [PR #56](https://github.com/ruseduard321-prog/ProjectOne/pull/56) — fully validated for squash merge |
+| Required CI | `api` pass · `web` pass · `governance docs` pass on the final implementation commit |
+| Manual checklist | complete — the 200% zoom audit, performed by the owner |
+| Review conversations | none raised on the PR; three review rounds resolved in session (R1–R5) |
+| Owner gate | satisfied — the owner ran the manual audit, directed every correction and instructed closure |
+
+**PR #56 is fully validated for squash merge.** `Done` means ready to merge, never merged ([[Execution Protocol#Step Completion]]) — the merge is the owner's.
+
+**The squash merge gives `main` one permanent commit** carrying implementation, documentation and this status together, per [[Execution Protocol#One Step One Commit On Main]]. The branch's own commits are working history and are not preserved.
+
+**Next:** [[STEP-32 Media Processing Pipeline]], left `outline` / `Not Started` and deliberately unexpanded by this step.
 
 ## Risks and Governance Gates
 

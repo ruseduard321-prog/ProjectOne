@@ -20,6 +20,7 @@ import {
   workspaceBudget,
 } from "@/lib/dashboard";
 import { resolveWorkspace } from "@/lib/workspace";
+import { PageHeader } from "@/components/shell/PageHeader";
 
 export const metadata: Metadata = {
   title: "Dashboard — ProjectOne",
@@ -58,7 +59,7 @@ export default async function DashboardPage() {
   if (accessToken === undefined || workspace === undefined) {
     return (
       <div className="flex flex-col gap-6">
-        <h1 className="text-2xl font-semibold tracking-tight text-text">Dashboard</h1>
+        <PageHeader title="Dashboard" />
         <EmptyState
           title="No workspace yet"
           description="Your work lives inside a workspace. Once you belong to one, what needs attention appears here."
@@ -120,22 +121,24 @@ export function DashboardScreen({
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight text-text">Dashboard</h1>
-        <p className="text-sm text-text-muted">
-          What needs attention in {workspaceName}.
-          {/*
-           * The multi-workspace limitation, disclosed rather than hidden — the
-           * application resolves the caller's first workspace and has no
-           * switcher. Stated the same way `/projects` and `/settings` state it.
-           */}
-          {otherWorkspaceCount > 0
-            ? ` You belong to ${otherWorkspaceCount} other ${
-                otherWorkspaceCount === 1 ? "workspace" : "workspaces"
-              } — switching between them is not available yet.`
-            : ""}
-        </p>
-      </div>
+      <PageHeader
+        title="Dashboard"
+        description={
+          <>
+            What needs attention in {workspaceName}.
+            {/*
+             * The multi-workspace limitation, disclosed rather than hidden — the
+             * application resolves the caller's first workspace and has no
+             * switcher. Stated the same way `/projects` and `/settings` state it.
+             */}
+            {otherWorkspaceCount > 0
+              ? ` You belong to ${otherWorkspaceCount} other ${
+                  otherWorkspaceCount === 1 ? "workspace" : "workspaces"
+                } — switching between them is not available yet.`
+              : ""}
+          </>
+        }
+      />
 
       <BudgetGlance budgets={budgets} />
 

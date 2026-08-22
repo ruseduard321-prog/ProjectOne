@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 
 import { useErrorRecovery } from "@/lib/error-recovery";
+import { PageHeader } from "@/components/shell/PageHeader";
 
 /**
  * Error boundary for the projects screens.
@@ -40,7 +41,7 @@ export default function ProjectsError({
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-semibold tracking-tight text-text">Projects</h1>
+      <PageHeader title="Projects" />
 
       <div
         role="alert"
@@ -54,7 +55,7 @@ export default function ProjectsError({
         <button
           type="button"
           onClick={retry}
-          className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-contrast transition-colors hover:bg-accent-hover"
+          className="rounded-md bg-accent-fill px-4 py-2 text-sm font-medium text-accent-contrast transition-colors hover:bg-accent-hover"
         >
           Try again
         </button>

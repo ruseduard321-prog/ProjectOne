@@ -85,9 +85,22 @@ jobs:
         run: ./scripts/sync-governance-docs.sh --check
 
   web:
+    # DO NOT RENAME. The `Protect main` ruleset matches this string literally,
+    # and `apps/api/tests/test_ci_configuration.py` asserts it still exists. A
+    # rename does not quietly drop the gate — it strands it, and GitHub then
+    # holds every PR waiting for a context that will never report.
+    #
+    # The name is therefore deliberately no longer exhaustive: since STEP-31a
+    # this job also runs the Playwright browser suite. Naming it accurately
+    # would cost a blocked merge queue and an owner-only ruleset edit, which is
+    # a bad trade for a more literal label.
     name: web (lint, typecheck, test, build)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Raised from 20 for the browser suite: a Chromium download and a second
+    # `next build` for the test-configured server. `JOB_TIMEOUTS` in
+    # `apps/api/tests/test_ci_configuration.py` carries the same number and the
+    # two are changed together, deliberately.
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: apps/web
@@ -134,10 +147,44 @@ jobs:
       - name: Test
         run: npm test
 
-      # Build last: it is the slowest step and the one most likely to surface a
-      # problem the faster checks already caught more cheaply.
+      # Build last among the cheap checks: it is the slowest and the one most
+      # likely to surface a problem the faster checks already caught more
+      # cheaply. This build validates the PRODUCTION configuration; the browser
+      # suite below builds again with its own, pointed at a stub API.
       - name: Build
         run: npm run build
+
+      # The browser layer, adopted by ADR-007 Decision 13 and added by
+      # STEP-31a. It runs INSIDE this job rather than as a job of its own for
+      # one reason: `web (lint, typecheck, test, build)` is already a required
+      # check, so the suite is a merge gate from its first run. A separate job
+      # would report but not block until the owner edited the ruleset, and
+      # "a proof that runs only on demand is a proof that stops running"
+      # (CLAUDE.md §26).
+      #
+      # Chromium only. The suite asserts focus, keyboard, theme, reflow and
+      # motion — engine-independent behaviour — and three engines would triple
+      # the download for no proposition this step owns.
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      # No retries, by configuration: a test retried until it passes is not a
+      # proof (CLAUDE.md §20a). A flake here is fixed or reported, never
+      # absorbed by a retry budget.
+      - name: Browser tests (Playwright)
+        run: npm run test:e2e
+
+      # Job logs need admin rights to download; artifacts do not. Without this
+      # a contributor can see that a browser proof failed and not which
+      # assertion, which turns a one-line fix into blind round trips.
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-playwright-report
+          path: apps/web/playwright-report
+          retention-days: 7
+          if-no-files-found: ignore
 
   api:
     name: api (lint, format, typecheck, test)

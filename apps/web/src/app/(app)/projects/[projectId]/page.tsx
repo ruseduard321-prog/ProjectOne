@@ -13,6 +13,7 @@ import { SettingsSection } from "@/components/settings/SettingsSection";
 import { type ApiAsset, type ApiProject, ApiError, listAssets, readProject } from "@/lib/api";
 import { requireProfile, resolveAccessToken } from "@/lib/auth";
 import { resolveWorkspace } from "@/lib/workspace";
+import { PageHeader } from "@/components/shell/PageHeader";
 
 import {
   assetDownloadUrlAction,
@@ -87,14 +88,17 @@ export default async function ProjectDetailPage({
           ← All projects
         </Link>
 
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <h1 className="text-2xl font-semibold tracking-tight text-text">{project.name}</h1>
-          <StatusBadge status={project.status} />
-        </div>
-
-        {project.description !== null ? (
-          <p className="max-w-prose text-sm text-text-muted">{project.description}</p>
-        ) : null}
+        {/*
+         * The status is page-level state rather than a control, so it sits in
+         * the header's action slot: it belongs beside the title, and putting
+         * it there means this screen states its shape with the same primitive
+         * every other screen uses instead of rebuilding the row by hand.
+         */}
+        <PageHeader
+          title={project.name}
+          description={project.description ?? undefined}
+          actions={<StatusBadge status={project.status} />}
+        />
       </div>
 
       <SettingsSection
@@ -180,8 +184,10 @@ export default async function ProjectDetailPage({
               savedLabel="Added"
               hidden={{ workspace_id: workspaceId, project_id: project.id }}
             >
+              {/* `min-w-0`: a form control carries an intrinsic width, and a flex
+                  item that cannot shrink below it makes the row overflow (§9a rule 4). */}
               <div className="flex flex-col gap-4 sm:flex-row sm:gap-4">
-                <div className="flex-1">
+                <div className="min-w-0 flex-1">
                   <FormField
                     id="asset-name"
                     name="name"
@@ -192,7 +198,7 @@ export default async function ProjectDetailPage({
                   />
                 </div>
 
-                <div className="flex-1">
+                <div className="min-w-0 flex-1">
                   <AssetKindField
                     id="asset-kind"
                     name="kind"

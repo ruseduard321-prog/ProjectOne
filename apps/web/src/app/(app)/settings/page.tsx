@@ -18,6 +18,7 @@ import {
 } from "@/lib/api";
 import { requireProfile, resolveAccessToken } from "@/lib/auth";
 import { resolveWorkspace } from "@/lib/workspace";
+import { PageHeader } from "@/components/shell/PageHeader";
 
 import {
   renameWorkspaceAction,
@@ -74,7 +75,7 @@ export default async function SettingsPage() {
   if (accessToken === undefined || workspace === undefined) {
     return (
       <div className="flex flex-col gap-6">
-        <h1 className="text-2xl font-semibold tracking-tight text-text">Settings</h1>
+        <PageHeader title="Settings" />
         <EmptyState
           title="No workspace yet"
           description="Workspace settings, AI provider keys and spending limits appear here once you belong to a workspace."
@@ -162,23 +163,25 @@ function SettingsScreen({
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight text-text">Settings</h1>
-        <p className="text-sm text-text-muted">
-          Your profile, and the settings for {workspaceName}.
-          {/*
-           * The multi-workspace limitation, disclosed rather than hidden. A
-           * user with several workspaces silently editing only the first would
-           * be a data-integrity surprise; saying which one is being shown makes
-           * it a known constraint. See `lib/workspace.ts`.
-           */}
-          {otherWorkspaceCount > 0
-            ? ` You belong to ${otherWorkspaceCount} other ${
-                otherWorkspaceCount === 1 ? "workspace" : "workspaces"
-              } — switching between them is not available yet.`
-            : ""}
-        </p>
-      </div>
+      <PageHeader
+        title="Settings"
+        description={
+          <>
+            Your profile, and the settings for {workspaceName}.
+            {/*
+             * The multi-workspace limitation, disclosed rather than hidden. A
+             * user with several workspaces silently editing only the first would
+             * be a data-integrity surprise; saying which one is being shown makes
+             * it a known constraint. See `lib/workspace.ts`.
+             */}
+            {otherWorkspaceCount > 0
+              ? ` You belong to ${otherWorkspaceCount} other ${
+                  otherWorkspaceCount === 1 ? "workspace" : "workspaces"
+                } — switching between them is not available yet.`
+              : ""}
+          </>
+        }
+      />
 
       <SettingsSection
         title="Profile"
@@ -275,8 +278,10 @@ function SettingsScreen({
             hidden={{ workspace_id: workspaceId }}
             disabledReason={writeRefusal}
           >
+            {/* `min-w-0`: a form control carries an intrinsic width, and a flex
+                item that cannot shrink below it makes the row overflow (§9a rule 4). */}
             <div className="flex flex-col gap-4 sm:flex-row sm:gap-4">
-              <div className="flex-1">
+              <div className="min-w-0 flex-1">
                 <FormField
                   id="budget-limit"
                   name="limit_usd"
@@ -289,7 +294,7 @@ function SettingsScreen({
                 />
               </div>
 
-              <div className="flex-1">
+              <div className="min-w-0 flex-1">
                 <FormField
                   id="budget-period"
                   name="period_days"

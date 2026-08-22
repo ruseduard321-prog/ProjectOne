@@ -2,7 +2,7 @@
 title: Design MOC
 category: MOC
 status: stable
-version: "1.4"
+version: "1.7"
 last_updated: 2026-08-22
 tags: [moc, design, documentation]
 aliases: ["Design Map of Content"]
@@ -40,18 +40,18 @@ Where two disagree, the higher wins and the conflict is stated rather than silen
 |---|---|---|
 | Routine token revalues, governed by [[Design System#6.5 How to change a token]] | `--ivory-75`; light `--color-surface` and `--color-surface-raised` | Owner sign-off on the §6.1 specification change; no ADR |
 | Narrow supersession of ADR-003 | `--ink-975`, repointing dark `--color-nav-surface` | ADR-007 Decision 5 |
-| New shared contracts | native `color-scheme`; the `[data-theme]` three-state cascade; the Cockpit / Workbench / Focus page templates, selected by a server-rendered layout primitive; an inverted-surface semantic family (in principle); motion tokens; `--text-4xl` at `3.25rem` / `1.05` | ADR-007 Decisions 6–11 |
+| New shared contracts | native `color-scheme`; the `[data-theme]` three-state cascade; the Cockpit / Workbench / Focus page templates, selected by a server-rendered layout primitive; an inverted-surface semantic family (in principle — **derived during STEP-31a and correctly empty**, see [[Design System]] §6.2); motion tokens; `--text-4xl` at `3.25rem` / `1.05` | ADR-007 Decisions 6–11 |
 | New testing contract | **Playwright**, wired into required CI — owner-approved 2026-08-22 | ADR-007 Decision 13 |
 | Page-specific blueprints | which template each surface uses, and every per-screen layout | [[STEP-79 Domain Screen Blueprints]], then [[STEP-80 Product-wide UI Rebuild]] |
 | Proposed capabilities, **not** product scope | Studio, Library, Recipes, Review, the creation plan, deliverables and versions, the paid-media pack | Owner approval of the capability, then an owning step |
 
-**On the role count.** Measured *before adoption*, the Artifact's role set matches production exactly — twenty-two on each side, identical names — so the trigger that produced ADR-003, the semantic layer gaining new roles, does not recur from the blueprint. The production set may still grow: the inverted-surface family would add roles the Artifact needed but never named, approved in principle with membership derived from real consumers and values from measurement.
+**On the role count.** Measured *before adoption*, the Artifact's role set matches production exactly — twenty-two on each side, identical names — so the trigger that produced ADR-003, the semantic layer gaining new roles, does not recur from the blueprint. The production set may still grow: the inverted-surface family would add roles the Artifact needed but never named, approved in principle with membership derived from real consumers and values from measurement. **It was derived during [[STEP-31a Product Experience Blueprint Alignment]] and is empty** — no production component renders an inverted canvas surface. One role was added by that step for a different reason: `--color-overlay`, the modal scrim, promoted during independent review when the previous mapping was found to *lighten* the page in dark mode ([[Design System]] §6.2a). It is an **overlay** role, not an inverted surface, so the family remains empty. The production role count is therefore **twenty-three**, and the contrast enumeration stays at **90 pairings** — nothing is rendered on a scrim, so it has no pairing; it is checked for polarity instead.
 
 **Two settled owner constraints (2026-08-22), binding on every future step:** ProjectOne shows **no third-party advertising**, and **does not buy, bid or place media** — it makes the creative.
 
 ## Adoption
 
-- [[STEP-31a Product Experience Blueprint Alignment]] — the shared foundation, for routes that already exist. Rebuilds no domain page. **Its ADR-007 gate is open; the step is `Not Started` and nothing is built yet.**
+- [[STEP-31a Product Experience Blueprint Alignment]] — the shared foundation, for routes that already exist. Rebuilds no domain page. **`Done` (2026-08-22):** the token layer, the three-state theme cascade, `color-scheme`, the motion tokens, `--text-4xl`, the three page templates, the shared shell on the `nav-*` plane, the mobile drawer, the `--color-overlay` scrim and the Playwright suite are implemented, reviewed across three rounds and green on required CI. Ready for the owner's squash merge on [PR #56](https://github.com/ruseduard321-prog/ProjectOne/pull/56), not yet merged.
 - Every future step that introduces a frontend surface consumes the blueprint when it builds that surface.
 - [[STEP-79 Domain Screen Blueprints]] — final validation and reconciliation against the real product.
 - [[STEP-80 Product-wide UI Rebuild]] — the product-wide implementation pass over the domain pages STEP-31a does not rebuild.

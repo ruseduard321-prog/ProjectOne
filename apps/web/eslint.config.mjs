@@ -12,6 +12,11 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Playwright's own output. Git ignores both, but a flat config does not
+    // read .gitignore — and `--max-warnings=0` means a local lint run after a
+    // browser run would otherwise fail on generated report bundles.
+    "playwright-report/**",
+    "test-results/**",
   ]),
 ]);
 
