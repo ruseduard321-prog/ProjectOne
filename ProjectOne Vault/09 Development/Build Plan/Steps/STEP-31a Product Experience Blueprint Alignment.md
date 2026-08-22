@@ -2,7 +2,7 @@
 title: STEP-31a Product Experience Blueprint Alignment
 category: Development/Build Step
 status: stable
-version: "2.1"
+version: "2.2"
 last_updated: 2026-08-22
 tags: [engineering, workflow, build-step, design, frontend]
 step_id: STEP-31a
@@ -215,17 +215,17 @@ Additionally, per [[Execution Protocol#Step Completion]]:
 - [x] Every browser proposition in [[#Required Tests and Proofs]] passes, observed — **82 browser tests**, `retries: 0`.
 - [x] Every pre-existing behavioural test passes unmodified — **350 unit tests** across 28 files; no pre-existing test file was edited.
 - [x] `aria-current`, the skip link and the mobile drawer's focus contract have tests, which they did not before.
-- [x] The 200% zoom manual check is performed and its result recorded — the only manual item. **Performed by the owner in Chrome 2026-08-22: 200% indicated, `innerWidth` 1002, `scrollWidth` = `clientWidth`, all five routes clean, drawer and scrim correct when windowed at 200%.** Attested by the owner, not observed by Claude.
+- [x] The 200% zoom manual check is performed and its result recorded — the only manual item. **Delegated by the owner to Codex, which drove the locally installed Chrome through Computer Use and used Chrome's own 200% zoom control, 2026-08-22: 200% indicated, `innerWidth` 1002, `scrollWidth` = `clientWidth`, all five routes clean, drawer and scrim correct when windowed at 200%.** Observed by Codex; not observed by Claude, which prepared the environment only.
 - [x] `<body>` carries theme state only; `data-template` is server-rendered — proved from the raw document response, not the hydrated DOM — and stable across client-side navigation.
 - [x] Required CI green on `ef057fb` — `api` pass, `web` pass, `governance docs` pass — and the manual checklist complete.
 - [x] Documentation updated: [[Design System]] (v2.6), [[Design MOC]] (v1.7), the ADR references they carry, and the statement of how future frontend steps consume the blueprint.
-- [x] Owner approval obtained — this step is Critical. The owner performed the manual 200% audit, directed all five review corrections, and instructed closure on 2026-08-22. **The merge itself remains the owner's.**
+- [x] Owner approval obtained — this step is Critical. The owner delegated the manual 200% audit, directed all five review corrections, and authorized closure and the merge on 2026-08-22. **The gate is satisfied by those decisions, not by the audit** — the audit is evidence the owner commissioned, and the two are deliberately not conflated.
 - [x] Status synchronized between this note and the [[Build Plan]] index — both read `Done`.
 - [x] [[STEP-32 Media Processing Pipeline]] left `outline` and `Not Started`, deliberately unexpanded — verified at closure.
 
 ## Implementation Record
 
-Written during implementation on 2026-08-22, and kept as written. The step reached `Done` after three independent review rounds, the owner's real 200% zoom audit, green required CI on [PR #56](https://github.com/ruseduard321-prog/ProjectOne/pull/56) and the owner's closure decision ([[Execution Protocol#Step Completion]]). **`Done` was reached before the merge, as [[Execution Protocol#Step Completion]] defines it**; the owner then squash-merged [PR #56](https://github.com/ruseduard321-prog/ProjectOne/pull/56) on 2026-08-22, and the step is delivered.
+Written during implementation on 2026-08-22, and kept as written. The step reached `Done` after three independent review rounds, the real 200% zoom audit the owner delegated to Codex, green required CI on [PR #56](https://github.com/ruseduard321-prog/ProjectOne/pull/56) and the owner's closure decision ([[Execution Protocol#Step Completion]]). **`Done` was reached before the merge, as [[Execution Protocol#Step Completion]] defines it**; the owner then squash-merged [PR #56](https://github.com/ruseduard321-prog/ProjectOne/pull/56) on 2026-08-22, and the step is delivered.
 
 ### What was built
 
@@ -255,7 +255,7 @@ Four findings were raised against the first implementation and all four are corr
 | **R1** | The shell was incomplete: a full-width canvas header sat **above** a rail holding only four links, so the plane began halfway down the screen and read as an empty black block | The rail is now **one full-height column from the top of the viewport**, in three regions — product identity, the four existing destinations, the signed-in user with sign-out. The detached desktop header is gone; a compact header remains **below `md` only**, carrying the drawer trigger and the wordmark. The drawer carries the same three regions. Identity and sign-out moved onto the plane and onto `nav-*` tokens |
 | **R2** | `keyboard.spec.ts` walked a fixed 25 stops and asserted only "more than three were reached" — it proved tabbing does *something*, not that it does the right thing, and a new unreachable control would not have failed it | The expected sequence is now **derived from the page**: every rendered, enabled, tabbable element in DOM order, marked with an identity index. The walk must reach all of them in that order, show a visible focus ring at every stop, visit no interactive element the derivation missed, and leave the document at the end. A negative `tabindex` no longer excuses a button or a link |
 | **R3** | The template test called `page.content()`, which serializes the **hydrated DOM**, while its comment claimed it read the raw response — so it could not distinguish a server-rendered attribute from one a client effect added after paint | It now reads `response.text()` — the document body the server actually sent — asserts the template there **first**, and only then asserts the hydrated DOM matches. The client-navigation proof and the `<body>` assertions are retained; the misleading comment is replaced with why the two differ |
-| **R4** | The 200% zoom check was reported as passed on the strength of CSS `zoom: 2` and an equivalent narrow viewport, which are approximations rather than the accepted manual test | **Corrected: recorded as pending rather than passed.** The real check was performed by the owner afterwards and passed — see the zoom section below |
+| **R4** | The 200% zoom check was reported as passed on the strength of CSS `zoom: 2` and an equivalent narrow viewport, which are approximations rather than the accepted manual test | **Corrected: recorded as pending rather than passed.** The real check was carried out afterwards by Codex on the owner's delegation, and passed — see the zoom section below |
 
 **Negative controls for R2, observed.** A reachable `<button>` added to `/dashboard`: the expectation grew on its own and the proof still passed. The same button with `tabIndex={-1}`: the proof **failed** with *"tab order does not match DOM order"*. Both reverted, and the file is byte-identical to before the probe.
 
@@ -299,9 +299,9 @@ The first pipeline run on [PR #56](https://github.com/ruseduard321-prog/ProjectO
 
 ### The 200% browser-zoom check — **performed and passed 2026-08-22**
 
-**Performed by the project owner in Chrome, at the browser's own zoom control.** [[ADR-007 Product Experience Blueprint Authority and Adoption Boundary]] Decision 13 keeps this manual precisely because automation cannot reproduce it: driving CSS `zoom` or a proportionally narrower viewport approximates the layout consequence and reproduces neither the device-pixel rendering nor the browser's rounding. Both were run earlier and recorded as supporting evidence only; they did not discharge the check, and this section previously said so.
+**Delegated by the project owner to Codex, and performed in the locally installed Chrome at the browser's own 200% zoom control, through Computer Use.** An interactive check in a real Chrome is what ADR-007 Decision 13 requires; who drives the browser is a separate question from whether the browser is real, and this satisfies the requirement. [[ADR-007 Product Experience Blueprint Authority and Adoption Boundary]] Decision 13 keeps this manual precisely because automation cannot reproduce it: driving CSS `zoom` or a proportionally narrower viewport approximates the layout consequence and reproduces neither the device-pixel rendering nor the browser's rounding. Both were run earlier and recorded as supporting evidence only; they did not discharge the check, and this section previously said so.
 
-**The evidence, as reported by the owner:**
+**The evidence, as observed and reported by Codex:**
 
 - Chrome visibly reported **Zoom 200%** — the control's own indicator, not an emulated one.
 - Maximized: `innerWidth` **1002**, `scrollWidth` = `clientWidth` = **1002**. No horizontal overflow.
@@ -312,7 +312,7 @@ The first pipeline run on [PR #56](https://github.com/ruseduard321-prog/ProjectO
 - The drawer opened with identity, the four destinations, the signed-in address, Sign out and Close all visible; **scrim polarity correct** (the R5 correction, confirmed by eye at real zoom); Close worked.
 - Chrome restored to 100% afterwards.
 
-**Recorded as attested by the owner, not observed by Claude** ([[CLAUDE|CLAUDE.md]] §30b). Claude prepared the environment — a production build served against the deterministic browser-suite fixtures — and made no claim about the outcome.
+**Provenance, stated exactly** ([[CLAUDE|CLAUDE.md]] §30b): the owner **delegated** the check; **Codex performed and observed it**, driving Chrome through Computer Use; **Claude prepared the environment only** — a production build served against the deterministic browser-suite fixtures — and neither observed the check nor claims its result. The result enters this record **attested by Codex, accepted under the owner's standing closure and merge authorization**, and is not an observation of Claude's.
 
 ### The audit found a real defect that every automated check had missed
 
@@ -347,9 +347,9 @@ Closure was recorded first, after the final implementation CI run passed on `ef0
 | Pull request | [PR #56](https://github.com/ruseduard321-prog/ProjectOne/pull/56) — **squash-merged** 2026-08-22 19:35:32 UTC |
 | Commit on `main` | **`68f974f`** — *feat: align product experience foundation (#56)* |
 | Required CI | `api` pass · `web` pass · `governance docs` pass on the final implementation commit |
-| Manual checklist | complete — the 200% zoom audit, performed by the owner |
+| Manual checklist | complete — the 200% zoom audit, delegated by the owner, performed and observed by Codex in Chrome |
 | Review conversations | none raised on the PR; three review rounds resolved in session (R1–R5) |
-| Owner gate | satisfied — the owner ran the manual audit, directed every correction and instructed closure |
+| Owner gate | satisfied — the owner delegated the audit, directed every correction and authorized closure and the merge |
 
 **The squash merge gives `main` one permanent commit** carrying implementation, documentation and this status together, per [[Execution Protocol#One Step One Commit On Main]]. For this step that commit is **`68f974f`**; the branch's own commits were working history and are not preserved.
 
