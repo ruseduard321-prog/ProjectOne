@@ -137,7 +137,7 @@ export function CredentialsForm({
         type="submit"
         disabled={pending}
         className={[
-          "rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-contrast",
+          "rounded-md bg-accent-fill px-4 py-2 text-sm font-medium text-accent-contrast",
           "transition-colors hover:bg-accent-hover disabled:opacity-60",
         ].join(" ")}
       >

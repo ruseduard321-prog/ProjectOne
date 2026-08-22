@@ -312,7 +312,10 @@ def test_a_required_check_keeps_the_name_the_ruleset_requires(check_name: str) -
 #: and a pending required check blocks the merge button the whole time.
 JOB_TIMEOUTS = (
     ("governance-docs", 10),
-    ("web", 20),
+    # Raised from 20 by STEP-31a, which added the Playwright browser suite to
+    # this job: a Chromium download and a second `next build` for the
+    # test-configured server both land inside it.
+    ("web", 30),
     ("api", 30),
 )
 
@@ -463,6 +466,32 @@ def test_every_ci_job_declares_its_timeout(job: str, minutes: int) -> None:
     assert int(declared.group("value")) == minutes, (
         f"The `{job}` job's timeout is {declared.group('value')} minutes; this suite expects "
         f"{minutes}. Change both together, deliberately."
+    )
+
+
+def test_the_pipeline_still_runs_the_browser_suite() -> None:
+    """The Playwright suite must keep running inside a REQUIRED check.
+
+    **STEP-31a.** [[ADR-007]] Decision 13 adopted Playwright on the condition
+    that it is wired into required CI, because *a proof that runs only on
+    demand is a proof that stops running* (CLAUDE.md §26).
+
+    That property is structural rather than declared: the suite is required
+    because it runs inside the `web` job, whose name the `Protect main` ruleset
+    matches. Moving it to a job of its own would keep it running and silently
+    stop it blocking a merge — a change that looks like tidying and removes a
+    gate. This asserts both halves: the step exists, and it is in `web`.
+    """
+    source = WORKFLOW_PATH.read_text(encoding="utf-8")
+
+    web_job = re.search(r"^  web:\n(?P<body>(?:.*\n)*?)(?=^  \S|\Z)", source, re.MULTILINE)
+    assert web_job is not None, "No `web:` job found in ci.yml"
+
+    assert "name: Browser tests (Playwright)" in web_job.group("body"), (
+        "The Playwright step is gone from the `web` job. If it moved to a job of its own it "
+        "is no longer a required check, because the `Protect main` ruleset lists `web (lint, "
+        "typecheck, test, build)` and knows nothing about a new job name — the browser proofs "
+        "would keep running and stop blocking a merge."
     )
 
 

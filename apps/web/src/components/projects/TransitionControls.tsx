@@ -63,7 +63,7 @@ function TransitionButton({ status }: { readonly status: ApiProjectStatus }) {
         "rounded-md px-4 py-2 text-sm font-medium transition-colors disabled:opacity-60",
         archiving
           ? "border border-border text-text-muted hover:bg-surface-raised"
-          : "bg-accent text-accent-contrast hover:bg-accent-hover",
+          : "bg-accent-fill text-accent-contrast hover:bg-accent-hover",
       ].join(" ")}
     >
       {pending ? "Working…" : transitionLabel(status)}

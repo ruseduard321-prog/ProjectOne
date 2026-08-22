@@ -2,18 +2,18 @@
 title: STEP-31a Product Experience Blueprint Alignment
 category: Development/Build Step
 status: draft
-version: "1.3"
+version: "1.6"
 last_updated: 2026-08-22
 tags: [engineering, workflow, build-step, design, frontend]
 step_id: STEP-31a
-step_status: Not Started
+step_status: In Progress
 detail_level: full
 phase: "Design Foundation"
 ---
 
 # STEP-31a — Product Experience Blueprint Alignment
 
-**Status:** Not Started
+**Status:** In Progress
 **Phase:** Design Foundation — The shared visual and interaction system, established once against the surfaces that actually exist.
 **Phase note:** this step belongs to Design Foundation, which [[STEP-26 Product Design System Foundation]] opened, but it **executes** between [[STEP-31 Workflow Async Execution]] and [[STEP-32 Media Processing Pipeline]], where the owner's design milestone placed it. Platform Substrate pauses at STEP-31 and resumes at STEP-32; the [[Build Plan]] table marks both transitions. Steps execute in table order, and a phase boundary is not a gate.
 **Detail level:** full — inserted by owner decision on 2026-08-22 and written at full detail on insertion. It was not expanded by a predecessor: [[STEP-31 Workflow Async Execution]]'s expansion task was withdrawn by the project owner on 2026-08-20 when the plan paused for this design milestone.
@@ -222,6 +222,80 @@ Additionally, per [[Execution Protocol#Step Completion]]:
 - [ ] Owner approval obtained — this step is Critical.
 - [ ] Status synchronized between this note and the [[Build Plan]] index.
 - [ ] [[STEP-32 Media Processing Pipeline]] left `outline` and `Not Started`, deliberately unexpanded.
+
+## Implementation Record (In Progress)
+
+Written during implementation on 2026-08-22. **The step remains `In Progress`**: it becomes `Done` only after independent review, green required CI and the owner gate ([[Execution Protocol#Step Completion]]).
+
+### What was built
+
+| Task | Outcome |
+|---|---|
+| 1. Confirm the gate | [[ADR-007 Product Experience Blueprint Authority and Adoption Boundary]] re-read at `origin/main` (`b24bc95`): `accepted`, v2.0, 13 decisions unchanged, `--text-4xl` at `3.25rem`/`1.05`, Playwright named. Not blocked |
+| 2. Tokens and theme | `--ivory-75` and `--ink-975` added; light `--color-surface`/`--color-surface-raised` and dark `--color-nav-surface` repointed; `color-scheme` declared; three-state `[data-theme]` cascade with a guarded media query and a duplicated dark branch; four motion tokens with the two-part reduced-motion block; `--text-4xl` in Tailwind's pairing form. `scripts/check-contrast.py` updated in the same change |
+| 3. Inverted surface | **Derived and empty.** No production component renders an inverted canvas surface. Recorded in [[Design System]] §6.2 with the one candidate that was deliberately not promoted |
+| 4. Page templates | `PageTemplate` emits `data-template` from a server-resolved prop, assigned in segment layouts so `page`/`loading`/`error` agree. `<body>` carries no per-route state |
+| 5. Shell and primitives | The rail is a full-height three-region plane on the `nav-*` family — its first consumer since STEP-26 — with `ShellIdentity`, `SidebarNav` and `UserMenu` from top to bottom, mirrored by `MobileNav`'s drawer below `md`. `PageHeader` replaces 13 hand-written headers and is the display face's first consumer. `bg-accent` corrected to `bg-accent-fill` in 11 places. `NAV_ITEMS` unchanged at four |
+| 6. Behaviour preserved | All 324 pre-existing tests pass **unmodified**. No auth, redirect, server action, data fetch or error handling changed |
+| 7. Playwright | Added as a dev dependency, configured with `retries: 0`, and run inside the **already-required** `web` CI job. 79 browser tests after the review round, including a derived keyboard-order proof and a shell-structure proof |
+| 8. Documentation | [[Design System]] §4.2a, §5.2, §6.1–6.4, §7.1, §7.2, §8, §9.2, §9a; [[Design MOC]]; the governed `AGENTS.md` command table. §7.2's claim that **workspace** identity sits at the top of the rail was corrected: the shell has no workspace data, and the document now describes what is built |
+
+### Three findings that changed the work
+
+- **ADR-007 Decision 5 predicts the contrast pairing count will rise. It does not, and the enumeration is right.** The check enumerates *semantic roles*, so primitives enter it only through the roles pointing at them. Two primitives were added and three roles repointed: three pairings changed value, none changed existence. The count is still **90**. Recorded in [[Design System]] §6.3 rather than quietly reconciled.
+- **The contrast script's drift guard was one-directional**, and its semantic maps were not guarded at all — so a role added to `globals.css` would have been silently never contrast-checked, which is the exact failure the script exists to prevent. Widened to catch three drifts, with four negative controls observed.
+- **Two real overflow defects were found by the browser suite**, both pre-existing and both in the shell: the header's user menu could not shrink, and `<main>` could not shrink beside the rail. Both violated §9a rule 4 at 320px, 375px and (for `/settings`) 768px, and neither was visible to any existing check.
+
+### Independent review round 1 — findings applied 2026-08-22
+
+Four findings were raised against the first implementation and all four are corrected. None required discarding the work.
+
+| # | Finding | Correction |
+|---|---|---|
+| **R1** | The shell was incomplete: a full-width canvas header sat **above** a rail holding only four links, so the plane began halfway down the screen and read as an empty black block | The rail is now **one full-height column from the top of the viewport**, in three regions — product identity, the four existing destinations, the signed-in user with sign-out. The detached desktop header is gone; a compact header remains **below `md` only**, carrying the drawer trigger and the wordmark. The drawer carries the same three regions. Identity and sign-out moved onto the plane and onto `nav-*` tokens |
+| **R2** | `keyboard.spec.ts` walked a fixed 25 stops and asserted only "more than three were reached" — it proved tabbing does *something*, not that it does the right thing, and a new unreachable control would not have failed it | The expected sequence is now **derived from the page**: every rendered, enabled, tabbable element in DOM order, marked with an identity index. The walk must reach all of them in that order, show a visible focus ring at every stop, visit no interactive element the derivation missed, and leave the document at the end. A negative `tabindex` no longer excuses a button or a link |
+| **R3** | The template test called `page.content()`, which serializes the **hydrated DOM**, while its comment claimed it read the raw response — so it could not distinguish a server-rendered attribute from one a client effect added after paint | It now reads `response.text()` — the document body the server actually sent — asserts the template there **first**, and only then asserts the hydrated DOM matches. The client-navigation proof and the `<body>` assertions are retained; the misleading comment is replaced with why the two differ |
+| **R4** | The 200% zoom check was reported as passed on the strength of CSS `zoom: 2` and an equivalent narrow viewport, which are approximations rather than the accepted manual test | **Corrected below. It is not passed.** |
+
+**Negative controls for R2, observed.** A reachable `<button>` added to `/dashboard`: the expectation grew on its own and the proof still passed. The same button with `tabIndex={-1}`: the proof **failed** with *"tab order does not match DOM order"*. Both reverted, and the file is byte-identical to before the probe.
+
+**No pre-existing behavioural test was changed by this round.** The specs edited (`keyboard`, `routes`, `mobile-nav`) were all written by this step.
+
+### Independent review round 2 — finding R5 applied 2026-08-22
+
+| # | Finding | Correction |
+|---|---|---|
+| **R5** | The modal scrim was `backdrop:bg-text/40`. `--color-text` is ivory in dark mode, so the scrim **lightened** the page it existed to subdue — a pale grey veil that inverted the drawer's hierarchy rather than reinforcing it. Round 1 recorded it as a future candidate; visual inspection proved it a live defect with two consumers | A named semantic role, **`--color-overlay`** ([[Design System]] §6.2a): `ink-950` at 45% in light, `ink-975` at 65% in dark, mixed in the token so no consumer chooses its own opacity. `ConfirmDialog` and `MobileNav` both write `backdrop:bg-overlay` and style nothing themselves |
+
+**It is an overlay role, not an inverted surface, and the inverted-surface family stays empty.** A surface is opaque and carries foregrounds, so it has contrast bars and appears in the §6.3 enumeration. The scrim is translucent and carries nothing — both consumers paint their own panel above it — so no pairing exists to check and the count stayed at **90**. That distinction is documented in §6.2a rather than assumed, and the stale "first candidate for a future step" paragraph is gone.
+
+**The property that was wrong is polarity, so polarity is what is now measured — twice.**
+
+- `scripts/check-contrast.py` composites the **declared** scrim over all five surfaces it can cover, in both themes, and fails if the result is lighter than what it covers, or unchanged on the canvas. Measured: light `background` 0.9241 → 0.2708, dark `background` 0.0044 → 0.0028. Dark `nav-surface` is the one permitted equality — the rail is already `ink-975`, the palette's deepest value and the scrim's own colour, so nothing is lightened and the rail's content still dims.
+- `e2e/scrim.spec.ts` opens the drawer in each theme with the *system* preference set to the opposite, reads the computed `::backdrop` colour, and asserts it is translucent, darker than the page, and darker still once composited.
+- `shell-contracts.test.ts` proves both dialogs use the shared role and that **no** file styles a backdrop any other way; `theme-tokens.test.ts` proves the role exists in all three theme blocks, is registered as a utility, and mixes from an `ink-*` primitive in every one.
+
+**Negative controls, observed.** Reverting the dark token to `ivory-200 40%`: the contrast script failed with *"dark scrim LIGHTENS background … a veil that lightens is not a veil"* on all five surfaces, plus the mirror-drift line. Reverting both consumers to `backdrop:bg-text/40`: both static proofs failed, and the browser proof failed in **dark only** — *"the scrim (oklab(0.944756 …)) is lighter than the page it covers"* — while light still passed, which is the defect's actual shape. All reverted.
+
+**Visual inspection, 375×812, drawer open, both themes.** Light: the ivory page dims to a deep warm grey and the drawer reads as raised above it. Dark: the page recedes — cards, headings and the accent all subdued — with no grey wash. Drawer contrast and readability unchanged in both; identity, four destinations, address and sign-out all legible and unclipped.
+
+**No pre-existing behavioural test was changed by this round**, and no shell layout, route, server action or data fetch was touched: the change is one token, two class strings, one checker, one new spec and two additions to tests this step already owns.
+
+### The 200% browser-zoom check — `Pending owner manual verification`
+
+**Not performed, and not claimed.** [[ADR-007 Product Experience Blueprint Authority and Adoption Boundary]] Decision 13 keeps this manual precisely because browser automation cannot reproduce the browser's own zoom control, and driving CSS `zoom` or a proportionally narrower viewport is **not** that test — it approximates the layout consequence and reproduces neither the device-pixel rendering nor the browser's rounding.
+
+What was run, recorded as **supporting evidence only**:
+
+- CSS `zoom: 2` at 1280×800, and a 640×400 viewport (the CSS viewport a 1280×800 window has at 200%): no horizontal overflow, no overflowing element, the rail correctly collapsed to the drawer with every destination still reachable, headings and controls legible.
+
+That evidence is consistent with the check passing. **It does not discharge it.** The check is completed by the project owner during review, and [[#Definition of Done]]'s zoom item stays open until then.
+
+### Deliberately not done
+
+- **No appearance control.** The cascade is the contract a control would be built on; the surface itself is `Proposed` under ADR-007 Decision 3.
+- **`--text-4xl` has no consumer.** Where a screen's editorial display moment falls belongs to the step that owns the screen. Verified to compile correctly by probe: `.text-4xl{font-size:3.25rem;line-height:var(--tw-leading,1.05)}`.
+- **No domain page rebuilt**, no route created, no product noun introduced, and [[STEP-32 Media Processing Pipeline]] left `outline` / `Not Started`.
 
 ## Risks and Governance Gates
 

@@ -260,7 +260,7 @@ export function AssetUpload({ workspaceId, projectId }: AssetUploadProps) {
         <button
           type="submit"
           disabled={sending}
-          className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-contrast transition-colors hover:bg-accent-hover disabled:opacity-60"
+          className="rounded-md bg-accent-fill px-4 py-2 text-sm font-medium text-accent-contrast transition-colors hover:bg-accent-hover disabled:opacity-60"
         >
           {sending ? "Uploading…" : "Upload file"}
         </button>

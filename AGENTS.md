@@ -68,6 +68,11 @@ Run these from the directory shown. They are exactly what CI runs — a green lo
 | Type-check | `npm run typecheck` |
 | Test | `npm test` |
 | Build | `npm run build` |
+| Browser tests | `npm run test:e2e` |
+
+The browser suite starts its own servers — a stub API and a test-configured
+build — so it needs no running backend. It needs Chromium once:
+`npx playwright install chromium`.
 
 ### Backend — `apps/api`
 

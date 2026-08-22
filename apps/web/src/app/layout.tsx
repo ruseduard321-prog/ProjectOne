@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, Instrument_Serif } from "next/font/google";
+
+import { THEME_INIT_SCRIPT } from "@/lib/theme";
 import "./globals.css";
 
 /**
@@ -43,7 +45,41 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${inter.variable} ${instrumentSerif.variable} h-full antialiased`}>
+    /*
+     * `suppressHydrationWarning` is scoped to this one element and is load-
+     * bearing: the script below sets `data-theme` on it before React hydrates,
+     * so the server's markup (no attribute) and the client's DOM (attribute)
+     * legitimately differ. Without it React logs a mismatch for a difference it
+     * is not entitled to have an opinion about. It suppresses nothing about
+     * `<body>` or anything inside it.
+     */
+    <html
+      lang="en"
+      className={`${inter.variable} ${instrumentSerif.variable} h-full antialiased`}
+      suppressHydrationWarning
+    >
+      <head>
+        {/*
+         * Applies an explicit theme choice BEFORE first paint. An effect would
+         * run after it, producing a visible flash of the wrong theme on every
+         * load — see `lib/theme.ts` for why this is the only place it can go.
+         *
+         * `dangerouslySetInnerHTML` is the only way to emit an inline script
+         * from JSX. The content is a module constant built from constants in
+         * this repository, with no interpolation of anything a request or a
+         * user can influence, so there is no injection surface here.
+         */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
+
+      {/*
+       * `<body>` carries global theme state only, and today carries none of it
+       * directly — `data-theme` and `color-scheme` both live on `:root`
+       * (ADR-007 Decisions 6 and 7). What matters is what is NOT here: no
+       * per-route and no per-template attribute. Templates are emitted by the
+       * `PageTemplate` wrapper on its own element, so a route can never leak
+       * its layout into the next one.
+       */}
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
   );

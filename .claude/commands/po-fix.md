@@ -2,7 +2,7 @@
 description: Apply accepted /po-review findings to the reviewed branch, within a declared mutation boundary
 argument-hint: "review <PR number | PR URL | branch> [F001 ...]"
 disable-model-invocation: true
-allowed-tools: Read, Edit, Write, Grep, Glob, Skill, Bash(pwd), Bash(git status:*), Bash(git rev-parse:*), Bash(git branch --show-current), Bash(git merge-base:*), Bash(git rev-list:*), Bash(git diff:*), Bash(git log:*), Bash(git show:*), Bash(git ls-files:*), Bash(git cat-file:*), Bash(git fetch --prune origin), Bash(git add --:*), Bash(git commit -m:*), Bash(git push origin:*), Bash(gh repo view:*), Bash(gh pr view:*), Bash(gh pr diff:*), Bash(gh pr list:*), Bash(gh pr checks:*), Bash(gh run view:*), Bash(gh run watch:*), Bash(gh api --method GET:*), Bash(cd apps/web), Bash(cd apps/api), Bash(cd ../web), Bash(cd ../api), Bash(cd ../..), Bash(npm run lint), Bash(npm run typecheck), Bash(npm test), Bash(npm run build), Bash(ruff check .), Bash(ruff format --check .), Bash(mypy app), Bash(pytest -ra --tb=short), Bash(./scripts/sync-governance-docs.sh), Bash(./scripts/sync-governance-docs.sh --check), Bash(./scripts/sync-governance-docs.sh --only claude), Bash(./scripts/sync-governance-docs.sh --only agents)
+allowed-tools: Read, Edit, Write, Grep, Glob, Skill, Bash(pwd), Bash(git status:*), Bash(git rev-parse:*), Bash(git branch --show-current), Bash(git merge-base:*), Bash(git rev-list:*), Bash(git diff:*), Bash(git log:*), Bash(git show:*), Bash(git ls-files:*), Bash(git cat-file:*), Bash(git fetch --prune origin), Bash(git add --:*), Bash(git commit -m:*), Bash(git push origin:*), Bash(gh repo view:*), Bash(gh pr view:*), Bash(gh pr diff:*), Bash(gh pr list:*), Bash(gh pr checks:*), Bash(gh run view:*), Bash(gh run watch:*), Bash(gh api --method GET:*), Bash(cd apps/web), Bash(cd apps/api), Bash(cd ../web), Bash(cd ../api), Bash(cd ../..), Bash(npm run lint), Bash(npm run typecheck), Bash(npm test), Bash(npm run build), Bash(npm run test:e2e), Bash(ruff check .), Bash(ruff format --check .), Bash(mypy app), Bash(pytest -ra --tb=short), Bash(./scripts/sync-governance-docs.sh), Bash(./scripts/sync-governance-docs.sh --check), Bash(./scripts/sync-governance-docs.sh --only claude), Bash(./scripts/sync-governance-docs.sh --only agents)
 disallowed-tools: NotebookEdit, Agent, Task
 ---
 
@@ -277,7 +277,7 @@ allowlist touches:
 
 | Layer | Enter | Run, in order |
 |---|---|---|
-| `apps/web` | `cd apps/web` | `npm run lint` · `npm run typecheck` · `npm test` · `npm run build` |
+| `apps/web` | `cd apps/web` | `npm run lint` · `npm run typecheck` · `npm test` · `npm run build` · `npm run test:e2e` |
 | `apps/api` | `cd apps/api` (or `cd ../api` from `apps/web`) | `ruff check .` · `ruff format --check .` · `mypy app` · `pytest -ra --tb=short` |
 | root | `cd ../..` | when a governed source changed: `./scripts/sync-governance-docs.sh --only <name>` (bare form if both changed), then `./scripts/sync-governance-docs.sh --check` |
 

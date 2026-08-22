@@ -14,6 +14,7 @@ import {
 } from "@/lib/api";
 import { requireProfile, resolveAccessToken } from "@/lib/auth";
 import { resolveWorkspace } from "@/lib/workspace";
+import { PageHeader } from "@/components/shell/PageHeader";
 
 import { deleteConversationAction, sendMessageAction } from "./actions";
 
@@ -60,7 +61,7 @@ export default async function ChatPage({
   if (accessToken === undefined || workspace === undefined) {
     return (
       <div className="flex flex-col gap-6">
-        <h1 className="text-2xl font-semibold tracking-tight text-text">AI Chat</h1>
+        <PageHeader title="AI Chat" />
         <EmptyState
           title="No workspace yet"
           description="Conversations live inside a workspace. Once you belong to one, your chats appear here."
@@ -126,13 +127,15 @@ function ChatScreen({
 }: ChatScreenProps) {
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight text-text">AI Chat</h1>
-        <p className="text-sm text-text-muted">
-          Ask the assistant about the work in {workspaceName}. Conversations stay inside this
-          workspace.
-        </p>
-      </div>
+      <PageHeader
+        title="AI Chat"
+        description={
+          <>
+            Ask the assistant about the work in {workspaceName}. Conversations stay inside this
+            workspace.
+          </>
+        }
+      />
 
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
         <ConversationList

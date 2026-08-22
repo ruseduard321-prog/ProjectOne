@@ -34,6 +34,11 @@
      separates this product from every default admin panel, and it is the
      direction's load-bearing hue. */
   --ivory-50: #FFFDF8;
+  /* ivory-75 exists because the light ladder used to LOSE warmth as it rose
+     (R-B 12 -> 7 -> 0) and ended on #ffffff, a colour the approved direction
+     does not contain. A pure-white panel on an ivory canvas reads as a hole
+     rather than as a raised surface (ADR-007 Decision 5). */
+  --ivory-75: #FDFAF3;
   --ivory-100: #FAF6EE;
   --ivory-200: #F2ECE1;
   --ivory-300: #E4DBCB;
@@ -53,6 +58,12 @@
   --ink-800: #232120;
   --ink-900: #121110;
   --ink-950: #0F0E0D;
+  /* ink-975 is the deepest plane, and exists so the dark theme's navigation
+     rail stays distinguishable from a now-dark canvas instead of merging into
+     it. Still not pure black: #000 is harsher on screen than a warm near-black
+     and is the fastest way to make an interface feel cheap (§6.1, ADR-007
+     Decision 5, which supersedes exactly this one row of ADR-003 Decision 2). */
+  --ink-975: #070605;
 
   /* Charcoal — dark-theme surfaces. Warmer than the ink ramp so the dark
      theme reads as the same product, not a different one. */
@@ -90,9 +101,22 @@
  * ------------------------------------------------------------------ */
 
 :root {
+  /* theme-block: light */
+  /* The native scheme, declared so the caret, the selection highlight, the
+     scrollbars and every native form control follow the theme instead of
+     staying in the user agent's light styling under a full dark token set.
+     Not a token: it is shared runtime behaviour, set on :root and never on a
+     component, which is what keeps ADR-003 Decision 1's prohibition on
+     theme-aware components intact (ADR-007 Decision 6). */
+  color-scheme: light;
+
   --color-background: var(--ivory-100);
-  --color-surface: var(--ivory-50);
-  --color-surface-raised: var(--white);
+  /* The light ladder stays warm all the way up. It used to lose warmth as it
+     rose and end on #ffffff, which the approved direction does not contain,
+     and which left `surface` on `surface-raised` a two-value difference — not
+     a perceptible hover state (ADR-007 Decision 5). */
+  --color-surface: var(--ivory-75);
+  --color-surface-raised: var(--ivory-50);
 
   /* The matte-black navigation plane. A DARK surface inside the LIGHT theme,
      which no canvas token can describe — every other surface/text pairing
@@ -134,6 +158,22 @@
   --color-danger: var(--red-600);
   --color-danger-contrast: var(--white);
 
+  /* The modal scrim — the veil a `<dialog>` paints over the page beneath it.
+     An OVERLAY role, not a surface role: it is translucent, nothing is ever
+     rendered on top of it, and the two consumers (`ConfirmDialog`, the mobile
+     drawer) place their own panel above it. That is why it is not part of the
+     inverted-surface family, which stays empty (§6.2).
+
+     The alpha lives in the token, not in the consumer. `bg-overlay/40` at each
+     call site is how the two dialogs drift apart, and how a scrim ends up
+     tuned for one theme and merely inherited by the other.
+
+     Mapped onto a near-black in BOTH themes, which is the whole correction:
+     the previous mapping reached for `text`, and `text` is ivory in dark mode,
+     so the scrim LIGHTENED the page it was supposed to subdue. A veil that
+     lightens is not a veil (§6.2a). */
+  --color-overlay: color-mix(in srgb, var(--ink-950) 45%, transparent);
+
   /* Loading placeholders. A distinct role from `surface-raised`, which would
      leave a skeleton invisible on the canvas (§6.5: name the role, do not
      reach for a primitive). */
@@ -143,7 +183,7 @@
 }
 
 /* ------------------------------------------------------------------ *
- * Layer 2 — Semantic tokens, dark theme (§6.4)
+ * Layer 2 — Semantic tokens, dark theme (§6.4), and the three-state cascade
  *
  * Dark mode is a REMAPPING, not a second design. The same semantic names
  * point at different primitives; no component is theme-aware and no
@@ -151,10 +191,37 @@
  *
  * Accent and semantic hues shift one step lighter: a hue tuned against
  * white is too dark against near-black (§6.2).
+ *
+ * ## Three states, not two (ADR-007 Decision 7)
+ *
+ *   1. No explicit choice  -> follow the operating system.
+ *   2. Explicit light      -> light, EVEN IF the system is dark.
+ *   3. Explicit dark       -> dark, EVEN IF the system is light.
+ *
+ * State 2 is why the media query is guarded by `:not([data-theme="light"])`
+ * rather than left bare: an unguarded query would override an explicit light
+ * choice on a dark machine, which makes the control a no-op in exactly one
+ * direction and is the hardest kind of bug to notice.
+ *
+ * ## The duplication below is required, not an oversight
+ *
+ * Every dark-branch declaration appears TWICE — once in the media query and
+ * once in `:root[data-theme="dark"]`. A token defined only inside the media
+ * query is invisible to an explicit choice, which yields a half-themed page:
+ * some roles dark, the rest still light. The two blocks are byte-identical by
+ * construction and a test asserts they stay that way, because keeping two
+ * hand-maintained lists in step is exactly the thing people stop doing.
+ *
+ * Order matters as much as content. Both selectors have equal specificity
+ * (0,2,0), so the attribute block is placed LAST and wins on source order
+ * when the system is light and the user chose dark.
  * ------------------------------------------------------------------ */
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
+    /* theme-block: dark-media */
+    color-scheme: dark;
+
     --color-background: var(--ink-950);
     --color-surface: var(--char-800);
     --color-surface-raised: var(--char-700);
@@ -162,7 +229,7 @@
     /* Navigation barely moves between themes: it was already a dark plane.
        Its surfaces shift one step so the rail still reads as distinct from a
        now-dark canvas rather than merging into it. */
-    --color-nav-surface: var(--ink-950);
+    --color-nav-surface: var(--ink-975);
     --color-nav-surface-raised: var(--char-800);
     --color-text-on-nav: var(--ivory-200);
     --color-text-on-nav-muted: var(--ink-400);
@@ -192,10 +259,117 @@
     /* Not white: white on the lighter dark-mode red fails outright (§6.2) */
     --color-danger-contrast: var(--ink-950);
 
+    /* Deeper and heavier than in light mode. The canvas is already near-black,
+       so a 45% veil is barely a veil — what a dark-mode scrim actually subdues
+       is the lit content on top of the canvas, and that needs the heavier
+       mix. Still a near-black, never the light `text` value (§6.2a). */
+    --color-overlay: color-mix(in srgb, var(--ink-975) 65%, transparent);
+
     --color-skeleton: var(--char-600);
 
     --color-focus-ring: var(--verm-400);
   }
+}
+
+/* The same declarations again — see the note above on why this is duplicated
+   rather than shared. Byte-identical to the block above. */
+:root[data-theme="dark"] {
+  /* theme-block: dark-attribute */
+  color-scheme: dark;
+
+  --color-background: var(--ink-950);
+  --color-surface: var(--char-800);
+  --color-surface-raised: var(--char-700);
+
+  /* Navigation barely moves between themes: it was already a dark plane.
+     Its surfaces shift one step so the rail still reads as distinct from a
+     now-dark canvas rather than merging into it. */
+  --color-nav-surface: var(--ink-975);
+  --color-nav-surface-raised: var(--char-800);
+  --color-text-on-nav: var(--ivory-200);
+  --color-text-on-nav-muted: var(--ink-400);
+  --color-accent-on-nav: var(--verm-400);
+
+  --color-border: var(--char-600);
+  --color-border-strong: var(--ink-400);
+
+  --color-text: var(--ivory-200);
+  /* ink-400, not ink-450: at 450 muted text is 4.48 on `surface-raised`,
+     below the 4.5 bar. The lightest dark surface is where both themes run
+     out of room, and it is the surface to check first on any change. */
+  --color-text-muted: var(--ink-400);
+
+  /* Accent and semantic hues shift one step lighter: a hue tuned against
+     ivory is too dark against near-black (§6.2). The accent/fill split
+     widens here — as text the accent must be light, as a fill it must stay
+     saturated enough to read as the brand. */
+  --color-accent: var(--verm-400);
+  --color-accent-hover: var(--verm-300);
+  --color-accent-fill: var(--verm-500);
+  --color-accent-contrast: var(--ink-950);
+
+  --color-success: var(--green-400);
+  --color-warning: var(--amber-400);
+  --color-danger: var(--red-400);
+  /* Not white: white on the lighter dark-mode red fails outright (§6.2) */
+  --color-danger-contrast: var(--ink-950);
+
+  /* Deeper and heavier than in light mode. The canvas is already near-black,
+     so a 45% veil is barely a veil — what a dark-mode scrim actually subdues
+     is the lit content on top of the canvas, and that needs the heavier
+     mix. Still a near-black, never the light `text` value (§6.2a). */
+  --color-overlay: color-mix(in srgb, var(--ink-975) 65%, transparent);
+
+  --color-skeleton: var(--char-600);
+
+  --color-focus-ring: var(--verm-400);
+}
+
+/* ------------------------------------------------------------------ *
+ * Motion (§8, ADR-007 Decision 10)
+ *
+ * The Design System specified motion in prose only — "subtle, short and
+ * purposeful" — which is a value judgement, not a number, so every component
+ * silently inherited Tailwind's 150ms/`ease-in-out` defaults and no two
+ * surfaces were obliged to agree.
+ *
+ * Declared in `:root` rather than baked into `@theme` so the reduced-motion
+ * block below can remap them at runtime. Registered self-referentially in
+ * `@theme inline`, the same idiom the colour tokens use and for the same
+ * reason: the utility must emit `var(--duration-fast)`, not `120ms`.
+ *
+ * Motion confirms a change of state. It never decorates (§8, §13).
+ * ------------------------------------------------------------------ */
+
+:root {
+  --duration-fast: 120ms;
+  --duration-base: 180ms;
+  --duration-slow: 240ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* ------------------------------------------------------------------ *
+ * Page-template geometry (ADR-007 Decision 8)
+ *
+ * The measures the three templates are cut to. Tokens rather than numbers in
+ * a component, for the same reason every other value here is a token: a
+ * hardcoded `max-width: 78rem` is a design decision buried where no one will
+ * find it to change it.
+ *
+ * `--protobar-height` is deliberately NOT adopted. It is prototype chrome —
+ * the demo harness's own toolbar — and has no production existence, so any
+ * offset a template needs is re-derived from the tokens below.
+ * ------------------------------------------------------------------ */
+
+:root {
+  /* The navigation rail, persistent from `md` (§9a). */
+  --rail-width: 15rem;
+  /* Workbench: the default working surface. Wide enough for list-and-detail
+     side by side, capped so body text never runs the full width of a 2560px
+     canvas (§9a rule 3). Replaces the prototype's hardcoded 78rem. */
+  --workbench-max: 78rem;
+  /* Focus: one task, one column, reduced chrome. */
+  --focus-max: 46rem;
 }
 
 /* ------------------------------------------------------------------ *
@@ -233,6 +407,7 @@
   --color-warning: var(--color-warning);
   --color-danger: var(--color-danger);
   --color-danger-contrast: var(--color-danger-contrast);
+  --color-overlay: var(--color-overlay);
   --color-skeleton: var(--color-skeleton);
   --color-focus-ring: var(--color-focus-ring);
 
@@ -262,6 +437,16 @@
   --text-2xl--line-height: 1.3;
   --text-3xl: 2.25rem;
   --text-3xl--line-height: 1.2;
+  /* The one display-only exception to the 1.25 ratio, owner-selected on
+     2026-08-22 (ADR-007 Decision 11). 3.25 / 2.25 = 1.444, so this step does
+     not continue the major third and §5.2 states the exception rather than
+     leaving a ratio claim standing beside a value that contradicts it.
+     Editorial use only: never body copy, labels, table cells or controls.
+
+     Tailwind v4's pairing form (`--text-4xl--line-height`), NOT the
+     prototype's `--text-4xl-lh`, which would register no line height at all. */
+  --text-4xl: 3.25rem;
+  --text-4xl--line-height: 1.05;
 
   /* Weights (§5.3) — three only. No 700+. */
   --font-weight-regular: 400;
@@ -285,6 +470,18 @@
   --radius-md: 0.5rem;
   --radius-lg: 0.75rem;
   --radius-full: 9999px;
+
+  /* Motion (§8) — self-referential so the reduced-motion remap reaches the
+     generated utilities, exactly as the colour tokens do for dark mode. */
+  --duration-fast: var(--duration-fast);
+  --duration-base: var(--duration-base);
+  --duration-slow: var(--duration-slow);
+  --ease-standard: var(--ease-standard);
+
+  /* Template geometry (ADR-007 Decision 8) */
+  --rail-width: var(--rail-width);
+  --workbench-max: var(--workbench-max);
+  --focus-max: var(--focus-max);
 
   /* Elevation (§4.3) — signals what floats above what, not decoration */
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.05);
@@ -315,5 +512,78 @@
   :focus-visible {
     outline: 2px solid var(--color-focus-ring);
     outline-offset: 2px;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Reduced motion (§8, §9.1 rule 10, ADR-007 Decision 10)
+ *
+ * Belt and braces, deliberately — the two halves catch different things and
+ * neither is sufficient alone:
+ *
+ *   1. Remapping the duration tokens to 1ms fixes everything that consumes
+ *      them, including a component that names a token in a transition.
+ *   2. The universal rule catches everything that does NOT consume them —
+ *      Tailwind's own `transition-colors` default, and above all
+ *      `animate-pulse`, which is an INFINITE keyframe animation used by every
+ *      loading skeleton in the product. A token remap alone would leave all
+ *      of them running, which is precisely the case this rule exists for.
+ *
+ * `scroll-behavior` and `scroll-snap-type` are included because vestibular
+ * triggers are not limited to things that fade.
+ * ------------------------------------------------------------------ */
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast: 1ms;
+    --duration-base: 1ms;
+    --duration-slow: 1ms;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+    scroll-snap-type: none !important;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Page templates (ADR-007 Decision 8)
+ *
+ * Three shapes, and no fourth. The attribute is emitted by the shared
+ * server-rendered wrapper primitive (`components/shell/PageTemplate.tsx`),
+ * never by a component choosing its own width, and never on `<body>`:
+ * `<body>` carries global theme state only, so a per-route rule can never
+ * leak out of the route that set it.
+ *
+ * This is DD-04's scoping discipline — a view's width rules are scoped by an
+ * attribute rather than leaking into the shared layer — re-expressed against
+ * the wrapper instead of against the document body.
+ *
+ * Written as plain CSS rather than utility classes because the wrapper is one
+ * element and the rule is one declaration per template: a `cn()` ladder in the
+ * component would put the same three numbers somewhere a stylesheet reader
+ * cannot find them.
+ * ------------------------------------------------------------------ */
+
+@layer components {
+  /* Cockpit — full-bleed, height-aware, one primary action region. No cap:
+     the canvas IS the surface. */
+  [data-template="cockpit"] {
+    max-width: none;
+  }
+
+  /* Workbench — the default working surface: wide content, list and detail. */
+  [data-template="workbench"] {
+    max-width: var(--workbench-max);
+  }
+
+  /* Focus — narrow single column, reduced chrome, one task. */
+  [data-template="focus"] {
+    max-width: var(--focus-max);
   }
 }

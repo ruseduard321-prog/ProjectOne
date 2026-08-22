@@ -79,7 +79,7 @@ Status appears in two places — the step note and the row below — and they mu
 | STEP-30 | [[STEP-30 Async Job Infrastructure]] | Done | full |
 | STEP-31 | [[STEP-31 Workflow Async Execution]] | Done | full |
 | | **Design Foundation — resumed** | | |
-| STEP-31a | [[STEP-31a Product Experience Blueprint Alignment]] | Not Started | full |
+| STEP-31a | [[STEP-31a Product Experience Blueprint Alignment]] | In Progress | full |
 | | **Platform Substrate — resumed** | | |
 | STEP-32 | [[STEP-32 Media Processing Pipeline]] | Not Started | outline |
 | STEP-33 | [[STEP-33 Storage Quotas and Lifecycle]] | Not Started | outline |

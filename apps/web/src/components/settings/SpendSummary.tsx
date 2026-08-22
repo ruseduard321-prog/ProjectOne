@@ -62,7 +62,7 @@ function BudgetCard({ budget }: { readonly budget: ApiBudget }) {
        */}
       <div aria-hidden="true" className="h-2 w-full overflow-hidden rounded-full bg-skeleton">
         <div
-          className={percent >= 100 ? "h-full bg-danger" : "h-full bg-accent"}
+          className={percent >= 100 ? "h-full bg-danger" : "h-full bg-accent-fill"}
           style={{ width: `${percent}%` }}
         />
       </div>
