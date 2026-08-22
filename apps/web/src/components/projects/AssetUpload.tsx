@@ -195,8 +195,10 @@ export function AssetUpload({ workspaceId, projectId }: AssetUploadProps) {
 
   return (
     <form onSubmit={submit} noValidate className="flex flex-col gap-4">
+      {/* `min-w-0`: a form control carries an intrinsic width, and a flex item
+          that cannot shrink below it makes the row overflow (§9a rule 4). */}
       <div className="flex flex-col gap-4 sm:flex-row">
-        <div className="flex-1">
+        <div className="min-w-0 flex-1">
           {/*
            * `error` and `disabled` are passed explicitly: this form is not a
            * `SettingsForm`, so there is no context for the fields to read them
@@ -215,7 +217,7 @@ export function AssetUpload({ workspaceId, projectId }: AssetUploadProps) {
           />
         </div>
 
-        <div className="flex-1">
+        <div className="min-w-0 flex-1">
           <AssetKindField
             id="upload-kind"
             name="kind"

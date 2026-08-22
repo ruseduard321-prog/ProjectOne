@@ -2,7 +2,7 @@
 title: STEP-31a Product Experience Blueprint Alignment
 category: Development/Build Step
 status: draft
-version: "1.6"
+version: "1.7"
 last_updated: 2026-08-22
 tags: [engineering, workflow, build-step, design, frontend]
 step_id: STEP-31a
@@ -280,6 +280,22 @@ Four findings were raised against the first implementation and all four are corr
 **Visual inspection, 375×812, drawer open, both themes.** Light: the ivory page dims to a deep warm grey and the drawer reads as raised above it. Dark: the page recedes — cards, headings and the accent all subdued — with no grey wash. Drawer contrast and readability unchanged in both; identity, four destinations, address and sign-out all legible and unclipped.
 
 **No pre-existing behavioural test was changed by this round**, and no shell layout, route, server action or data fetch was touched: the change is one token, two class strings, one checker, one new spec and two additions to tests this step already owns.
+
+### CI round 1 — one real defect, found by the suite it added 2026-08-22
+
+The first pipeline run on [PR #56](https://github.com/ruseduard321-prog/ProjectOne/pull/56) was green for API and governance and red for one browser case: **`/settings` scrolled horizontally at exactly 768px** — `scrollWidth` 825 against a 768 viewport, first offender `div.flex-1`.
+
+**Cause, measured rather than guessed.** The AI Spend budget row places two `flex-1` wrappers side by side from `sm`. A flex item defaults to `min-width: auto`, so it cannot shrink below its content's min-content width — and an `<input>` with no width is sized by the user agent from `size=20` **in the resolved font**. Each wrapper's min-content was therefore the input's intrinsic width, and the row's floor was two of them plus the gap. Beside the 240px rail at `md`, the available width is 430px; the row needed 442px locally and ~537px on the runner.
+
+**It was font-dependent, which is why it passed here and failed there.** Measured at 768px: the overflow begins once an input exceeds ~228px. macOS renders it at **213px** — 15px of margin, not a passing structure. A sweep of input font sizes reproduced the failure locally with the identical offender: 18px → `scrollWidth` 771, 20px → 813, 24px → 901, bracketing CI's 825.
+
+**Fix:** `min-w-0` on the two wrappers — nothing hidden, no breakpoint moved, no tolerance loosened, no design change. After it, the input measures **207px at every font size tested (16 → 64px)** and the row fills its container exactly, so the layout no longer depends on font metrics at all.
+
+**Regression proof:** the existing `responsive.spec.ts` case, unchanged in what it asserts. Its failure *message* was strengthened to name the cause rather than the symptom — overflow in px, `scrollWidth`/`clientWidth`, and the offender's width, min-content and parent row. Verified by negative control: with the fix reverted and inputs widened, it reports *"content overflows by 271px … div.flex-1 (width 367, min-content 367) inside div.flex flex-col gap-4 sm:flex-row sm:gap-4"*.
+
+**The two latent instances are closed in the same change.** `/projects/[projectId]` carried the same pattern twice — the add-asset form in `page.tsx` and `AssetUpload.tsx` — each pairing an intrinsic `<input>` with a shrinkable `<select>`. Both passed at the time they were found, but reached within **2px** of the viewport edge once inputs were widened to 24px: the same defect, one font change from the same failure. Both wrappers in both rows now carry `min-w-0`, so the invariant holds wherever the pattern appears rather than only where CI happened to catch it.
+
+**The invariant, stated once:** *a form control carries an intrinsic width, so the flex item holding it must be allowed to shrink below it.* That sentence is the comment at all three sites; the measurement and the reasoning live here rather than being repeated in the markup.
 
 ### The 200% browser-zoom check — `Pending owner manual verification`
 

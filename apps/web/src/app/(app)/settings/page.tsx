@@ -278,8 +278,10 @@ function SettingsScreen({
             hidden={{ workspace_id: workspaceId }}
             disabledReason={writeRefusal}
           >
+            {/* `min-w-0`: a form control carries an intrinsic width, and a flex
+                item that cannot shrink below it makes the row overflow (§9a rule 4). */}
             <div className="flex flex-col gap-4 sm:flex-row sm:gap-4">
-              <div className="flex-1">
+              <div className="min-w-0 flex-1">
                 <FormField
                   id="budget-limit"
                   name="limit_usd"
@@ -292,7 +294,7 @@ function SettingsScreen({
                 />
               </div>
 
-              <div className="flex-1">
+              <div className="min-w-0 flex-1">
                 <FormField
                   id="budget-period"
                   name="period_days"

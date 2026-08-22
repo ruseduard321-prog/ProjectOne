@@ -40,14 +40,44 @@ test.describe("reflow", () => {
             widest:
               [...document.querySelectorAll<HTMLElement>("body *")]
                 .filter((element) => element.getBoundingClientRect().right > root.clientWidth + 1)
-                .map((element) => `${element.tagName.toLowerCase()}.${element.className}`)
+                .map((element) => {
+                  // Reached only for an element that is ALREADY overflowing —
+                  // the filter above runs first — so the measuring clone below
+                  // costs nothing on a passing run.
+                  //
+                  // It reports the parent and the element's own min-content
+                  // width because the offender is rarely the cause: an
+                  // overflowing box is usually a flex child that cannot shrink
+                  // below its content, and `width === min-content` says exactly
+                  // that in one line.
+                  const probe = element.cloneNode(true) as HTMLElement;
+                  Object.assign(probe.style, {
+                    width: "min-content",
+                    position: "absolute",
+                    left: "-9999px",
+                  });
+                  document.body.append(probe);
+                  const minContent = Math.round(probe.getBoundingClientRect().width);
+                  probe.remove();
+
+                  const parent = element.parentElement;
+                  const name = (node: Element) =>
+                    `${node.tagName.toLowerCase()}.${node.getAttribute("class") ?? ""}`.trim();
+
+                  return (
+                    `${name(element)} (width ${Math.round(element.getBoundingClientRect().width)}, ` +
+                    `min-content ${minContent}) inside ${parent ? name(parent) : "?"}`
+                  );
+                })
                 .at(0) ?? null,
           };
         });
 
         expect(
           overflow.scrollWidth,
-          `content overflows; first offender: ${overflow.widest ?? "unknown"}`,
+          `content overflows by ${overflow.scrollWidth - overflow.clientWidth}px ` +
+            `(scrollWidth ${overflow.scrollWidth}, clientWidth ${overflow.clientWidth}); ` +
+            `first offender: ${overflow.widest ?? "unknown"}`,
         ).toBeLessThanOrEqual(overflow.clientWidth + 1);
       });
     }
